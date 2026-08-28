@@ -6,7 +6,7 @@ This repository is being built in the order defined by the Graphite master speci
 
 ## Implemented foundation
 
-- Rust workspace split into deterministic domain primitives, economy services, item/storage services, PostgreSQL persistence, and the Discord application.
+- Rust workspace split into deterministic domain primitives, economy services, item/storage services, frozen content/price registry services, PostgreSQL persistence, and the Discord application.
 - UUIDv7 player and operation identities.
 - Versioned Terms of Service storage and explicit acceptance during registration.
 - Global player identity keyed by a unique Discord snowflake.
@@ -23,6 +23,8 @@ This repository is being built in the order defined by the Graphite master speci
 - CatchBag weight accounting from the 1,000 kg baseline using integer grams internally.
 - Capacity-safe pending asset delivery instead of silent loss when an Item Bag delivery cannot fit.
 - Death-safe Tool Locker, equipped-slot consistency constraints, item inspection, and idempotent equip/unequip mutations.
+- Immutable versioned content/NPC-price registry containing the frozen resource lattice, explicit NPC-liquidity separation, normal-Shop availability classes, stock-policy classes, and the four canonical alloy recipes.
+- Integer-only regression math for the frozen processed-metal appraisal formula using the canonical 1/8-Coal fuel basis.
 - HMAC identity fingerprints for the temporary post-deletion re-registration cooldown.
 - Deterministic domain-separated ChaCha12 RNG primitives seeded from the operating-system CSPRNG.
 - Global text prefixes (`g`, `graphite`) and Discord mention parsing for the currently active command subset.
@@ -50,6 +52,8 @@ Only implemented commands are registered right now:
 `/bank` supports balance information plus Wallet↔Bank deposit/withdraw mutations. Bank interest accrues automatically and is refreshed before balance-sensitive command paths; a bounded background worker catches up accounts that are not actively issuing commands.
 
 The storage slice exposes safe reads plus equipment movement. Generic future reward systems can settle stack delivery into Item Bag or an authoritative pending-delivery row when capacity is insufficient. `/discard` is intentionally not registered yet because the master specification names Trash Recovery but this slice does not invent missing recovery/expiry behavior. Storage-capacity purchases, fishing, mining, remaining economy mutations, services, market/trade, clan, automation, minigames, and other systems remain unavailable until their implementation slice satisfies the master specification.
+
+The frozen content/price registry is deliberately read-only infrastructure in this phase. It does not activate `/shop`, NPC liquidation, or stock mutation. The specification defines per-definition stack caps but does not freeze numeric caps for the new resource definitions, so the registry does not guess those values or prematurely activate these catalog rows as stack ItemDefinitions.
 
 The database already stores `rebirth_count` because Bank interest depends on it, but Account progression and the Rebirth command are not implemented yet.
 
@@ -88,4 +92,4 @@ The CI workflow provisions PostgreSQL 18.6 and runs PostgreSQL integration cover
 
 ## Architecture rule
 
-PostgreSQL owns canonical player, asset, storage, equipment, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.
+PostgreSQL owns canonical player, asset, storage, equipment, content, price-policy, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership, pricing policy, or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.
