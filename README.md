@@ -6,7 +6,7 @@ This repository is being built in the order defined by the Graphite master speci
 
 ## Implemented foundation
 
-- Rust workspace split into deterministic domain primitives, economy services, item/storage services, frozen content/price registry services, PostgreSQL persistence, and the Discord application.
+- Rust workspace split into deterministic domain primitives, economy services, item/storage services, frozen content/price registry services, progression services, PostgreSQL persistence, and the Discord application.
 - UUIDv7 player and operation identities.
 - Versioned Terms of Service storage and explicit acceptance during registration.
 - Global player identity keyed by a unique Discord snowflake.
@@ -25,6 +25,8 @@ This repository is being built in the order defined by the Graphite master speci
 - Death-safe Tool Locker, equipped-slot consistency constraints, item inspection, and idempotent equip/unequip mutations.
 - Immutable versioned content/NPC-price registry containing the frozen resource lattice, explicit NPC-liquidity separation, normal-Shop availability classes, stock-policy classes, and the four canonical alloy recipes.
 - Integer-only regression math for the frozen processed-metal appraisal formula using the canonical 1/8-Coal fuel basis.
+- Canonical Account XP/Level and derived Activity Level math, fixed Account Level Money rewards, deterministic Rebirth utility curves, and idempotent Rebirth reset semantics.
+- Transaction-composable Activity EXP settlement for already-effective integer grants, spends, and losses, with stable per-operation mutation keys, mandatory provenance, non-negative enforcement, and replay-safe receipts.
 - HMAC identity fingerprints for the temporary post-deletion re-registration cooldown.
 - Deterministic domain-separated ChaCha12 RNG primitives seeded from the operating-system CSPRNG.
 - Global text prefixes (`g`, `graphite`) and Discord mention parsing for the currently active command subset.
@@ -55,7 +57,7 @@ The storage slice exposes safe reads plus equipment movement. Generic future rew
 
 The frozen content/price registry is deliberately read-only infrastructure in this phase. It does not activate `/shop`, NPC liquidation, or stock mutation. The specification defines per-definition stack caps but does not freeze numeric caps for the new resource definitions, so the registry does not guess those values or prematurely activate these catalog rows as stack ItemDefinitions.
 
-The database already stores `rebirth_count` because Bank interest depends on it, but Account progression and the Rebirth command are not implemented yet.
+The progression domain now owns canonical Account XP, Activity EXP, derived levels, and Rebirth state. User-facing `/level`/`/activity`/`/rebirth` command wiring and live chat/Mine/Fish/monster/Quest source adapters are still intentionally unavailable until their qualification, risk, and gameplay slices exist. The Activity EXP transaction API accepts already-effective integer points; source-specific Rebirth/guild/clan/event/automation modifiers remain the responsibility of the owning source so they cannot be silently double-applied.
 
 ## Requirements
 
@@ -92,4 +94,4 @@ The CI workflow provisions PostgreSQL 18.6 and runs PostgreSQL integration cover
 
 ## Architecture rule
 
-PostgreSQL owns canonical player, asset, storage, equipment, content, price-policy, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership, pricing policy, or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.
+PostgreSQL owns canonical player, asset, storage, equipment, content, price-policy, progression, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership, pricing policy, progression, or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.
