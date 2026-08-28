@@ -7,7 +7,7 @@ This file tracks implementation against the build-order recommendation in the Gr
 | 1 | Identity / ToS / global player / PostgreSQL foundations | Implemented foundation |
 | 2 | Ledger / operations / idempotency / outbox | Bank deposit/withdraw and automatic interest-accrual slices implemented with immutable ledger settlement, FIFO lots, canonical withdrawal fees, fixed-point interest remainder, idempotency, and outbox; other economy mutations pending |
 | 3 | Item definitions / instances / storage / equipment | Version-pinned item definitions, Item Bag stack storage, CatchBag weight accounting, pending delivery, Tool Locker, equipment reads, inspect, equip, and unequip implemented; storage-capacity purchases, Trash Recovery/discard, and later lifecycle services pending |
-| 4 | Fixed NPC price/content registry | Pending |
+| 4 | Fixed NPC price/content registry | Frozen versioned resource lattice, NPC-buy/appraisal separation, Shop availability/stock classes, processed-metal formula regression, and canonical alloy recipes implemented; live Shop/NPC transactions remain pending their service slice |
 | 5 | Account / Activity progression | `rebirth_count` persistence exists only to apply the canonical Bank-interest formula; progression, level, and Rebirth commands remain pending |
 | 6 | Repair / Forge / Smelt / Enchant / +N / SoulBind | Pending |
 | 7 | Fishing | Pending |
@@ -23,7 +23,7 @@ This file tracks implementation against the build-order recommendation in the Gr
 
 ## Deliberately unavailable
 
-The current executable does not register slash commands for unfinished gameplay systems. `/discard` remains unavailable because the authoritative source names Trash Recovery but does not define enough recovery/expiry behavior for this implementation slice to invent a live lifecycle. Storage-capacity purchases remain pending even though the baseline capacity curves are represented. Account/Activity progression and Rebirth mutation are not live even though the Bank interest engine reads the persisted Rebirth count required by the canonical formula. `/party` and `/casino` remain unavailable, and no implementation status should be interpreted as permission to activate systems the specification marks as requiring another design pass.
+The current executable does not register slash commands for unfinished gameplay systems. `/discard` remains unavailable because the authoritative source names Trash Recovery but does not define enough recovery/expiry behavior for this implementation slice to invent a live lifecycle. Storage-capacity purchases remain pending even though the baseline capacity curves are represented. The Phase 4 registry does not activate `/shop`, NPC liquidation, or stock mutation: it freezes the canonical policy data first, while exact transaction/service behavior is implemented in its later owning slice. Resource catalog entries are not prematurely activated as stack ItemDefinitions because the specification requires definition-specific stack caps but does not freeze numeric caps for these new resource definitions. Account/Activity progression and Rebirth mutation are not live even though the Bank interest engine reads the persisted Rebirth count required by the canonical formula. `/party` and `/casino` remain unavailable, and no implementation status should be interpreted as permission to activate systems the specification marks as requiring another design pass.
 
 ## Foundation invariants already enforced
 
@@ -54,5 +54,11 @@ The current executable does not register slash commands for unfinished gameplay 
 - Deferred database consistency triggers require every `EQUIPPED` ItemInstance to have exactly one owner-matching, type-compatible equipment slot and forbid non-equipped items from remaining slot-referenced.
 - Equip/unequip operations lock authoritative player/item rows, are idempotent, emit immutable asset events, and commit their outbox event atomically.
 - Exact storage reads remain private in the Discord adapter while the equipped loadout can be public.
+- Content/price policy rows are versioned and immutable; activating a later policy moves a separate pointer instead of rewriting historical values.
+- The frozen v1 registry stores `npc_buy_price` separately from canonical appraisal so appraisal-only Forge/alloy outputs cannot become NPC liquidation paths.
+- Every row that is available in the normal Shop has an explicit stock-policy class; items the specification forbids from the normal Shop have no Shop sell price.
+- Registry constraints reject a direct fixed NPC-buy/Shop-sell price pair where NPC buy is not strictly below Shop sell, preventing the simplest risk-free NPC arbitrage loop at the data layer.
+- Processed-metal appraisal regression uses checked integer arithmetic for `round((raw + Coal/8) × 1.005)` and matches the frozen Tin/Copper/Zinc/Aluminum/Iron/Lead/Silver/Nickel/Gold/Cobalt/Titanium/Tungsten/Netherite/Platinum values.
+- Bronze, Brass, Invar, and Electrum recipes are frozen as versioned content recipes; their convenience Shop prices are weekly-limited while NPC liquidation remains disabled.
 - Outbox events are committed in the same PostgreSQL transaction as canonical mutation state.
 - Temporary deletion cooldown identity uses a keyed HMAC fingerprint rather than storing a permanent hidden raw Discord identity tombstone.
