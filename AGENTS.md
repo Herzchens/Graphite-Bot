@@ -124,7 +124,44 @@ Nếu self-review phát hiện vấn đề:
 
 Triết lý mặc định: **chậm mà chắc; ưu tiên correctness, maintainability và bằng chứng hơn tốc độ hoàn thành bề ngoài.**
 
-## 7. Xử lý vi phạm
+## 7. Evidence gate — chống hallucination và false positive
+
+Một nghi ngờ từ static review **không tự động là bug**. Trước khi sửa code vì một finding, agent phải triage finding đó thành một trong ba trạng thái:
+
+- `CONFIRMED`: có đủ bằng chứng cho thấy hành vi thực sự vi phạm specification, invariant, contract, safety property hoặc expected runtime behavior.
+- `DISPROVED`: trace/test/source chứng minh nghi ngờ là false positive; không sửa code cho finding này.
+- `UNRESOLVED`: chưa đủ bằng chứng theo cả hai hướng; tiếp tục điều tra hoặc ghi rõ còn thiếu bằng chứng gì, không trình bày nó như bug đã xác nhận.
+
+Để đánh dấu `CONFIRMED`, bằng chứng phải phù hợp với loại finding và tối thiểu gồm:
+
+- [ ] exact code/data path bị ảnh hưởng (file + function/query/schema/handler cụ thể);
+- [ ] invariant/contract/specification bị vi phạm, hoặc expected behavior được chứng minh từ code/test/source authoritative;
+- [ ] một failure path cụ thể có thể trace được; với bug runtime/concurrency nên có regression test hoặc reproduction khi môi trường cho phép;
+- [ ] kiểm tra các guard/constraint/caller liên quan để loại trừ false positive do đọc code cục bộ thiếu context;
+- [ ] nếu kết luận dựa trên inference thay vì explicit source, phải ghi rõ đó là inference và không nâng thành fact nếu chưa chứng minh.
+
+Không được tạo fix chỉ để "phòng xa" cho một bug chưa xác nhận nếu fix đó thay đổi semantics. Với security, data-loss hoặc concurrency risk nghiêm trọng chưa reproduce được, có thể giữ `UNRESOLVED` và harden bằng invariant/test **chỉ khi** hardening không bịa behavior mới và được giải thích rõ.
+
+## 8. Full-codebase review gate khi thêm module/subsystem quan trọng
+
+Bất cứ PR nào thêm **crate mới** đều bắt buộc full-codebase review một vòng trước merge. Một module/subsystem mới cũng kích hoạt gate này nếu nó có ít nhất một trong các đặc điểm sau: public/cross-crate API, persistence/schema, state mutation, transaction/locking, Discord command surface, economy/assets/progression, security/trust boundary, background worker, hoặc thay đổi invariant dùng chung.
+
+`Full-codebase review` nghĩa là đọc lại **toàn bộ first-party codebase hiện tại**, không chỉ diff của PR: workspace/manifests, application adapters, tất cả first-party crates/modules, SQL migrations/schema invariants, CI/workflows/config, docs/status và test suites. Dependency source/generated artifacts không tính là first-party codebase.
+
+Trong vòng review này agent phải:
+
+- [ ] map module mới vào các dependency/integration points hiện có và tìm contract drift, duplicate source of truth, layer violation hoặc hidden coupling;
+- [ ] kiểm tra schema/migration compatibility từ lịch sử hiện có, không chỉ fresh-database path;
+- [ ] kiểm tra lock order, idempotency, retry, rollback, partial failure và parallel operations xuyên module;
+- [ ] kiểm tra authoritative-state ownership và tránh cache/preview/in-memory state trở thành nguồn sự thật ngoài ý muốn;
+- [ ] kiểm tra toàn repo cho naming/API semantics dễ bị caller dùng sai;
+- [ ] triage mọi finding theo Evidence gate ở §7; không biến full review thành danh sách speculative bugs;
+- [ ] bổ sung test đầy đủ theo tính chất thay đổi: success, rejection, boundary/overflow, replay/idempotency, rollback/atomicity, concurrency, migration/integration và regression cho từng bug `CONFIRMED` khi applicable;
+- [ ] sau mọi fix từ full review, đọc lại final diff, squash lịch sử và chạy lại toàn bộ CI trên exact final head.
+
+Không được mark ready/merge một PR kích hoạt gate này cho tới khi **full-codebase review hoàn tất, mọi finding đã được triage, test matrix phù hợp đã có, self-review final diff sạch và CI final head xanh**.
+
+## 9. Xử lý vi phạm
 
 Nếu agent phát hiện mình đã tạo nhiều commit vụn vặt hoặc đặt sai tên branch:
 
