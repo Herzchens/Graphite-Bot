@@ -98,11 +98,41 @@ async fn progression_is_capped_idempotent_ledgered_and_rebirth_safe() {
     assert_eq!(rebirth.activity_xp_points, 1_600);
     assert_eq!(rebirth.activity_level, 31);
 
+    sqlx::query(
+        "UPDATE bank_interest_state SET last_accrual_day = (now() AT TIME ZONE 'UTC')::date - 1 WHERE player_id = $1",
+    )
+    .bind(player_id)
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let stale_day_before_replay: String = sqlx::query(
+        "SELECT last_accrual_day::TEXT AS day FROM bank_interest_state WHERE player_id = $1",
+    )
+    .bind(player_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("day")
+    .unwrap();
+
     let rebirth_replay = progression
         .rebirth(discord_user_id, &rebirth_key)
         .await
         .unwrap();
     assert_eq!(rebirth_replay, rebirth);
+    let stale_day_after_replay: String = sqlx::query(
+        "SELECT last_accrual_day::TEXT AS day FROM bank_interest_state WHERE player_id = $1",
+    )
+    .bind(player_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("day")
+    .unwrap();
+    assert_eq!(
+        stale_day_after_replay, stale_day_before_replay,
+        "a committed Rebirth retry must not run Bank-interest catch-up again"
+    );
 
     let after_rebirth = progression.snapshot(discord_user_id).await.unwrap();
     assert_eq!(after_rebirth.rebirth_count, 1);
@@ -111,6 +141,23 @@ async fn progression_is_capped_idempotent_ledgered_and_rebirth_safe() {
     assert_eq!(after_rebirth.activity.points, 1_600);
     assert_eq!(after_rebirth.activity.level, 31);
 
+    sqlx::query(
+        "UPDATE bank_interest_state SET last_accrual_day = (now() AT TIME ZONE 'UTC')::date - 1 WHERE player_id = $1",
+    )
+    .bind(player_id)
+    .execute(store.pool())
+    .await
+    .unwrap();
+    let stale_day_before_ineligible: String = sqlx::query(
+        "SELECT last_accrual_day::TEXT AS day FROM bank_interest_state WHERE player_id = $1",
+    )
+    .bind(player_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("day")
+    .unwrap();
+
     let second_rebirth = progression
         .rebirth(discord_user_id, &format!("test:rebirth:second:{nonce}"))
         .await;
@@ -118,6 +165,19 @@ async fn progression_is_capped_idempotent_ledgered_and_rebirth_safe() {
         second_rebirth,
         Err(ProgressionError::RebirthRequiresLevelCap)
     ));
+    let stale_day_after_ineligible: String = sqlx::query(
+        "SELECT last_accrual_day::TEXT AS day FROM bank_interest_state WHERE player_id = $1",
+    )
+    .bind(player_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("day")
+    .unwrap();
+    assert_eq!(
+        stale_day_after_ineligible, stale_day_before_ineligible,
+        "an ineligible Rebirth request must not mutate Bank-interest state"
+    );
 
     let wallet: i64 = sqlx::query("SELECT wallet FROM player_balances WHERE player_id = $1")
         .bind(player_id)
