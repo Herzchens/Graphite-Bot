@@ -1,0 +1,18 @@
+[package]
+name = "graphite-bot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+dotenvy.workspace = true
+graphite-core = { path = "../../crates/graphite-core" }
+graphite-store = { path = "../../crates/graphite-store" }
+hex.workspace = true
+serenity.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

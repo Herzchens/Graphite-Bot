@@ -1,0 +1,34 @@
+[workspace]
+members = [
+    "apps/graphite-bot",
+    "crates/graphite-core",
+    "crates/graphite-store",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Herzchens/Graphite-Bot"
+
+[workspace.dependencies]
+anyhow = "=1.0.104"
+blake3 = "=1.8.7"
+chrono = { version = "=0.4.45", features = ["serde"] }
+dotenvy = "=0.15.7"
+getrandom = "=0.4.3"
+hex = "=0.4.3"
+hmac = "=0.13.0"
+rand_chacha = "=0.10.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+serenity = { version = "=0.12.5", default-features = false, features = ["builder", "client", "gateway", "model", "rustls_backend"] }
+sha2 = "=0.11.0"
+sqlx = { version = "=0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "chrono", "uuid", "json", "migrate", "macros"] }
+thiserror = "=2.0.20"
+tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt"] }
+uuid = { version = "=1.26.0", features = ["serde", "v7"] }
