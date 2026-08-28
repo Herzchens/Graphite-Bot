@@ -6,7 +6,7 @@ This file tracks implementation against the build-order recommendation in the Gr
 | --- | --- | --- |
 | 1 | Identity / ToS / global player / PostgreSQL foundations | Implemented foundation |
 | 2 | Ledger / operations / idempotency / outbox | Bank deposit/withdraw and automatic interest-accrual slices implemented with immutable ledger settlement, FIFO lots, canonical withdrawal fees, fixed-point interest remainder, idempotency, and outbox; other economy mutations pending |
-| 3 | Item definitions / instances / storage / equipment | Starter-equipment slice implemented; general storage gameplay pending |
+| 3 | Item definitions / instances / storage / equipment | Version-pinned item definitions, Item Bag stack storage, CatchBag weight accounting, pending delivery, Tool Locker, equipment reads, inspect, equip, and unequip implemented; storage-capacity purchases, Trash Recovery/discard, and later lifecycle services pending |
 | 4 | Fixed NPC price/content registry | Pending |
 | 5 | Account / Activity progression | `rebirth_count` persistence exists only to apply the canonical Bank-interest formula; progression, level, and Rebirth commands remain pending |
 | 6 | Repair / Forge / Smelt / Enchant / +N / SoulBind | Pending |
@@ -23,7 +23,7 @@ This file tracks implementation against the build-order recommendation in the Gr
 
 ## Deliberately unavailable
 
-The current executable does not register slash commands for unfinished gameplay systems. Account/Activity progression and Rebirth mutation are not live even though the Bank interest engine reads the persisted Rebirth count required by the canonical formula. `/party` and `/casino` remain unavailable, and no implementation status should be interpreted as permission to activate systems the specification marks as requiring another design pass.
+The current executable does not register slash commands for unfinished gameplay systems. `/discard` remains unavailable because the authoritative source names Trash Recovery but does not define enough recovery/expiry behavior for this implementation slice to invent a live lifecycle. Storage-capacity purchases remain pending even though the baseline capacity curves are represented. Account/Activity progression and Rebirth mutation are not live even though the Bank interest engine reads the persisted Rebirth count required by the canonical formula. `/party` and `/casino` remain unavailable, and no implementation status should be interpreted as permission to activate systems the specification marks as requiring another design pass.
 
 ## Foundation invariants already enforced
 
@@ -31,7 +31,7 @@ The current executable does not register slash commands for unfinished gameplay 
 - A Discord user maps to at most one active global player record.
 - ToS versions are immutable once a version number exists; a newer configured version can become current without rewriting history.
 - Registration requires an explicit `accept=true` plus the exact current ToS version.
-- Duplicate external Discord deliveries reuse the same operation result instead of repeating registration, starter issuance, Bank deposit, or Bank withdrawal.
+- Duplicate external Discord deliveries reuse the same operation result instead of repeating registration, starter issuance, Bank deposit/withdraw, equipment moves, or stack delivery.
 - Operation request hashes detect accidental idempotency-key reuse with different input.
 - RNG root material is persisted on every operation row before future random-domain derivation is needed.
 - System-authored operations can have no Discord actor while retaining a player target, typed operation kind, policy version, request hash, and immutable ledger provenance.
@@ -46,5 +46,13 @@ The current executable does not register slash commands for unfinished gameplay 
 - Soft-frozen accounts continue Bank-interest accrual while hard-frozen accounts advance the accrual clock without receiving paused-period interest.
 - Bank-interest settlement is serialized with Bank state, creates immutable `BANK_INTEREST` ledger provenance only when whole Money is minted, and emits its outbox event in the same PostgreSQL transaction.
 - The executable refreshes due interest before user-visible Bank/balance/ledger reads and before Bank mutations, while a bounded background worker catches up inactive accounts.
+- Item definitions have immutable historical versions; stateful item instances pin the exact definition version used to interpret them.
+- Stack commodities are stored separately from unique ItemInstances and compute Item Bag occupancy from definition-specific stack caps.
+- Item Bag starts at 36 slots and CatchBag starts at 1,000 kg; capacity math uses checked integer arithmetic.
+- Capacity-safe stack delivery never silently drops valid assets: a delivery that does not fit becomes an authoritative pending asset delivery instead of mutating the bag.
+- Tool Locker is modeled as a death-safe first-class item location; equipped items are separate first-class locations backed by equipment slots.
+- Deferred database consistency triggers require every `EQUIPPED` ItemInstance to have exactly one owner-matching, type-compatible equipment slot and forbid non-equipped items from remaining slot-referenced.
+- Equip/unequip operations lock authoritative player/item rows, are idempotent, emit immutable asset events, and commit their outbox event atomically.
+- Exact storage reads remain private in the Discord adapter while the equipped loadout can be public.
 - Outbox events are committed in the same PostgreSQL transaction as canonical mutation state.
 - Temporary deletion cooldown identity uses a keyed HMAC fingerprint rather than storing a permanent hidden raw Discord identity tombstone.

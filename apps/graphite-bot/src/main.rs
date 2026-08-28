@@ -13,6 +13,7 @@ use graphite_economy::{
     BANK_BONUS_PRINCIPAL_TRANCHE, BANK_MIN_WITHDRAWAL, BankError, BankInterestError,
     BankInterestService, BankService,
 };
+use graphite_items::{ItemError, ItemService, ItemView};
 use graphite_store::{PgStore, StoreError, TosDocument};
 use serenity::{
     Client,
@@ -27,16 +28,19 @@ use serenity::{
 };
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
+use uuid::Uuid;
 
 const BANK_INTEREST_SCAN_INTERVAL: Duration = Duration::from_secs(300);
 const BANK_INTEREST_BATCH_SIZE: u32 = 250;
 const BANK_INTEREST_MAX_BATCHES_PER_TICK: u8 = 8;
+const DISPLAY_ITEM_LIMIT: usize = 10;
 
 #[derive(Clone)]
 struct App {
     store: PgStore,
     bank: BankService,
     bank_interest: BankInterestService,
+    items: ItemService,
     identity_hmac_key: Arc<Vec<u8>>,
 }
 
@@ -56,6 +60,7 @@ enum CommandPayload {
         tos_version: Option<i32>,
     },
     Bank(BankRequest),
+    ItemId(Option<Uuid>),
 }
 
 struct CommandRequest {
@@ -90,7 +95,7 @@ impl App {
     async fn execute(&self, request: CommandRequest) -> Reply {
         match request.id {
             CommandId::Help => Reply::private(
-                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions. Text prefixes: g, graphite, or a bot mention. Bank deposit/withdraw and automatic daily interest accrual are live; unfinished gameplay systems remain unavailable.",
+                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions, /itembag, /catchbag, /locker, /equipment, /equip, /unequip, /item. Text prefixes: g, graphite, or a bot mention. Storage reads and equipment moves are live; discard/Trash Recovery and unfinished gameplay systems remain unavailable.",
             ),
             CommandId::Tos => self.tos_reply().await,
             CommandId::Register => {
@@ -112,6 +117,30 @@ impl App {
                 .await
             }
             CommandId::Transactions => self.transactions_reply(request.discord_user_id).await,
+            CommandId::ItemBag => self.item_bag_reply(request.discord_user_id).await,
+            CommandId::CatchBag => self.catch_bag_reply(request.discord_user_id).await,
+            CommandId::Locker => self.locker_reply(request.discord_user_id).await,
+            CommandId::Equipment => self.equipment_reply(request.discord_user_id).await,
+            CommandId::Equip => {
+                self.equip_reply(
+                    request.discord_user_id,
+                    request.external_request_key,
+                    request.payload,
+                )
+                .await
+            }
+            CommandId::Unequip => {
+                self.unequip_reply(
+                    request.discord_user_id,
+                    request.external_request_key,
+                    request.payload,
+                )
+                .await
+            }
+            CommandId::Item => {
+                self.item_reply(request.discord_user_id, request.payload)
+                    .await
+            }
         }
     }
 
@@ -307,11 +336,219 @@ impl App {
         }
     }
 
+    async fn item_bag_reply(&self, discord_user_id: u64) -> Reply {
+        match self.items.item_bag(discord_user_id).await {
+            Ok(snapshot) => {
+                let mut content = format!(
+                    "Item Bag Lv{} — {}/{} slots",
+                    snapshot.level, snapshot.used_slots, snapshot.capacity_slots
+                );
+                if snapshot.pending_deliveries > 0 {
+                    use std::fmt::Write as _;
+                    write!(
+                        content,
+                        " — {} pending delivery",
+                        snapshot.pending_deliveries
+                    )
+                    .expect("writing to a String cannot fail");
+                }
+                for stack in snapshot.stacks.iter().take(DISPLAY_ITEM_LIMIT) {
+                    use std::fmt::Write as _;
+                    write!(
+                        content,
+                        "\n{} v{} [{}] ×{} ({}/{} slots)",
+                        stack.definition_key,
+                        stack.definition_version,
+                        stack.rarity,
+                        stack.quantity,
+                        stack.occupied_slots,
+                        snapshot.capacity_slots
+                    )
+                    .expect("writing to a String cannot fail");
+                }
+                if snapshot.stacks.is_empty() {
+                    content.push_str("\nNo stack commodities stored.");
+                }
+                Reply::private(content)
+            }
+            Err(error) => item_error_reply(error),
+        }
+    }
+
+    async fn catch_bag_reply(&self, discord_user_id: u64) -> Reply {
+        match self.items.catch_bag(discord_user_id).await {
+            Ok(snapshot) => {
+                let mut content = format!(
+                    "CatchBag Lv{} — {:.3}/{:.3} kg",
+                    snapshot.level,
+                    snapshot.used_grams as f64 / 1000.0,
+                    snapshot.capacity_grams as f64 / 1000.0
+                );
+                for catch in snapshot.catches.iter().take(DISPLAY_ITEM_LIMIT) {
+                    use std::fmt::Write as _;
+                    write!(
+                        content,
+                        "\n{} [{}] — {:.3} kg — `{}`",
+                        catch.definition_key,
+                        catch.rarity,
+                        catch.weight_grams as f64 / 1000.0,
+                        catch.item_instance_id
+                    )
+                    .expect("writing to a String cannot fail");
+                }
+                if snapshot.catches.is_empty() {
+                    content.push_str("\nNo catches stored.");
+                }
+                Reply::private(content)
+            }
+            Err(error) => item_error_reply(error),
+        }
+    }
+
+    async fn locker_reply(&self, discord_user_id: u64) -> Reply {
+        match self.items.locker(discord_user_id).await {
+            Ok(items) if items.is_empty() => Reply::private("Tool Locker is empty."),
+            Ok(items) => {
+                let mut content = String::from("Tool Locker:");
+                for item in items.iter().take(DISPLAY_ITEM_LIMIT) {
+                    append_item_line(&mut content, item);
+                }
+                Reply::private(content)
+            }
+            Err(error) => item_error_reply(error),
+        }
+    }
+
+    async fn equipment_reply(&self, discord_user_id: u64) -> Reply {
+        match self.items.equipment(discord_user_id).await {
+            Ok(items) if items.is_empty() => Reply::public("No equipment is currently equipped."),
+            Ok(items) => {
+                let mut content = String::from("Equipped loadout:");
+                for entry in items {
+                    use std::fmt::Write as _;
+                    write!(
+                        content,
+                        "\n{} — {} [{}] — `{}`{}",
+                        entry.slot,
+                        entry.item.definition_key,
+                        entry.item.rarity,
+                        entry.item.item_instance_id,
+                        durability_suffix(&entry.item)
+                    )
+                    .expect("writing to a String cannot fail");
+                }
+                Reply::public(content)
+            }
+            Err(error) => item_error_reply(error),
+        }
+    }
+
+    async fn item_reply(&self, discord_user_id: u64, payload: CommandPayload) -> Reply {
+        let CommandPayload::ItemId(Some(item_id)) = payload else {
+            return Reply::private("Provide a valid item UUID. Example: `g item <uuid>`.");
+        };
+        match self.items.item(discord_user_id, item_id).await {
+            Ok(item) => Reply::private(format!(
+                "Item `{}`\nDefinition: {} v{}\nCategory: {} | Rarity: {}\nLocation: {}\nStarter: {} | Bound: {} | Tradeable: {} | Sellable: {} | Discardable: {}\nEnchantable: {} | Upgradeable: {} | Unbreakable: {} | Repairable: {}{}",
+                item.item_instance_id,
+                item.definition_key,
+                item.definition_version,
+                item.category,
+                item.rarity,
+                item.location,
+                item.is_starter,
+                item.is_account_bound,
+                item.is_tradeable,
+                item.is_sellable,
+                item.is_discardable,
+                item.is_enchantable,
+                item.is_upgradeable,
+                item.is_unbreakable,
+                item.is_repairable,
+                durability_suffix(&item)
+            )),
+            Err(error) => item_error_reply(error),
+        }
+    }
+
+    async fn equip_reply(
+        &self,
+        discord_user_id: u64,
+        external_request_key: String,
+        payload: CommandPayload,
+    ) -> Reply {
+        let CommandPayload::ItemId(Some(item_id)) = payload else {
+            return Reply::private("Provide a valid item UUID. Example: `g equip <uuid>`.");
+        };
+        match self
+            .items
+            .equip(discord_user_id, item_id, &external_request_key)
+            .await
+        {
+            Ok(receipt) => Reply::private(format!(
+                "Equipped `{}` in {}.{} Operation `{}`.",
+                item_id,
+                receipt.slot.as_deref().unwrap_or("UNKNOWN"),
+                receipt
+                    .displaced_item_instance_id
+                    .map(|id| format!(" Previous item `{id}` returned to Tool Locker."))
+                    .unwrap_or_default(),
+                receipt.operation_id
+            )),
+            Err(error) => item_error_reply(error),
+        }
+    }
+
+    async fn unequip_reply(
+        &self,
+        discord_user_id: u64,
+        external_request_key: String,
+        payload: CommandPayload,
+    ) -> Reply {
+        let CommandPayload::ItemId(Some(item_id)) = payload else {
+            return Reply::private("Provide a valid item UUID. Example: `g unequip <uuid>`.");
+        };
+        match self
+            .items
+            .unequip(discord_user_id, item_id, &external_request_key)
+            .await
+        {
+            Ok(receipt) => Reply::private(format!(
+                "Unequipped `{}` from {} to Tool Locker. Operation `{}`.",
+                item_id,
+                receipt.slot.as_deref().unwrap_or("UNKNOWN"),
+                receipt.operation_id
+            )),
+            Err(error) => item_error_reply(error),
+        }
+    }
+
     async fn refresh_bank_interest(&self, discord_user_id: u64) -> std::result::Result<(), Reply> {
         match self.bank_interest.accrue_interest(discord_user_id).await {
             Ok(_) | Err(BankInterestError::PlayerNotFound) => Ok(()),
             Err(error) => Err(bank_interest_error_reply(error)),
         }
+    }
+}
+
+fn append_item_line(content: &mut String, item: &ItemView) {
+    use std::fmt::Write as _;
+    write!(
+        content,
+        "\n{} [{}] — `{}`{}",
+        item.definition_key,
+        item.rarity,
+        item.item_instance_id,
+        durability_suffix(item)
+    )
+    .expect("writing to a String cannot fail");
+}
+
+fn durability_suffix(item: &ItemView) -> String {
+    match (item.current_durability, item.max_durability) {
+        (Some(current), Some(maximum)) => format!(" — durability {current}/{maximum}"),
+        _ if item.is_unbreakable => " — unbreakable".to_owned(),
+        _ => String::new(),
     }
 }
 
@@ -340,6 +577,22 @@ fn bank_error_reply(error: BankError) -> Reply {
 fn bank_interest_error_reply(error: BankInterestError) -> Reply {
     error!(%error, "Graphite Bank interest persistence/integrity failure");
     Reply::private("Unable to settle Bank interest right now.")
+}
+
+fn item_error_reply(error: ItemError) -> Reply {
+    if matches!(
+        &error,
+        ItemError::Database(_)
+            | ItemError::InvalidOperationResult(_)
+            | ItemError::OperationMissingAfterInsert
+            | ItemError::ArithmeticOverflow
+            | ItemError::EquipmentIntegrityMismatch
+    ) {
+        error!(%error, "Graphite item/storage persistence/integrity failure");
+        Reply::private("Unable to complete that item/storage request right now.")
+    } else {
+        Reply::private(format!("Item/storage request rejected: {error}"))
+    }
 }
 
 struct Handler {
@@ -450,6 +703,17 @@ fn slash_payload(id: CommandId, options: &[serenity::all::CommandDataOption]) ->
             };
             CommandPayload::Bank(request)
         }
+        CommandId::Equip | CommandId::Unequip | CommandId::Item => {
+            let item_id = options.iter().find_map(|option| {
+                if option.name == "item_id"
+                    && let CommandDataOptionValue::String(value) = &option.value
+                {
+                    return Uuid::parse_str(value).ok();
+                }
+                None
+            });
+            CommandPayload::ItemId(item_id)
+        }
         _ => CommandPayload::None,
     }
 }
@@ -472,6 +736,9 @@ fn text_payload(id: CommandId, args: &str) -> CommandPayload {
             }
         }
         CommandId::Bank => CommandPayload::Bank(parse_text_bank_request(args)),
+        CommandId::Equip | CommandId::Unequip | CommandId::Item => {
+            CommandPayload::ItemId(parse_single_uuid(args))
+        }
         _ => CommandPayload::None,
     }
 }
@@ -495,6 +762,24 @@ fn parse_text_bank_request(args: &str) -> BankRequest {
     } else {
         BankRequest::Invalid
     }
+}
+
+fn parse_single_uuid(args: &str) -> Option<Uuid> {
+    let mut parts = args.split_ascii_whitespace();
+    let value = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Uuid::parse_str(value).ok()
+}
+
+fn item_id_command(name: &str, description: &str) -> CreateCommand {
+    CreateCommand::new(name)
+        .description(description)
+        .add_option(
+            CreateCommandOption::new(CommandOptionType::String, "item_id", "Item instance UUID")
+                .required(true),
+        )
 }
 
 async fn register_commands(ctx: &Context, dev_guild_id: Option<u64>) -> Result<()> {
@@ -540,6 +825,13 @@ async fn register_commands(ctx: &Context, dev_guild_id: Option<u64>) -> Result<(
                 .required(false),
             ),
         CreateCommand::new("transactions").description("Show recent immutable Money ledger lines"),
+        CreateCommand::new("itembag").description("Show Item Bag capacity and stored stacks"),
+        CreateCommand::new("catchbag").description("Show CatchBag weight and catches"),
+        CreateCommand::new("locker").description("Show death-safe Tool Locker equipment"),
+        CreateCommand::new("equipment").description("Show currently equipped loadout"),
+        item_id_command("equip", "Equip an item instance from Tool Locker"),
+        item_id_command("unequip", "Move an equipped item instance to Tool Locker"),
+        item_id_command("item", "Inspect one owned item instance"),
     ];
 
     if let Some(guild_id) = dev_guild_id {
@@ -682,6 +974,7 @@ async fn main() -> Result<()> {
     let app = Arc::new(App {
         bank: BankService::new(store.clone()),
         bank_interest,
+        items: ItemService::new(store.clone()),
         store,
         identity_hmac_key: Arc::new(settings.identity_hmac_key),
     });
