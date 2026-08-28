@@ -6,7 +6,7 @@ This repository is being built in the order defined by the Graphite master speci
 
 ## Implemented foundation
 
-- Rust workspace split into deterministic domain primitives, PostgreSQL persistence, and the Discord application.
+- Rust workspace split into deterministic domain primitives, economy services, PostgreSQL persistence, and the Discord application.
 - UUIDv7 player and operation identities.
 - Versioned Terms of Service storage and explicit acceptance during registration.
 - Global player identity keyed by a unique Discord snowflake.
@@ -14,6 +14,7 @@ This repository is being built in the order defined by the Graphite master speci
 - Starter equipment creation and automatic equip on first registration.
 - Non-negative Wallet/Bank/liability materialized balances.
 - Immutable double-entry ledger schema with deferred balance enforcement.
+- Bank deposit/withdraw settlement with FIFO holding-age lots and canonical integer withdrawal-fee bands.
 - HMAC identity fingerprints for the temporary post-deletion re-registration cooldown.
 - Deterministic domain-separated ChaCha12 RNG primitives seeded from the operating-system CSPRNG.
 - Global text prefixes (`g`, `graphite`) and Discord mention parsing for the currently active command subset.
@@ -28,9 +29,10 @@ Only foundation-safe commands are registered right now:
 - `/register`
 - `/profile`
 - `/balance`
+- `/bank`
 - `/transactions`
 
-Mining, fishing, economy mutations, services, market/trade, clan, automation, minigames, and other systems are intentionally **not exposed as completed gameplay** until their implementation slice satisfies the master specification.
+`/bank` supports balance information plus Wallet↔Bank deposit/withdraw mutations. Bank interest accrual is intentionally not exposed as live yet. Mining, fishing, remaining economy mutations, services, market/trade, clan, automation, minigames, and other systems remain unavailable until their implementation slice satisfies the master specification.
 
 ## Requirements
 
@@ -63,7 +65,7 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 ```
 
-The CI workflow provisions PostgreSQL 18.6 and runs the persistence integration test. CI is intentionally read-only: it reports formatting or test failures instead of committing fixes back to the PR branch.
+The CI workflow provisions PostgreSQL 18.6 and runs PostgreSQL integration coverage. CI is intentionally read-only: it reports formatting or test failures instead of committing fixes back to the PR branch.
 
 ## Architecture rule
 

@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{Context as _, Result, bail};
 use graphite_core::{CommandId, IdentityFingerprint, parse_text_command};
+use graphite_economy::{BANK_MIN_WITHDRAWAL, BankError, BankService};
 use graphite_store::{PgStore, StoreError, TosDocument};
 use serenity::{
     Client,
@@ -26,7 +27,16 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 struct App {
     store: PgStore,
+    bank: BankService,
     identity_hmac_key: Arc<Vec<u8>>,
+}
+
+#[derive(Clone, Debug)]
+enum BankRequest {
+    Info,
+    Deposit(i64),
+    Withdraw(i64),
+    Invalid,
 }
 
 #[derive(Clone, Debug)]
@@ -36,6 +46,7 @@ enum CommandPayload {
         accept: bool,
         tos_version: Option<i32>,
     },
+    Bank(BankRequest),
 }
 
 struct CommandRequest {
@@ -70,7 +81,7 @@ impl App {
     async fn execute(&self, request: CommandRequest) -> Reply {
         match request.id {
             CommandId::Help => Reply::private(
-                "Active foundation commands: /help, /tos, /register, /profile, /balance, /transactions. Text prefixes: g, graphite, or a bot mention. Unfinished gameplay systems are intentionally not registered yet.",
+                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions. Text prefixes: g, graphite, or a bot mention. Bank deposit/withdraw is live; Bank interest accrual and unfinished gameplay systems remain unavailable.",
             ),
             CommandId::Tos => self.tos_reply().await,
             CommandId::Register => {
@@ -83,6 +94,14 @@ impl App {
             }
             CommandId::Profile => self.profile_reply(request.discord_user_id).await,
             CommandId::Balance => self.balance_reply(request.discord_user_id).await,
+            CommandId::Bank => {
+                self.bank_reply(
+                    request.discord_user_id,
+                    request.external_request_key,
+                    request.payload,
+                )
+                .await
+            }
             CommandId::Transactions => self.transactions_reply(request.discord_user_id).await,
         }
     }
@@ -192,6 +211,57 @@ impl App {
         }
     }
 
+    async fn bank_reply(
+        &self,
+        discord_user_id: u64,
+        external_request_key: String,
+        payload: CommandPayload,
+    ) -> Reply {
+        let CommandPayload::Bank(request) = payload else {
+            return Reply::private("Invalid Bank request.");
+        };
+
+        match request {
+            BankRequest::Info => match self.bank.snapshot(discord_user_id).await {
+                Ok(snapshot) => Reply::private(format!(
+                    "Wallet: {} Money\nBank: {} Money\nActive deposit lots: {}\nNormal minimum withdrawal: {} Money\nBase interest policy: 0.004%/day (interest accrual is not live yet).",
+                    snapshot.wallet, snapshot.bank, snapshot.active_lot_count, BANK_MIN_WITHDRAWAL
+                )),
+                Err(error) => bank_error_reply(error),
+            },
+            BankRequest::Deposit(amount) => match self
+                .bank
+                .deposit(discord_user_id, amount, &external_request_key)
+                .await
+            {
+                Ok(receipt) => Reply::private(format!(
+                    "Deposited {} Money. Wallet: {} | Bank: {}. Operation `{}`.",
+                    receipt.gross_amount, receipt.wallet, receipt.bank, receipt.operation_id
+                )),
+                Err(error) => bank_error_reply(error),
+            },
+            BankRequest::Withdraw(amount) => match self
+                .bank
+                .withdraw(discord_user_id, amount, &external_request_key)
+                .await
+            {
+                Ok(receipt) => Reply::private(format!(
+                    "Withdrew {} Money. Fee: {} | Received: {}. Wallet: {} | Bank: {}. Operation `{}`.",
+                    receipt.gross_amount,
+                    receipt.fee_amount,
+                    receipt.net_amount,
+                    receipt.wallet,
+                    receipt.bank,
+                    receipt.operation_id
+                )),
+                Err(error) => bank_error_reply(error),
+            },
+            BankRequest::Invalid => Reply::private(
+                "Invalid Bank syntax. Use `/bank`, `/bank deposit:<amount>`, `/bank withdraw:<amount>`, `g bank`, `g bank deposit <amount>`, or `g bank withdraw <amount>`.",
+            ),
+        }
+    }
+
     async fn transactions_reply(&self, discord_user_id: u64) -> Reply {
         match self.store.recent_transactions(discord_user_id, 10).await {
             Ok(lines) if lines.is_empty() => Reply::private("No Money ledger entries yet."),
@@ -216,6 +286,23 @@ impl App {
 fn internal_error(action: &str, error: StoreError) -> Reply {
     error!(%error, %action, "Graphite persistence failure");
     Reply::private(format!("Unable to {action} right now."))
+}
+
+fn bank_error_reply(error: BankError) -> Reply {
+    if matches!(
+        &error,
+        BankError::Database(_)
+            | BankError::InvalidOperationResult(_)
+            | BankError::LotIntegrityMismatch
+            | BankError::OperationMissingAfterInsert
+            | BankError::ArithmeticOverflow
+            | BankError::InvalidFee
+    ) {
+        error!(%error, "Graphite Bank persistence/integrity failure");
+        Reply::private("Unable to complete that Bank request right now.")
+    } else {
+        Reply::private(format!("Bank request rejected: {error}"))
+    }
 }
 
 struct Handler {
@@ -288,44 +375,88 @@ impl EventHandler for Handler {
 }
 
 fn slash_payload(id: CommandId, options: &[serenity::all::CommandDataOption]) -> CommandPayload {
-    if id != CommandId::Register {
-        return CommandPayload::None;
-    }
-
-    let mut accept = false;
-    let mut tos_version = None;
-    for option in options {
-        match (option.name.as_str(), &option.value) {
-            ("accept", CommandDataOptionValue::Boolean(value)) => accept = *value,
-            ("tos_version", CommandDataOptionValue::Integer(value)) => {
-                tos_version = i32::try_from(*value).ok();
+    match id {
+        CommandId::Register => {
+            let mut accept = false;
+            let mut tos_version = None;
+            for option in options {
+                match (option.name.as_str(), &option.value) {
+                    ("accept", CommandDataOptionValue::Boolean(value)) => accept = *value,
+                    ("tos_version", CommandDataOptionValue::Integer(value)) => {
+                        tos_version = i32::try_from(*value).ok();
+                    }
+                    _ => {}
+                }
             }
-            _ => {}
+            CommandPayload::Register {
+                accept,
+                tos_version,
+            }
         }
-    }
-    CommandPayload::Register {
-        accept,
-        tos_version,
+        CommandId::Bank => {
+            let mut deposit = None;
+            let mut withdraw = None;
+            for option in options {
+                match (option.name.as_str(), &option.value) {
+                    ("deposit", CommandDataOptionValue::Integer(value)) => deposit = Some(*value),
+                    ("withdraw", CommandDataOptionValue::Integer(value)) => {
+                        withdraw = Some(*value);
+                    }
+                    _ => {}
+                }
+            }
+            let request = match (deposit, withdraw) {
+                (None, None) => BankRequest::Info,
+                (Some(amount), None) => BankRequest::Deposit(amount),
+                (None, Some(amount)) => BankRequest::Withdraw(amount),
+                (Some(_), Some(_)) => BankRequest::Invalid,
+            };
+            CommandPayload::Bank(request)
+        }
+        _ => CommandPayload::None,
     }
 }
 
 fn text_payload(id: CommandId, args: &str) -> CommandPayload {
-    if id != CommandId::Register {
-        return CommandPayload::None;
+    match id {
+        CommandId::Register => {
+            let mut parts = args.split_ascii_whitespace();
+            let accept = parts
+                .next()
+                .is_some_and(|token| token.eq_ignore_ascii_case("accept"));
+            let tos_version = if accept {
+                parts.next().and_then(|value| value.parse::<i32>().ok())
+            } else {
+                None
+            };
+            CommandPayload::Register {
+                accept,
+                tos_version,
+            }
+        }
+        CommandId::Bank => CommandPayload::Bank(parse_text_bank_request(args)),
+        _ => CommandPayload::None,
+    }
+}
+
+fn parse_text_bank_request(args: &str) -> BankRequest {
+    let mut parts = args.split_ascii_whitespace();
+    let Some(action) = parts.next() else {
+        return BankRequest::Info;
+    };
+    let Some(amount) = parts.next().and_then(|value| value.parse::<i64>().ok()) else {
+        return BankRequest::Invalid;
+    };
+    if parts.next().is_some() {
+        return BankRequest::Invalid;
     }
 
-    let mut parts = args.split_ascii_whitespace();
-    let accept = parts
-        .next()
-        .is_some_and(|token| token.eq_ignore_ascii_case("accept"));
-    let tos_version = if accept {
-        parts.next().and_then(|value| value.parse::<i32>().ok())
+    if action.eq_ignore_ascii_case("deposit") {
+        BankRequest::Deposit(amount)
+    } else if action.eq_ignore_ascii_case("withdraw") {
+        BankRequest::Withdraw(amount)
     } else {
-        None
-    };
-    CommandPayload::Register {
-        accept,
-        tos_version,
+        BankRequest::Invalid
     }
 }
 
@@ -353,6 +484,24 @@ async fn register_commands(ctx: &Context, dev_guild_id: Option<u64>) -> Result<(
             ),
         CreateCommand::new("profile").description("Show your public Graphite profile"),
         CreateCommand::new("balance").description("Show your Wallet and Bank balances"),
+        CreateCommand::new("bank")
+            .description("View Bank or move Money between Wallet and Bank")
+            .add_option(
+                CreateCommandOption::new(
+                    CommandOptionType::Integer,
+                    "deposit",
+                    "Move this much Money from Wallet to Bank",
+                )
+                .required(false),
+            )
+            .add_option(
+                CreateCommandOption::new(
+                    CommandOptionType::Integer,
+                    "withdraw",
+                    "Move this much Money from Bank to Wallet before fees",
+                )
+                .required(false),
+            ),
         CreateCommand::new("transactions").description("Show recent immutable Money ledger lines"),
     ];
 
@@ -458,6 +607,7 @@ async fn main() -> Result<()> {
     }
 
     let app = Arc::new(App {
+        bank: BankService::new(store.clone()),
         store,
         identity_hmac_key: Arc::new(settings.identity_hmac_key),
     });

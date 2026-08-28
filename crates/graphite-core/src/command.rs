@@ -5,6 +5,7 @@ pub enum CommandId {
     Tos,
     Profile,
     Balance,
+    Bank,
     Transactions,
 }
 
@@ -24,6 +25,8 @@ impl CommandId {
             || token.eq_ignore_ascii_case("wallet")
         {
             Some(Self::Balance)
+        } else if token.eq_ignore_ascii_case("bank") || token.eq_ignore_ascii_case("bk") {
+            Some(Self::Bank)
         } else if token.eq_ignore_ascii_case("transactions") || token.eq_ignore_ascii_case("tx") {
             Some(Self::Transactions)
         } else {
@@ -105,6 +108,8 @@ mod tests {
             ("graphite balance", CommandId::Balance),
             ("G BAL", CommandId::Balance),
             ("g wallet", CommandId::Balance),
+            ("gbank", CommandId::Bank),
+            ("g bk", CommandId::Bank),
         ];
 
         for (input, expected) in cases {
@@ -136,5 +141,9 @@ mod tests {
         let parsed = parse_text_command("g register accept 3", 42, None).unwrap();
         assert_eq!(parsed.id, CommandId::Register);
         assert_eq!(parsed.args, "accept 3");
+
+        let bank = parse_text_command("g bank withdraw 500", 42, None).unwrap();
+        assert_eq!(bank.id, CommandId::Bank);
+        assert_eq!(bank.args, "withdraw 500");
     }
 }

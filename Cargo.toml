@@ -2,6 +2,7 @@
 members = [
     "apps/graphite-bot",
     "crates/graphite-core",
+    "crates/graphite-economy",
     "crates/graphite-store",
 ]
 resolver = "2"
