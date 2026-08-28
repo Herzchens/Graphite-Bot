@@ -4,11 +4,15 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use anyhow::{Context as _, Result, bail};
 use graphite_core::{CommandId, IdentityFingerprint, parse_text_command};
-use graphite_economy::{BANK_MIN_WITHDRAWAL, BankError, BankService};
+use graphite_economy::{
+    BANK_BONUS_PRINCIPAL_TRANCHE, BANK_MIN_WITHDRAWAL, BankError, BankInterestError,
+    BankInterestService, BankService,
+};
 use graphite_store::{PgStore, StoreError, TosDocument};
 use serenity::{
     Client,
@@ -24,10 +28,15 @@ use serenity::{
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
+const BANK_INTEREST_SCAN_INTERVAL: Duration = Duration::from_secs(300);
+const BANK_INTEREST_BATCH_SIZE: u32 = 250;
+const BANK_INTEREST_MAX_BATCHES_PER_TICK: u8 = 8;
+
 #[derive(Clone)]
 struct App {
     store: PgStore,
     bank: BankService,
+    bank_interest: BankInterestService,
     identity_hmac_key: Arc<Vec<u8>>,
 }
 
@@ -81,7 +90,7 @@ impl App {
     async fn execute(&self, request: CommandRequest) -> Reply {
         match request.id {
             CommandId::Help => Reply::private(
-                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions. Text prefixes: g, graphite, or a bot mention. Bank deposit/withdraw is live; Bank interest accrual and unfinished gameplay systems remain unavailable.",
+                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions. Text prefixes: g, graphite, or a bot mention. Bank deposit/withdraw and automatic daily interest accrual are live; unfinished gameplay systems remain unavailable.",
             ),
             CommandId::Tos => self.tos_reply().await,
             CommandId::Register => {
@@ -180,6 +189,9 @@ impl App {
     }
 
     async fn profile_reply(&self, discord_user_id: u64) -> Reply {
+        if let Err(reply) = self.refresh_bank_interest(discord_user_id).await {
+            return reply;
+        }
         match self.store.profile_for_discord(discord_user_id).await {
             Ok(Some(profile)) => Reply::public(format!(
                 "Graphite profile `{}`\nCreated: {}\nStarter loadout: {}/7\nWallet: {} | Bank: {}",
@@ -197,6 +209,9 @@ impl App {
     }
 
     async fn balance_reply(&self, discord_user_id: u64) -> Reply {
+        if let Err(reply) = self.refresh_bank_interest(discord_user_id).await {
+            return reply;
+        }
         match self.store.profile_for_discord(discord_user_id).await {
             Ok(Some(profile)) => Reply::private(format!(
                 "Wallet: {} Money\nBank: {} Money\nRecoverable liability: {} Money",
@@ -220,12 +235,19 @@ impl App {
         let CommandPayload::Bank(request) = payload else {
             return Reply::private("Invalid Bank request.");
         };
+        if let Err(reply) = self.refresh_bank_interest(discord_user_id).await {
+            return reply;
+        }
 
         match request {
             BankRequest::Info => match self.bank.snapshot(discord_user_id).await {
                 Ok(snapshot) => Reply::private(format!(
-                    "Wallet: {} Money\nBank: {} Money\nActive deposit lots: {}\nNormal minimum withdrawal: {} Money\nBase interest policy: 0.004%/day (interest accrual is not live yet).",
-                    snapshot.wallet, snapshot.bank, snapshot.active_lot_count, BANK_MIN_WITHDRAWAL
+                    "Wallet: {} Money\nBank: {} Money\nActive deposit lots: {}\nNormal minimum withdrawal: {} Money\nBase interest: 0.004%/day. Rebirth bonus applies only to the first {} Money and asymptotically raises that tranche to 0.006%/day.",
+                    snapshot.wallet,
+                    snapshot.bank,
+                    snapshot.active_lot_count,
+                    BANK_MIN_WITHDRAWAL,
+                    BANK_BONUS_PRINCIPAL_TRANCHE
                 )),
                 Err(error) => bank_error_reply(error),
             },
@@ -263,6 +285,9 @@ impl App {
     }
 
     async fn transactions_reply(&self, discord_user_id: u64) -> Reply {
+        if let Err(reply) = self.refresh_bank_interest(discord_user_id).await {
+            return reply;
+        }
         match self.store.recent_transactions(discord_user_id, 10).await {
             Ok(lines) if lines.is_empty() => Reply::private("No Money ledger entries yet."),
             Ok(lines) => {
@@ -279,6 +304,13 @@ impl App {
                 Reply::private(content)
             }
             Err(error) => internal_error("load transactions", error),
+        }
+    }
+
+    async fn refresh_bank_interest(&self, discord_user_id: u64) -> std::result::Result<(), Reply> {
+        match self.bank_interest.accrue_interest(discord_user_id).await {
+            Ok(_) | Err(BankInterestError::PlayerNotFound) => Ok(()),
+            Err(error) => Err(bank_interest_error_reply(error)),
         }
     }
 }
@@ -303,6 +335,11 @@ fn bank_error_reply(error: BankError) -> Reply {
     } else {
         Reply::private(format!("Bank request rejected: {error}"))
     }
+}
+
+fn bank_interest_error_reply(error: BankInterestError) -> Reply {
+    error!(%error, "Graphite Bank interest persistence/integrity failure");
+    Reply::private("Unable to settle Bank interest right now.")
 }
 
 struct Handler {
@@ -587,6 +624,40 @@ fn decode_hex_32(name: &str, value: &str) -> Result<[u8; 32]> {
     Ok(output)
 }
 
+fn spawn_bank_interest_worker(bank_interest: BankInterestService) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(BANK_INTEREST_SCAN_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            interval.tick().await;
+            for _ in 0..BANK_INTEREST_MAX_BATCHES_PER_TICK {
+                match bank_interest
+                    .accrue_due_interest_batch(BANK_INTEREST_BATCH_SIZE)
+                    .await
+                {
+                    Ok(summary) => {
+                        if summary.players_processed > 0 {
+                            info!(
+                                players = summary.players_processed,
+                                days = summary.days_processed,
+                                interest = summary.interest_credited,
+                                "settled due Bank interest"
+                            );
+                        }
+                        if summary.players_processed < BANK_INTEREST_BATCH_SIZE {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        error!(%error, "Bank interest worker batch failed");
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv();
@@ -606,8 +677,11 @@ async fn main() -> Result<()> {
         warn!("no current Terms of Service configured; registration will remain disabled");
     }
 
+    let bank_interest = BankInterestService::new(store.clone());
+    spawn_bank_interest_worker(bank_interest.clone());
     let app = Arc::new(App {
         bank: BankService::new(store.clone()),
+        bank_interest,
         store,
         identity_hmac_key: Arc::new(settings.identity_hmac_key),
     });
