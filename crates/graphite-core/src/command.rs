@@ -7,6 +7,13 @@ pub enum CommandId {
     Balance,
     Bank,
     Transactions,
+    ItemBag,
+    CatchBag,
+    Locker,
+    Equipment,
+    Equip,
+    Unequip,
+    Item,
 }
 
 impl CommandId {
@@ -29,6 +36,32 @@ impl CommandId {
             Some(Self::Bank)
         } else if token.eq_ignore_ascii_case("transactions") || token.eq_ignore_ascii_case("tx") {
             Some(Self::Transactions)
+        } else if token.eq_ignore_ascii_case("itembag")
+            || token.eq_ignore_ascii_case("ib")
+            || token.eq_ignore_ascii_case("bag")
+        {
+            Some(Self::ItemBag)
+        } else if token.eq_ignore_ascii_case("catchbag")
+            || token.eq_ignore_ascii_case("cb")
+            || token.eq_ignore_ascii_case("fb")
+        {
+            Some(Self::CatchBag)
+        } else if token.eq_ignore_ascii_case("locker")
+            || token.eq_ignore_ascii_case("lk")
+            || token.eq_ignore_ascii_case("tools")
+        {
+            Some(Self::Locker)
+        } else if token.eq_ignore_ascii_case("equipment")
+            || token.eq_ignore_ascii_case("eq")
+            || token.eq_ignore_ascii_case("gear")
+        {
+            Some(Self::Equipment)
+        } else if token.eq_ignore_ascii_case("equip") {
+            Some(Self::Equip)
+        } else if token.eq_ignore_ascii_case("unequip") {
+            Some(Self::Unequip)
+        } else if token.eq_ignore_ascii_case("item") {
+            Some(Self::Item)
         } else {
             None
         }
@@ -110,6 +143,11 @@ mod tests {
             ("g wallet", CommandId::Balance),
             ("gbank", CommandId::Bank),
             ("g bk", CommandId::Bank),
+            ("gib", CommandId::ItemBag),
+            ("g bag", CommandId::ItemBag),
+            ("gcb", CommandId::CatchBag),
+            ("g tools", CommandId::Locker),
+            ("ggear", CommandId::Equipment),
         ];
 
         for (input, expected) in cases {
@@ -145,5 +183,10 @@ mod tests {
         let bank = parse_text_command("g bank withdraw 500", 42, None).unwrap();
         assert_eq!(bank.id, CommandId::Bank);
         assert_eq!(bank.args, "withdraw 500");
+
+        let equip =
+            parse_text_command("g equip 018f0f86-1234-7abc-8def-1234567890ab", 42, None).unwrap();
+        assert_eq!(equip.id, CommandId::Equip);
+        assert_eq!(equip.args, "018f0f86-1234-7abc-8def-1234567890ab");
     }
 }

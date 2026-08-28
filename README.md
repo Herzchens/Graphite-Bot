@@ -6,7 +6,7 @@ This repository is being built in the order defined by the Graphite master speci
 
 ## Implemented foundation
 
-- Rust workspace split into deterministic domain primitives, economy services, PostgreSQL persistence, and the Discord application.
+- Rust workspace split into deterministic domain primitives, economy services, item/storage services, PostgreSQL persistence, and the Discord application.
 - UUIDv7 player and operation identities.
 - Versioned Terms of Service storage and explicit acceptance during registration.
 - Global player identity keyed by a unique Discord snowflake.
@@ -18,6 +18,11 @@ This repository is being built in the order defined by the Graphite master speci
 - Automatic Bank interest with deterministic fixed-point remainder, 0.004%/day base return, and the canonical Rebirth bonus capped to the first 10,000,000 Money.
 - Soft-freeze accrual and hard-freeze pause semantics for Bank interest.
 - System-authored Bank-interest operations with immutable ledger provenance and transactional outbox delivery.
+- Version-pinned ItemDefinition history plus unique ItemInstances and stack-commodity storage.
+- Item Bag capacity/occupancy accounting from the 36-slot baseline and definition-specific stack caps.
+- CatchBag weight accounting from the 1,000 kg baseline using integer grams internally.
+- Capacity-safe pending asset delivery instead of silent loss when an Item Bag delivery cannot fit.
+- Death-safe Tool Locker, equipped-slot consistency constraints, item inspection, and idempotent equip/unequip mutations.
 - HMAC identity fingerprints for the temporary post-deletion re-registration cooldown.
 - Deterministic domain-separated ChaCha12 RNG primitives seeded from the operating-system CSPRNG.
 - Global text prefixes (`g`, `graphite`) and Discord mention parsing for the currently active command subset.
@@ -25,7 +30,7 @@ This repository is being built in the order defined by the Graphite master speci
 
 ## Active command subset
 
-Only foundation-safe commands are registered right now:
+Only implemented commands are registered right now:
 
 - `/help`
 - `/tos`
@@ -34,8 +39,17 @@ Only foundation-safe commands are registered right now:
 - `/balance`
 - `/bank`
 - `/transactions`
+- `/itembag` (`ib`, `bag`)
+- `/catchbag` (`cb`, `fb`)
+- `/locker` (`lk`, `tools`)
+- `/equipment` (`eq`, `gear`)
+- `/equip`
+- `/unequip`
+- `/item`
 
-`/bank` supports balance information plus Wallet↔Bank deposit/withdraw mutations. Bank interest accrues automatically and is refreshed before balance-sensitive command paths; a bounded background worker catches up accounts that are not actively issuing commands. Mining, fishing, remaining economy mutations, services, market/trade, clan, automation, minigames, and other systems remain unavailable until their implementation slice satisfies the master specification.
+`/bank` supports balance information plus Wallet↔Bank deposit/withdraw mutations. Bank interest accrues automatically and is refreshed before balance-sensitive command paths; a bounded background worker catches up accounts that are not actively issuing commands.
+
+The storage slice exposes safe reads plus equipment movement. Generic future reward systems can settle stack delivery into Item Bag or an authoritative pending-delivery row when capacity is insufficient. `/discard` is intentionally not registered yet because the master specification names Trash Recovery but this slice does not invent missing recovery/expiry behavior. Storage-capacity purchases, fishing, mining, remaining economy mutations, services, market/trade, clan, automation, minigames, and other systems remain unavailable until their implementation slice satisfies the master specification.
 
 The database already stores `rebirth_count` because Bank interest depends on it, but Account progression and the Rebirth command are not implemented yet.
 
@@ -74,4 +88,4 @@ The CI workflow provisions PostgreSQL 18.6 and runs PostgreSQL integration cover
 
 ## Architecture rule
 
-PostgreSQL owns canonical player, asset, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.
+PostgreSQL owns canonical player, asset, storage, equipment, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.

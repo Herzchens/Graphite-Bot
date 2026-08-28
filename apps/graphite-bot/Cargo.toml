@@ -11,9 +11,11 @@ anyhow.workspace = true
 dotenvy.workspace = true
 graphite-core = { path = "../../crates/graphite-core" }
 graphite-economy = { path = "../../crates/graphite-economy" }
+graphite-items = { path = "../../crates/graphite-items" }
 graphite-store = { path = "../../crates/graphite-store" }
 hex.workspace = true
 serenity.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true
