@@ -323,18 +323,13 @@ impl ProgressionService {
         discord_user_id: u64,
         external_request_key: &str,
     ) -> Result<RebirthReceipt, ProgressionError> {
-        BankInterestService::new(self.store.clone())
-            .accrue_interest(discord_user_id)
-            .await
-            .map_err(|error| ProgressionError::BankInterest(Box::new(error)))?;
-
-        let discord_user_id = snowflake_to_i64(discord_user_id)?;
+        let persisted_discord_user_id = snowflake_to_i64(discord_user_id)?;
         let kind = MutationKind::Rebirth;
         let request_hash = rebirth_request_hash();
         let mut tx = self.store.pool().begin().await?;
         let operation_id = match resolve_operation(
             &mut tx,
-            discord_user_id,
+            persisted_discord_user_id,
             external_request_key,
             kind,
             &request_hash,
@@ -350,7 +345,13 @@ impl ProgressionService {
             OperationResolution::Pending(operation_id) => operation_id,
         };
 
-        let player = lock_progression(&mut tx, discord_user_id).await?;
+        ensure_rebirth_eligible(&mut tx, persisted_discord_user_id).await?;
+        BankInterestService::new(self.store.clone())
+            .accrue_interest(discord_user_id)
+            .await
+            .map_err(|error| ProgressionError::BankInterest(Box::new(error)))?;
+
+        let player = lock_progression(&mut tx, persisted_discord_user_id).await?;
         ensure_mutable(&player.status)?;
         if account_level(player.account_xp)? != ACCOUNT_MAX_LEVEL {
             return Err(ProgressionError::RebirthRequiresLevelCap);
@@ -583,6 +584,32 @@ async fn lock_progression(
         activity_xp_points: row.try_get("activity_xp_points")?,
         wallet: row.try_get("wallet")?,
     })
+}
+
+async fn ensure_rebirth_eligible(
+    tx: &mut Transaction<'_, Postgres>,
+    discord_user_id: i64,
+) -> Result<(), ProgressionError> {
+    let row = sqlx::query(
+        r#"
+        SELECT p.status, g.account_xp
+          FROM players p
+          JOIN player_progression g ON g.player_id = p.id
+         WHERE p.discord_user_id = $1
+           AND p.status <> 'DELETED'
+        "#,
+    )
+    .bind(discord_user_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(ProgressionError::PlayerNotFound)?;
+    let status: String = row.try_get("status")?;
+    ensure_mutable(&status)?;
+    let account_xp: i64 = row.try_get("account_xp")?;
+    if account_level(account_xp)? != ACCOUNT_MAX_LEVEL {
+        return Err(ProgressionError::RebirthRequiresLevelCap);
+    }
+    Ok(())
 }
 
 fn ensure_mutable(status: &str) -> Result<(), ProgressionError> {
