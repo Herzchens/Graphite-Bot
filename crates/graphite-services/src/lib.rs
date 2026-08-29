@@ -2,6 +2,7 @@ mod enchant_appraisal;
 mod equipment_appraisal;
 mod equipment_policy;
 mod forge;
+mod ordinary_forge;
 mod percentage_fee;
 mod repair;
 mod reservation;
@@ -30,6 +31,10 @@ pub use forge::{
     AdvancedForgeStackRecipe, ForgeFailurePolicy, ForgePolicyError, ForgePostConfirmCancellation,
     ForgeSuccessChance, advanced_forge_promotion_policy, advanced_forge_stack_policy,
     project_promoted_durability,
+};
+pub use ordinary_forge::{
+    FreshForgeOutcomePolicy, FreshForgeOutputLocation, FreshOrdinaryForgePolicyError,
+    FreshOrdinaryForgePreview, preview_fresh_ordinary_forge,
 };
 pub use repair::{
     RepairCancelRefund, RepairMaterial, RepairMathError, RepairPreview, RepairSlot, RepairTier,
