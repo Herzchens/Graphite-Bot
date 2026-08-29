@@ -1,6 +1,7 @@
 mod reservation;
 mod smelting;
 mod smelting_runtime;
+mod smelting_terminal;
 
 pub use reservation::{
     ReservationRole, ServiceJobReservationError, ServiceJobReservationReceipt,
@@ -14,5 +15,9 @@ pub use smelting::{
 pub use smelting_runtime::{
     ORDINARY_SMELT_MICROS_PER_UNIT, SmeltingRuntimeError, SmeltingRuntimeProgress,
     SmeltingRuntimeReceipt, SmeltingRuntimeRequest, attach_smelting_job_runtime,
-    load_smelting_job_runtime, project_smelting_runtime_progress,
+    load_smelting_job_runtime,
+};
+pub use smelting_terminal::{
+    SmeltingTerminalError, SmeltingTerminalKind, SmeltingTerminalPlan, plan_smelting_terminal,
+    project_smelting_runtime_progress,
 };
