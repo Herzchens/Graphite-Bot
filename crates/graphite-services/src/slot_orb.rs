@@ -1,7 +1,6 @@
+use crate::percentage_fee::checked_ceil_percentage;
 use serde::Serialize;
 use thiserror::Error;
-
-const PERCENT_DENOMINATOR: i128 = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -195,10 +194,11 @@ pub fn preview_slot_orb_attempt(
         return Err(SlotOrbPolicyError::NegativeEnhancedAppraisal);
     }
 
-    let application_fee = ceil_percentage_fee(
+    let application_fee = checked_ceil_percentage(
         current_enhanced_appraisal,
-        i128::from(policy.application_fee_percent),
-    )?;
+        policy.application_fee_percent,
+    )
+    .ok_or(SlotOrbPolicyError::ArithmeticOverflow)?;
 
     Ok(SlotOrbAttemptPreview {
         policy,
@@ -206,26 +206,6 @@ pub fn preview_slot_orb_attempt(
         current_enhanced_appraisal,
         application_fee,
     })
-}
-
-fn ceil_percentage_fee(value: i64, percent: i128) -> Result<i64, SlotOrbPolicyError> {
-    debug_assert!(value >= 0);
-    debug_assert!(percent >= 0);
-
-    let numerator = i128::from(value)
-        .checked_mul(percent)
-        .ok_or(SlotOrbPolicyError::ArithmeticOverflow)?;
-    let quotient = numerator / PERCENT_DENOMINATOR;
-    let remainder = numerator % PERCENT_DENOMINATOR;
-    let rounded = if remainder == 0 {
-        quotient
-    } else {
-        quotient
-            .checked_add(1)
-            .ok_or(SlotOrbPolicyError::ArithmeticOverflow)?
-    };
-
-    i64::try_from(rounded).map_err(|_| SlotOrbPolicyError::ArithmeticOverflow)
 }
 
 #[cfg(test)]
