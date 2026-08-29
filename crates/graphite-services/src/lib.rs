@@ -1,3 +1,4 @@
+mod enchant_appraisal;
 mod equipment_policy;
 mod repair;
 mod reservation;
@@ -6,6 +7,10 @@ mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 
+pub use enchant_appraisal::{
+    CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
+    EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,
+};
 pub use equipment_policy::{
     BaseEquipmentAppraisal, BaseEquipmentAppraisalSource, EquipmentAppraisalError,
     EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
