@@ -13,6 +13,7 @@ mod smelting_runtime;
 mod smelting_terminal;
 mod soulbind;
 mod upgrade_appraisal;
+mod upgrade_outcome;
 
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
@@ -75,4 +76,9 @@ pub use soulbind::{
 pub use upgrade_appraisal::{
     ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
     scale_base_appraisal_by_upgrade, upgrade_appraisal_factors,
+};
+pub use upgrade_outcome::{
+    UpgradeBaseOutcomePolicy, UpgradeOutcomePolicyError, UpgradeProbability,
+    UpgradeSparklingPreview, UpgradeStabilizePreview, preview_sparkling_upgrade_success,
+    preview_stabilize_downgrade_prevention, upgrade_base_outcome_policy,
 };
