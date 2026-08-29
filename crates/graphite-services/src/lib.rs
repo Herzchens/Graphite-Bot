@@ -1,5 +1,6 @@
 mod enchant_appraisal;
 mod equipment_policy;
+mod forge;
 mod repair;
 mod reservation;
 mod smelting;
@@ -14,6 +15,12 @@ pub use enchant_appraisal::{
 pub use equipment_policy::{
     BaseEquipmentAppraisal, BaseEquipmentAppraisalSource, EquipmentAppraisalError,
     EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
+};
+pub use forge::{
+    AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
+    AdvancedForgeStackRecipe, ForgeFailurePolicy, ForgePolicyError, ForgePostConfirmCancellation,
+    ForgeSuccessChance, advanced_forge_promotion_policy, advanced_forge_stack_policy,
+    project_promoted_durability,
 };
 pub use repair::{
     RepairCancelRefund, RepairMaterial, RepairMathError, RepairPreview, RepairSlot, RepairTier,
