@@ -1,4 +1,5 @@
 mod enchant_appraisal;
+mod equipment_appraisal;
 mod equipment_policy;
 mod forge;
 mod percentage_fee;
@@ -15,6 +16,10 @@ mod upgrade_appraisal;
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,
+};
+pub use equipment_appraisal::{
+    CanonicalEquipmentAppraisal, CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
+    compose_canonical_equipment_appraisal,
 };
 pub use equipment_policy::{
     BaseEquipmentAppraisal, BaseEquipmentAppraisalSource, EquipmentAppraisalError,
