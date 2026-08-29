@@ -3,6 +3,7 @@ mod equipment_policy;
 mod forge;
 mod repair;
 mod reservation;
+mod slot_orb;
 mod smelting;
 mod smelting_context;
 mod smelting_runtime;
@@ -29,6 +30,10 @@ pub use repair::{
 pub use reservation::{
     ReservationRole, ServiceJobReservationError, ServiceJobReservationReceipt,
     ServiceJobReservationRequest, StackReservationRequest, reserve_service_job_stacks,
+};
+pub use slot_orb::{
+    SlotOrbAttemptPreview, SlotOrbFailurePolicy, SlotOrbFamily, SlotOrbPolicy, SlotOrbPolicyError,
+    SlotOrbSuccessChance, SlotOrbUnlock, preview_slot_orb_attempt, slot_orb_policy,
 };
 pub use smelting::{
     ORDINARY_SMELT_SECONDS_PER_UNIT, SmeltFuelKind, SmeltPreview, SmeltStopSettlement,
