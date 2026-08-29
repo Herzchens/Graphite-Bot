@@ -490,3 +490,65 @@ Rust 1.98.0 remains the current stable release as of this implementation pass. T
 **Final decision**
 
 Keep the existing stable Rust 1.98 baseline and direct dependency pins. Do not mix unrelated crate upgrades or prerelease/beta/RC versions into the Bait Rack policy commit.
+
+## Fishing area first-unlock policy slice
+
+Branch: `feat/fishing-area-unlock-policy`
+
+### 1. The full §77.12 capability kernel was narrowed instead of inventing fractional-power semantics
+
+**Initial next-step plan**
+
+Implement §77.12 as one Fishing prerequisite slice: area progression, fish tension, effective Rod line strength, line-break probability, and over-cap catch probability.
+
+**Implementation-time finding — `UNRESOLVED`**
+
+Area progression is fully discrete and frozen, but the canonical line-break formula contains `(R - 1)^1.30`. Graphite's computational contract requires deterministic replayable integer/fixed-point probability accounting, and repository/spec review found no authoritative deterministic fractional-power evaluation algorithm or precision for this exponent. Implementing it with `f64::powf`, an arbitrary lookup table, or a hand-chosen fixed-point approximation would create canonical RNG semantics that the specification does not define.
+
+**Final decision**
+
+Do not implement the line-break numeric kernel yet. Implement only the fully frozen first-unlock/access-progression policy and keep the fractional-power evaluator as an explicit blocker for the later capability slice. This mirrors the existing fail-closed treatment of the unresolved `N^1.55` +N AEXP formula rather than weakening deterministic replay requirements.
+
+### 2. Reuse `EquipmentTier`, but never use enum ordering for Rod progression
+
+**Initial implementation possibility**
+
+Create a new Fishing-specific tier enum and compare tiers by ordinal/rank to decide whether a Rod satisfies an area gate.
+
+**Implementation-time finding — `CONFIRMED`**
+
+`EquipmentTier` already owns the canonical Wood/Stone/Copper/Gold/Iron/Diamond/Obsidian/Netherite/Graphite vocabulary. Duplicating those names would create another mapping to maintain. At the same time, ordinal comparison is unsafe: Gold is a side-grade that explicitly satisfies Deep Sea, while Iron does not; Gold also never satisfies Abyss.
+
+**Final decision**
+
+Reuse `EquipmentTier` behind a Fishing-specific `FishingRodForUnlock` wrapper that separately represents the Starter Basic Rod. Reject `StarterLeather` as a non-Rod tier and encode the tiny Rod×area eligibility matrix explicitly. This keeps the shared tier vocabulary while preserving Gold's special behavior without relying on enum discriminants or a fake total progression order.
+
+### 3. First-unlock eligibility is not live cast authorization
+
+**Implementation-time finding — `CONFIRMED`**
+
+The specification says area unlocks are permanent once first satisfied and Rebirth never re-locks them. The Rod column is explicitly the minimum tier **for first unlock**. Separately, the Starter Basic Rod is Pool-only. Treating the first-unlock table as a per-cast tier gate would silently turn a progression condition into a permanent equipment restriction that is not stated.
+
+**Final decision**
+
+Name the API and result types `FirstUnlock` and document that the future stateful Fishing owner must load persisted area access first. The pure preview decides only whether a new permanent unlock may be granted. Starter Basic Pool-only remains explicit, while any broader post-unlock cast authorization/capability rules stay with the future Fishing runtime.
+
+### 4. Fishing area access does not create depletion state
+
+**Check result — `DISPROVED` for reusing Mining depletion infrastructure**
+
+The latest master explicitly says fishing areas remain renewable forever and do not have a Fishing equivalent of SeamCapacity, geological pressure, depleted probability mass, or 12-hour recovery.
+
+**Final decision**
+
+The policy exposes the renewable/no-depletion invariant and creates no database row, pressure state, recovery timer, or shared Manual↔Auto resource pool. Area progression is access state only.
+
+### 5. Stable toolchain/dependency baseline remains sufficient
+
+**Check result — `DISPROVED` for dependency churn in this slice**
+
+Immediately before branching, verified `main` remained `2ee11cc245d820201b872fd40bbd06ff7347d193` with exact push CI #200 green. Rust 1.98.0 remains the release-stable toolchain baseline, and this discrete policy requires no new crate, migration, RNG, database, or numeric library.
+
+**Final decision**
+
+Keep the slice dependency/schema-neutral. Do not mix unrelated crate updates or prerelease/beta/RC versions into the area-policy commit.

@@ -4,6 +4,7 @@ mod enchant_catalog;
 mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
+mod fishing_area;
 mod forge;
 mod grinding;
 mod master_enchant;
@@ -47,6 +48,11 @@ pub use equipment_appraisal::{
 pub use equipment_policy::{
     BaseEquipmentAppraisal, BaseEquipmentAppraisalSource, EquipmentAppraisalError,
     EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
+};
+pub use fishing_area::{
+    FishingArea, FishingAreaFirstUnlockPolicy, FishingAreaFirstUnlockPreview,
+    FishingAreaPolicyError, FishingRodForUnlock, fishing_area_first_unlock_policy,
+    preview_first_fishing_area_unlock,
 };
 pub use forge::{
     AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
