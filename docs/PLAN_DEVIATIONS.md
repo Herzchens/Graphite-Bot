@@ -137,12 +137,98 @@ The policy slice does not invent values or persistence for the following:
 - authoritative ordinary/special ItemDefinition classification representation;
 - SoulBind Rune ItemDefinition, immutable definition version, and stack cap;
 - persisted SoulBound state and rebind-cooldown ownership;
-- authoritative final `EnhancedCanonicalAppraisal` resolver;
+- authoritative ItemInstance-to-appraisal resolver and creation-roll persistence bridge;
 - atomic Rune/material/Money/AEXP bind settlement;
 - atomic unbind settlement and no-refund provenance;
 - true-death SoulBind protection integration;
 - bound Netherite → Graphite promotion integration with authoritative previous/new appraisal and atomic top-up settlement;
 - repository `Cargo.lock` generation and validation.
+
+## Equipment appraisal composition slice
+
+Branch: `feat/equipment-appraisal-composition`
+
+### 1. Missing creation-roll storage precision does not block exact pure policy math
+
+**Initial plan assumption**
+
+Treat final `EnhancedCanonicalAppraisal` composition as blocked until the repository freezes a concrete storage/fixed-point precision for immutable creation roll `q`.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The active specification freezes `q ∈ [0,1]`, `RollFactor(q) = 1 + 0.12q²`, requires non-negative rational/fixed-point appraisal intermediates, and freezes both the `RecraftAppraisal` and final `EnhancedCanonicalAppraisal` formulas. It does **not** require the pure policy layer to choose the persistence encoding of `q`.
+
+**Final decision**
+
+Represent `CreationRoll` as a validated, normalized exact rational numerator/denominator in the pure Services API. The kernel chooses no gameplay precision and no database representation. Equivalent fractions normalize to the same value; zero and one are exact. A future ItemInstance resolver remains responsible for freezing how the immutable roll is stored and reconstructing the same rational value.
+
+Arithmetic is checked and fails closed if an extreme rational representation exceeds supported `u128` intermediates; this is an implementation bound, not a gameplay precision rule.
+
+### 2. Final enhanced appraisal uses an algebraically equivalent lower-overflow form
+
+**Initial implementation shape**
+
+Follow the written final formula literally by adding `EmbeddedEnchantValue` to the structural rational under a common denominator and then applying final round-half-up.
+
+**Implementation-time finding — `CONFIRMED`**
+
+`EmbeddedEnchantValue` is already an integer after its own frozen 70% round-half-up step. For any non-negative rational `x` and integer `k`:
+
+`round_half_up(x + k) = round_half_up(x) + k`.
+
+Therefore the literal formula is exactly equivalent to:
+
+- `RecraftAppraisal = round_half_up(Base × RollFactor × UpgradeFactor)`;
+- `EnhancedCanonicalAppraisal = RecraftAppraisal + EmbeddedEnchantValue`.
+
+**Final decision**
+
+Use the equivalent two-step form. It shares one structural calculation with Repair, guarantees the frozen `RecraftAppraisal <= EnhancedCanonicalAppraisal` invariant for non-negative embedded value, and avoids multiplying an already-integer enchant value by a potentially large structural denominator. This reduces overflow surface without changing any canonical result.
+
+### 3. A new public generic rational framework was rejected
+
+**Challenged alternative — `DISPROVED`**
+
+The existing +N appraisal code already exposes the exact rational numerator/denominator needed for composition. Creating a new public generic `Rational` abstraction and refactoring all prior appraisal kernels into it would expand API surface and migration risk without a current cross-domain requirement.
+
+**Final decision**
+
+Keep `CreationRoll` domain-specific and keep fraction reduction/cross-cancellation helpers private to the composition module. Reuse the existing +N exact scaling output rather than duplicating `UpgradeFactor` math. Revisit a shared rational abstraction only if another implementation slice demonstrates a concrete repeated requirement.
+
+### 4. Cross-cancellation is performed before rational multiplication
+
+**Initial implementation possibility**
+
+Multiply the already-scaled +N numerator directly by the Creation Roll factor numerator, then divide by the product of denominators.
+
+**Implementation-time finding — `CONFIRMED`**
+
+Direct multiplication can overflow `u128` earlier than mathematically necessary when factors share cancellable divisors.
+
+**Final decision**
+
+Reduce each fraction and cross-cancel numerator/denominator pairs before checked multiplication. Final half-up rounding compares the remainder against the half threshold instead of computing `numerator + denominator/2`, avoiding another avoidable addition-overflow edge.
+
+### 5. Dependency/toolchain audit still does not justify dependency churn
+
+**Check result — `DISPROVED` for an appraisal-composition dependency bump**
+
+This slice needs no new external crate: exact rational composition, GCD reduction, checked multiplication, and half-up rounding are all implementable with the standard library and the existing Services appraisal APIs. The stable-only workspace/toolchain audit from the immediately preceding SoulBind slice remains current; no prerelease/beta/RC dependency is introduced.
+
+**Final decision**
+
+Do not add a bigint/rational dependency merely for convenience. Keep checked `u128` arithmetic and explicit fail-closed bounds. The separate missing-`Cargo.lock` reproducibility finding remains `UNRESOLVED` and is not hand-authored here.
+
+## Equipment appraisal items intentionally still unresolved
+
+This slice does not invent:
+
+- database precision/encoding for the immutable creation roll;
+- ItemDefinition/ItemInstance → canonical appraisal resolution and cache/storage policy;
+- concrete enchant-definition → appraisal-class mapping;
+- live recomputation hooks after +N, enchant, or tier-promotion mutations;
+- the deterministic fractional-power algorithm for `UpgradeAEXP(N) = round10(20 × N^1.55)`;
+- any finite +N gameplay cap absent from the specification.
 
 ## Update rule for future slices
 
