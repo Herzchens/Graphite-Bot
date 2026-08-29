@@ -16,6 +16,7 @@ mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 mod soulbind;
+mod soulgrind;
 mod upgrade_appraisal;
 mod upgrade_cost;
 mod upgrade_outcome;
@@ -97,6 +98,12 @@ pub use soulbind::{
     SoulBindBindingPreview, SoulBindPolicyError, SoulBindTierComponent, SoulBindTopUpPreview,
     SoulBindUnbindPreview, preview_soulbind_binding, preview_soulbind_top_up,
     preview_soulbind_unbind, soulbind_binding_package,
+};
+pub use soulgrind::{
+    SOULGRIND_BASE_PROC_BPS_PER_LEVEL, SOULGRIND_BASE_PROC_CAP_BPS, SOULGRIND_MAX_LEVEL,
+    SOULGRIND_MAX_SUCCESSES_PER_ITEM_PER_EXPEDITION, SoulGrindPolicyError,
+    SoulGrindProbability, SoulGrindProcPreview, SoulGrindRestorationQuantum,
+    preview_soulgrind_for_qualifying_soul,
 };
 pub use upgrade_appraisal::{
     ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
