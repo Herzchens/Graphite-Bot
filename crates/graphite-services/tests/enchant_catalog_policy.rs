@@ -1,6 +1,6 @@
 use graphite_services::{
-    CanonicalEnchant, EnchantAcquisitionSource, EnchantAppraisalClass, MasterAcquisitionSource,
-    MasterEnchantTier, NORMAL_SHOP_MAX_BOOK_LEVEL, enchant_catalog_policy,
+    BAIT_RACK_MAX_BOOK_LEVEL, CanonicalEnchant, EnchantAcquisitionSource, EnchantAppraisalClass,
+    MasterAcquisitionSource, MasterEnchantTier, NORMAL_SHOP_MAX_BOOK_LEVEL, enchant_catalog_policy,
     master_i_purchase_policy, preview_master_ii_upgrade,
 };
 
@@ -60,6 +60,20 @@ fn public_api_freezes_normal_shop_level_five_ceiling_without_promising_stock() {
         assert!(!policy.normal_shop_eligible());
         assert_eq!(policy.normal_shop_max_book_level, None);
     }
+}
+
+#[test]
+fn public_api_preserves_bait_rack_level_three_shop_exception() {
+    assert_eq!(BAIT_RACK_MAX_BOOK_LEVEL, 3);
+
+    let policy = enchant_catalog_policy(CanonicalEnchant::BaitRack);
+    assert!(policy.normal_shop_eligible());
+    assert_eq!(
+        policy.acquisition_source,
+        EnchantAcquisitionSource::NormalShopFishingChest
+    );
+    assert_eq!(policy.appraisal_class, EnchantAppraisalClass::ShopCommon);
+    assert_eq!(policy.normal_shop_max_book_level, Some(3));
 }
 
 #[test]

@@ -26,8 +26,8 @@ pub use enchant_appraisal::{
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,
 };
 pub use enchant_catalog::{
-    CanonicalEnchant, EnchantAcquisitionSource, EnchantCatalogPolicy, NORMAL_SHOP_MAX_BOOK_LEVEL,
-    enchant_catalog_policy,
+    BAIT_RACK_MAX_BOOK_LEVEL, CanonicalEnchant, EnchantAcquisitionSource, EnchantCatalogPolicy,
+    NORMAL_SHOP_MAX_BOOK_LEVEL, enchant_catalog_policy,
 };
 pub use enchant_conflict::{
     ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,

@@ -3,6 +3,7 @@ use serde::Serialize;
 use crate::EnchantAppraisalClass;
 
 pub const NORMAL_SHOP_MAX_BOOK_LEVEL: u8 = 5;
+pub const BAIT_RACK_MAX_BOOK_LEVEL: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -95,7 +96,9 @@ impl EnchantCatalogPolicy {
 /// Acquisition source and appraisal class are deliberately separate. Several special/universal
 /// enchants are eligible for the same acquisition channels as ordinary books but use different
 /// canonical appraisal weights. Normal-Shop eligibility means the book may appear in controlled
-/// Shop rotation; it does not promise that a particular weekly inventory contains it.
+/// Shop rotation; it does not promise that a particular weekly inventory contains it. The generic
+/// Shop ceiling is Level V, while a more-specific enchant rule may lower its own Shop ceiling; Bait
+/// Rack is the current frozen exception at Level III.
 ///
 /// `Master` is one enchant identity with an existing [`crate::MasterEnchantTier`] progression. Its
 /// exact tier-specific acquisition is owned by the Master policy: Master I is EXP-Shop-only and
@@ -111,6 +114,12 @@ pub const fn enchant_catalog_policy(enchant: CanonicalEnchant) -> EnchantCatalog
     use EnchantAppraisalClass as A;
 
     let (acquisition_source, appraisal_class, normal_shop_max_book_level) = match enchant {
+        E::BaitRack => (
+            S::NormalShopFishingChest,
+            A::ShopCommon,
+            Some(BAIT_RACK_MAX_BOOK_LEVEL),
+        ),
+
         E::Efficiency
         | E::Fortune
         | E::Smelt
@@ -119,7 +128,6 @@ pub const fn enchant_catalog_policy(enchant: CanonicalEnchant) -> EnchantCatalog
         | E::Luck
         | E::Strengthen
         | E::SharpHook
-        | E::BaitRack
         | E::Sharpness
         | E::Smite
         | E::BaneOfArthropods
@@ -213,6 +221,19 @@ mod tests {
             EnchantAppraisalClass::SpecialCommon
         );
         assert_eq!(grinding.normal_shop_max_book_level, Some(5));
+    }
+
+    #[test]
+    fn bait_rack_preserves_the_specific_level_three_shop_ceiling() {
+        let bait_rack = enchant_catalog_policy(CanonicalEnchant::BaitRack);
+        assert_eq!(BAIT_RACK_MAX_BOOK_LEVEL, 3);
+        assert_eq!(
+            bait_rack.acquisition_source,
+            EnchantAcquisitionSource::NormalShopFishingChest
+        );
+        assert_eq!(bait_rack.appraisal_class, EnchantAppraisalClass::ShopCommon);
+        assert_eq!(bait_rack.normal_shop_max_book_level, Some(3));
+        assert!(bait_rack.normal_shop_eligible());
     }
 
     #[test]

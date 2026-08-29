@@ -400,3 +400,41 @@ The Mending cost is exact integer multiplication over an existing `i64` durabili
 **Final decision**
 
 Keep the slice dependency-neutral and non-mutating. Use checked integer arithmetic and leave ItemInstance durability mutation, Activity EXP settlement, machine Experience Pool settlement, expedition burnout persistence, idempotency/outbox ownership, and command wiring to their future stateful owners. The separate missing committed `Cargo.lock` finding remains unresolved rather than being hand-authored here.
+
+## Bait Rack catalog cap correction
+
+Branch: `fix/bait-rack-shop-level-cap`
+
+### 1. Generic Shop grouping cannot override a more-specific enchant ceiling
+
+**Initial plan assumption**
+
+Treat every enchant in the canonical `Shop I–V + Fishing/Chest` acquisition row as having the generic normal-Shop Level V ceiling.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The generic acquisition table includes Bait Rack in the Shop I–V family, but the more-specific fishing/bait rule freezes **Bait Rack III**, says it is Shop/common, and explicitly limits normal-Shop levels to I–III. Under the specification priority rules, the specific Bait Rack exception overrides the generic acquisition-family ceiling.
+
+The initial catalog therefore exposed a real incorrect `Some(5)` Shop ceiling for `CanonicalEnchant::BaitRack`.
+
+**Final decision**
+
+Keep `NORMAL_SHOP_MAX_BOOK_LEVEL = 5` for the generic family, add the explicit `BAIT_RACK_MAX_BOOK_LEVEL = 3`, and split `BaitRack` out of the generic match arm. Unit and public-API regressions assert that ordinary Shop families still use V while Bait Rack remains Shop-eligible only through III.
+
+### 2. A global enchant-level framework is not justified by this bugfix
+
+**Challenged alternative — `DISPROVED` for this slice**
+
+Repository review found no separate authoritative max-level resolver. It would be tempting to turn this correction into a global `canonical_max_level` framework covering Shop, fishing, combining, special enchants, and Master progression.
+
+That expansion would mix different domains prematurely: this catalog currently owns acquisition/Appraisal class and normal-Shop eligibility, while Master uses a distinct I→II tier state machine and direct fishing/combine level distributions remain separate responsibilities.
+
+**Final decision**
+
+Fix the proven Shop-ceiling bug at its owning boundary instead of broadening the public API. If future fishing/combine implementation needs a canonical all-source level ceiling, introduce it in a dedicated evidence-backed slice and prove every enchant family exhaustively.
+
+### 3. No dependency, schema, or toolchain change is required
+
+**Check result — `DISPROVED` for infrastructure churn in this correction**
+
+The fix is a constant/mapping/test correction in the existing Services catalog. It adds no crate, migration, persistence, RNG, command, or state mutation. The current stable Rust 1.98 release baseline and existing direct dependency set remain sufficient, so no prerelease/beta/RC or unrelated dependency update is mixed into the bugfix.
