@@ -241,7 +241,10 @@ mod tests {
         assert_eq!(graphite.soulbind_rune_quantity, 1);
         assert_eq!(graphite.onyx_quantity, 32);
         assert_eq!(graphite.platinum_ingot_quantity, 12);
-        assert_eq!(graphite.tier_component, SoulBindTierComponent::GraphiteLayer);
+        assert_eq!(
+            graphite.tier_component,
+            SoulBindTierComponent::GraphiteLayer
+        );
         assert_eq!(graphite.tier_component_quantity, 2);
         assert_eq!(graphite.fixed_money_cost, 500_000);
         assert_eq!(graphite.activity_xp_cost, 50_000);
@@ -313,8 +316,7 @@ mod tests {
         assert_eq!(to_four.positive_appraisal_delta, 1);
         assert_eq!(to_four.money_charge, 1);
 
-        let bind_late =
-            preview_soulbind_binding(EquipmentTier::Netherite, true, 1, 4).unwrap();
+        let bind_late = preview_soulbind_binding(EquipmentTier::Netherite, true, 1, 4).unwrap();
         assert_eq!(
             initial.initial_protection_charge + to_three.money_charge + to_four.money_charge,
             bind_late.initial_protection_charge
@@ -356,8 +358,7 @@ mod tests {
 
     #[test]
     fn largest_supported_appraisal_remains_representable() {
-        let binding =
-            preview_soulbind_binding(EquipmentTier::Graphite, true, 1, i64::MAX).unwrap();
+        let binding = preview_soulbind_binding(EquipmentTier::Graphite, true, 1, i64::MAX).unwrap();
         assert_eq!(binding.initial_protection_charge, 5_534_023_222_112_865_485);
         assert_eq!(binding.total_money_cost, 5_534_023_222_113_365_485);
 
