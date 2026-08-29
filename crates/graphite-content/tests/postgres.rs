@@ -14,7 +14,7 @@ async fn frozen_price_registry_matches_authoritative_lattice() {
     let registry = ContentRegistryService::new(store.clone());
 
     let policy = registry.active_policy().await.unwrap();
-    assert_eq!(policy.version, 1);
+    assert_eq!(policy.version, 2);
 
     let prices = registry.all_prices().await.unwrap();
     assert_eq!(prices.len(), 57);
@@ -61,6 +61,200 @@ async fn frozen_price_registry_matches_authoritative_lattice() {
     assert_eq!(bronze_recipe.inputs[0].quantity, 3);
     assert_eq!(bronze_recipe.inputs[1].content_key, "resource.ingot.tin");
     assert_eq!(bronze_recipe.inputs[1].quantity, 1);
+
+    let expected_smelt_recipes = [
+        ("smelt.tin", "resource.ore.tin", "resource.ingot.tin"),
+        (
+            "smelt.copper",
+            "resource.ore.copper",
+            "resource.ingot.copper",
+        ),
+        ("smelt.zinc", "resource.ore.zinc", "resource.ingot.zinc"),
+        (
+            "smelt.aluminum",
+            "resource.bauxite",
+            "resource.ingot.aluminum",
+        ),
+        ("smelt.iron", "resource.ore.iron", "resource.ingot.iron"),
+        ("smelt.lead", "resource.ore.lead", "resource.ingot.lead"),
+        (
+            "smelt.silver",
+            "resource.ore.silver",
+            "resource.ingot.silver",
+        ),
+        (
+            "smelt.nickel",
+            "resource.ore.nickel",
+            "resource.ingot.nickel",
+        ),
+        ("smelt.gold", "resource.ore.gold", "resource.ingot.gold"),
+        (
+            "smelt.cobalt",
+            "resource.ore.cobalt",
+            "resource.ingot.cobalt",
+        ),
+        (
+            "smelt.titanium",
+            "resource.ore.titanium",
+            "resource.ingot.titanium",
+        ),
+        (
+            "smelt.tungsten",
+            "resource.ore.tungsten",
+            "resource.ingot.tungsten",
+        ),
+        (
+            "smelt.netherite-scrap",
+            "resource.ancient_debris",
+            "resource.netherite_scrap",
+        ),
+        (
+            "smelt.platinum",
+            "resource.ore.platinum",
+            "resource.ingot.platinum",
+        ),
+    ];
+
+    for (recipe_key, input_key, output_key) in expected_smelt_recipes {
+        let recipe = registry.recipe(recipe_key).await.unwrap().unwrap();
+        assert_eq!(recipe.recipe_kind, "SMELT", "recipe {recipe_key}");
+        assert_eq!(recipe.output_content_key, output_key, "recipe {recipe_key}");
+        assert_eq!(recipe.output_quantity, 1, "recipe {recipe_key}");
+        assert_eq!(recipe.inputs.len(), 1, "recipe {recipe_key}");
+        assert_eq!(
+            recipe.inputs[0].content_key, input_key,
+            "recipe {recipe_key}"
+        );
+        assert_eq!(recipe.inputs[0].quantity, 1, "recipe {recipe_key}");
+        assert_eq!(
+            recipe.metadata,
+            serde_json::json!({}),
+            "global ordinary-Smelting policy must not be duplicated into recipe metadata for {recipe_key}"
+        );
+    }
+
+    let version_one_catalog_count: i64 = sqlx::query(
+        "SELECT COUNT(*) AS count FROM content_catalog_entries WHERE policy_version = 1",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("count")
+    .unwrap();
+    let version_two_catalog_count: i64 = sqlx::query(
+        "SELECT COUNT(*) AS count FROM content_catalog_entries WHERE policy_version = 2",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("count")
+    .unwrap();
+    assert_eq!(version_one_catalog_count, 57);
+    assert_eq!(version_two_catalog_count, 57);
+
+    let copied_catalog_mismatch_count: i64 = sqlx::query(
+        r#"
+        SELECT COUNT(*) AS count
+          FROM content_catalog_entries v1
+          FULL JOIN content_catalog_entries v2
+            ON v2.policy_version = 2
+           AND v2.content_key = v1.content_key
+         WHERE v1.policy_version = 1
+           AND (
+               v2.content_key IS NULL
+               OR v1.display_name IS DISTINCT FROM v2.display_name
+               OR v1.content_kind IS DISTINCT FROM v2.content_kind
+               OR v1.source_class IS DISTINCT FROM v2.source_class
+               OR v1.metadata IS DISTINCT FROM v2.metadata
+           )
+        "#,
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("count")
+    .unwrap();
+    assert_eq!(copied_catalog_mismatch_count, 0);
+
+    let version_one_price_count: i64 =
+        sqlx::query("SELECT COUNT(*) AS count FROM npc_price_entries WHERE policy_version = 1")
+            .fetch_one(store.pool())
+            .await
+            .unwrap()
+            .try_get("count")
+            .unwrap();
+    let version_two_price_count: i64 =
+        sqlx::query("SELECT COUNT(*) AS count FROM npc_price_entries WHERE policy_version = 2")
+            .fetch_one(store.pool())
+            .await
+            .unwrap()
+            .try_get("count")
+            .unwrap();
+    assert_eq!(version_one_price_count, 57);
+    assert_eq!(version_two_price_count, 57);
+
+    let copied_price_mismatch_count: i64 = sqlx::query(
+        r#"
+        SELECT COUNT(*) AS count
+          FROM npc_price_entries v1
+          FULL JOIN npc_price_entries v2
+            ON v2.policy_version = 2
+           AND v2.content_key = v1.content_key
+         WHERE v1.policy_version = 1
+           AND (
+               v2.content_key IS NULL
+               OR v1.appraisal_mode IS DISTINCT FROM v2.appraisal_mode
+               OR v1.canonical_appraisal IS DISTINCT FROM v2.canonical_appraisal
+               OR v1.npc_buy_price IS DISTINCT FROM v2.npc_buy_price
+               OR v1.npc_liquidation_allowed IS DISTINCT FROM v2.npc_liquidation_allowed
+               OR v1.shop_sell_price IS DISTINCT FROM v2.shop_sell_price
+               OR v1.normal_shop_allowed IS DISTINCT FROM v2.normal_shop_allowed
+               OR v1.shop_stock_policy IS DISTINCT FROM v2.shop_stock_policy
+               OR v1.shop_class IS DISTINCT FROM v2.shop_class
+           )
+        "#,
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("count")
+    .unwrap();
+    assert_eq!(copied_price_mismatch_count, 0);
+
+    let version_one_recipe_count: i64 =
+        sqlx::query("SELECT COUNT(*) AS count FROM content_recipes WHERE policy_version = 1")
+            .fetch_one(store.pool())
+            .await
+            .unwrap()
+            .try_get("count")
+            .unwrap();
+    let version_two_recipe_count: i64 =
+        sqlx::query("SELECT COUNT(*) AS count FROM content_recipes WHERE policy_version = 2")
+            .fetch_one(store.pool())
+            .await
+            .unwrap()
+            .try_get("count")
+            .unwrap();
+    let version_one_smelt_count: i64 = sqlx::query(
+        "SELECT COUNT(*) AS count FROM content_recipes WHERE policy_version = 1 AND recipe_kind = 'SMELT'",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("count")
+    .unwrap();
+    let version_two_smelt_count: i64 = sqlx::query(
+        "SELECT COUNT(*) AS count FROM content_recipes WHERE policy_version = 2 AND recipe_kind = 'SMELT'",
+    )
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+    .try_get("count")
+    .unwrap();
+    assert_eq!(version_one_recipe_count, 4);
+    assert_eq!(version_two_recipe_count, 18);
+    assert_eq!(version_one_smelt_count, 0);
+    assert_eq!(version_two_smelt_count, 14);
 
     let arbitrage_count: i64 = sqlx::query(
         r#"
@@ -109,6 +303,26 @@ async fn frozen_price_registry_matches_authoritative_lattice() {
     .await;
     assert!(
         mutation.is_err(),
-        "frozen registry rows must reject mutation"
+        "historical frozen registry rows must reject mutation"
+    );
+
+    let active_mutation = sqlx::query(
+        "UPDATE npc_price_entries SET shop_sell_price = 1 WHERE policy_version = 2 AND content_key = 'resource.coal'",
+    )
+    .execute(store.pool())
+    .await;
+    assert!(
+        active_mutation.is_err(),
+        "active frozen registry rows must also reject mutation"
+    );
+
+    let recipe_mutation = sqlx::query(
+        "UPDATE content_recipes SET output_quantity = 2 WHERE policy_version = 2 AND recipe_key = 'smelt.tin'",
+    )
+    .execute(store.pool())
+    .await;
+    assert!(
+        recipe_mutation.is_err(),
+        "active Smelting recipe mappings must remain immutable"
     );
 }
