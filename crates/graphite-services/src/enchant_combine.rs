@@ -41,7 +41,8 @@ pub struct StandardEnchantCombineBasePolicy {
     pub activity_exp_fee: i64,
     pub extra_aexp_ui_cap: i64,
     pub failure_consumption: CombineFailureConsumption,
-    pub committed_money_and_aexp_are_always_consumed: bool,
+    pub committed_money_and_base_aexp_are_always_consumed: bool,
+    pub committed_extra_aexp_is_always_consumed: bool,
     pub committed_catalyst_is_always_consumed: bool,
 }
 
@@ -92,61 +93,65 @@ pub enum EnchantCombinePolicyError {
 pub fn standard_enchant_combine_base_policy(
     target_level: u8,
 ) -> Result<StandardEnchantCombineBasePolicy, EnchantCombinePolicyError> {
-    let (base_success_basis_points, money_fee, activity_exp_fee, failure_consumption) =
-        match target_level {
-            2 => (10_000, 2_000, 100, CombineFailureConsumption::NoFailurePath),
-            3 => (9_500, 4_000, 200, CombineFailureConsumption::DestroyOneUniform),
-            4 => (9_000, 8_000, 400, CombineFailureConsumption::DestroyOneUniform),
-            5 => (8_000, 15_000, 800, CombineFailureConsumption::DestroyOneUniform),
-            6 => (
-                7_000,
-                30_000,
-                1_500,
-                CombineFailureConsumption::WeightedOneOrBoth {
-                    destroy_one_basis_points: 7_000,
-                    destroy_both_basis_points: 3_000,
-                },
-            ),
-            7 => (
-                5_500,
-                60_000,
-                3_000,
-                CombineFailureConsumption::WeightedOneOrBoth {
-                    destroy_one_basis_points: 7_000,
-                    destroy_both_basis_points: 3_000,
-                },
-            ),
-            8 => (
-                4_000,
-                120_000,
-                6_000,
-                CombineFailureConsumption::WeightedOneOrBoth {
-                    destroy_one_basis_points: 7_000,
-                    destroy_both_basis_points: 3_000,
-                },
-            ),
-            9 => (
-                2_500,
-                250_000,
-                12_000,
-                CombineFailureConsumption::WeightedOneOrBoth {
-                    destroy_one_basis_points: 4_000,
-                    destroy_both_basis_points: 6_000,
-                },
-            ),
-            10 => (
-                1_200,
-                500_000,
-                25_000,
-                CombineFailureConsumption::WeightedOneOrBoth {
-                    destroy_one_basis_points: 4_000,
-                    destroy_both_basis_points: 6_000,
-                },
-            ),
-            other => {
-                return Err(EnchantCombinePolicyError::StandardTargetLevelOutOfRange(other));
-            }
-        };
+    let (base_success_basis_points, money_fee, activity_exp_fee, failure_consumption): (
+        u16,
+        i64,
+        i64,
+        CombineFailureConsumption,
+    ) = match target_level {
+        2 => (10_000, 2_000, 100, CombineFailureConsumption::NoFailurePath),
+        3 => (9_500, 4_000, 200, CombineFailureConsumption::DestroyOneUniform),
+        4 => (9_000, 8_000, 400, CombineFailureConsumption::DestroyOneUniform),
+        5 => (8_000, 15_000, 800, CombineFailureConsumption::DestroyOneUniform),
+        6 => (
+            7_000,
+            30_000,
+            1_500,
+            CombineFailureConsumption::WeightedOneOrBoth {
+                destroy_one_basis_points: 7_000,
+                destroy_both_basis_points: 3_000,
+            },
+        ),
+        7 => (
+            5_500,
+            60_000,
+            3_000,
+            CombineFailureConsumption::WeightedOneOrBoth {
+                destroy_one_basis_points: 7_000,
+                destroy_both_basis_points: 3_000,
+            },
+        ),
+        8 => (
+            4_000,
+            120_000,
+            6_000,
+            CombineFailureConsumption::WeightedOneOrBoth {
+                destroy_one_basis_points: 7_000,
+                destroy_both_basis_points: 3_000,
+            },
+        ),
+        9 => (
+            2_500,
+            250_000,
+            12_000,
+            CombineFailureConsumption::WeightedOneOrBoth {
+                destroy_one_basis_points: 4_000,
+                destroy_both_basis_points: 6_000,
+            },
+        ),
+        10 => (
+            1_200,
+            500_000,
+            25_000,
+            CombineFailureConsumption::WeightedOneOrBoth {
+                destroy_one_basis_points: 4_000,
+                destroy_both_basis_points: 6_000,
+            },
+        ),
+        other => {
+            return Err(EnchantCombinePolicyError::StandardTargetLevelOutOfRange(other));
+        }
+    };
 
     let extra_aexp_ui_cap = activity_exp_fee
         .checked_mul(EXTRA_AEXP_UI_CAP_MULTIPLIER)
@@ -159,7 +164,8 @@ pub fn standard_enchant_combine_base_policy(
         activity_exp_fee,
         extra_aexp_ui_cap,
         failure_consumption,
-        committed_money_and_aexp_are_always_consumed: true,
+        committed_money_and_base_aexp_are_always_consumed: true,
+        committed_extra_aexp_is_always_consumed: true,
         committed_catalyst_is_always_consumed: true,
     })
 }
@@ -231,7 +237,8 @@ mod tests {
             assert_eq!(row.money_fee, money);
             assert_eq!(row.activity_exp_fee, aexp);
             assert_eq!(row.extra_aexp_ui_cap, aexp * 8);
-            assert!(row.committed_money_and_aexp_are_always_consumed);
+            assert!(row.committed_money_and_base_aexp_are_always_consumed);
+            assert!(row.committed_extra_aexp_is_always_consumed);
             assert!(row.committed_catalyst_is_always_consumed);
         }
     }
