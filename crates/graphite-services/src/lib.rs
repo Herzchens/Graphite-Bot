@@ -1,3 +1,4 @@
+mod bait_rack;
 mod enchant_appraisal;
 mod enchant_catalog;
 mod enchant_conflict;
@@ -21,6 +22,11 @@ mod upgrade_appraisal;
 mod upgrade_cost;
 mod upgrade_outcome;
 
+pub use bait_rack::{
+    BAIT_RACK_ACTIVE_SLOTS_PER_LEVEL, BAIT_RACK_MAX_LEVEL, BaitRackCapacityPolicy,
+    BaitRackPolicyError, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    bait_rack_capacity_policy,
+};
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,

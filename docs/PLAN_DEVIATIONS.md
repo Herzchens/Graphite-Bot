@@ -438,3 +438,55 @@ Fix the proven Shop-ceiling bug at its owning boundary instead of broadening the
 **Check result — `DISPROVED` for infrastructure churn in this correction**
 
 The fix is a constant/mapping/test correction in the existing Services catalog. It adds no crate, migration, persistence, RNG, command, or state mutation. The current stable Rust 1.98 release baseline and existing direct dependency set remain sufficient, so no prerelease/beta/RC or unrelated dependency update is mixed into the bugfix.
+
+## Bait Rack capacity policy slice
+
+Branch: `feat/bait-rack-capacity-policy`
+
+### 1. Gameplay max-level authority moved out of Shop metadata
+
+**Initial implementation plan**
+
+Reuse the newly corrected `BAIT_RACK_MAX_BOOK_LEVEL = 3` catalog constant as the level ceiling when implementing active bait-category capacity.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The Level III limit is fundamentally part of Bait Rack's gameplay effect contract: three native active bait-category slots, +1 per Bait Rack level, and a maximum of six. The Shop catalog only owns acquisition metadata. Making gameplay capacity depend on a Shop-specific constant would invert that ownership and allow a future acquisition change to alter gameplay semantics accidentally.
+
+**Final decision**
+
+The Bait Rack effect module owns `BAIT_RACK_MAX_LEVEL = 3`. The catalog's `BAIT_RACK_MAX_BOOK_LEVEL` reuses that constant for the currently identical Shop ceiling. A public regression asserts the two remain equal under the current specification without making Shop metadata the gameplay source of truth.
+
+### 2. Absence is distinct from malformed Level 0
+
+**Initial implementation possibility**
+
+Accept `u8` and interpret level 0 as a Rod without Bait Rack.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The canonical enchant exists only at Levels I–III. Silently converting a persisted/passed `0` into absence could hide malformed authoritative enchant state.
+
+**Final decision**
+
+The pure capacity API uses `Option<u8>`: `None` means no Bait Rack, while `Some(1..=3)` means a present valid enchant. `Some(0)` and `Some(4+)` fail closed. Capacity is therefore unambiguous: `None→3`, `I→4`, `II→5`, `III→6`.
+
+### 3. Fishing remains unactivated
+
+**Check result — `DISPROVED` for widening this slice into live Fishing state**
+
+The capacity rule is fully deterministic and requires no persistence, RNG, Money, AEXP, bait inventory, cast settlement, or command state. Repository search found no existing bait-slot abstraction that needs a migration or compatibility layer.
+
+**Final decision**
+
+Keep this as a pure Services policy only. It records that Bait Rack is Rod-only and occupies one normal Rod enchant slot when present, but leaves authoritative ItemInstance enchant resolution, bait-category selection/consumption, Fishing runtime, and command wiring to the later Fishing owner. Phase 7 therefore remains Pending.
+
+### 4. Stable toolchain/dependency baseline remains sufficient
+
+**Check result — `DISPROVED` for dependency churn in this slice**
+
+Rust 1.98.0 remains the current stable release as of this implementation pass. The slice changes no Cargo manifest and needs no external arithmetic/data crate; all capacity math is bounded integer arithmetic over the canonical I–III domain.
+
+**Final decision**
+
+Keep the existing stable Rust 1.98 baseline and direct dependency pins. Do not mix unrelated crate upgrades or prerelease/beta/RC versions into the Bait Rack policy commit.
