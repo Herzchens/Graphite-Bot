@@ -3,8 +3,7 @@ use graphite_services::{EquipmentTier, preview_soulbind_binding, preview_soulbin
 #[test]
 fn monotonic_top_up_paths_match_bind_late_across_rounding_boundaries() {
     for start in 0_i64..=128 {
-        let initial =
-            preview_soulbind_binding(EquipmentTier::Netherite, true, 1, start).unwrap();
+        let initial = preview_soulbind_binding(EquipmentTier::Netherite, true, 1, start).unwrap();
         let mut cumulative_charge = initial.initial_protection_charge;
         let mut previous = start;
 
@@ -36,7 +35,8 @@ fn direct_and_incremental_top_ups_agree_near_i64_max() {
         preview_soulbind_binding(EquipmentTier::Graphite, true, 1, i64::MAX).unwrap();
 
     assert_eq!(
-        initial.initial_protection_charge
+        initial
+            .initial_protection_charge
             .checked_add(direct.money_charge)
             .unwrap(),
         final_binding.initial_protection_charge
