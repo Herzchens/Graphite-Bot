@@ -1,5 +1,6 @@
 mod enchant_appraisal;
 mod enchant_catalog;
+mod enchant_combine;
 mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
@@ -28,6 +29,15 @@ pub use enchant_appraisal::{
 pub use enchant_catalog::{
     CanonicalEnchant, EnchantAcquisitionSource, EnchantCatalogPolicy, NORMAL_SHOP_MAX_BOOK_LEVEL,
     enchant_catalog_policy,
+};
+pub use enchant_combine::{
+    CombineFailureConsumption, ENCHANT_CATALYST_MULTIPLIER_BPS,
+    ENCHANT_COMBINE_ABSOLUTE_SUCCESS_CAP_BPS, ENCHANT_COMBINE_MAX_TARGET_LEVEL,
+    ENCHANT_COMBINE_MIN_TARGET_LEVEL, ENCHANT_COMBINE_MULTIPLIER_CAP_BPS,
+    EXTRA_AEXP_UI_CAP_MULTIPLIER, EnchantCombinePolicyError, SHADOW_MUTATION_MAX_LEVEL,
+    SHADOW_MUTATION_MIN_LEVEL, ShadowMutationFailurePolicy, ShadowWalkerMutationBasePolicy,
+    StandardEnchantCombineBasePolicy, shadow_walker_mutation_base_policy,
+    standard_enchant_combine_base_policy,
 };
 pub use enchant_conflict::{
     ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,
