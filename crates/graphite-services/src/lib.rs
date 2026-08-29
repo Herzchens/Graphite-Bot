@@ -5,6 +5,7 @@ mod equipment_policy;
 mod forge;
 mod grinding;
 mod master_enchant;
+mod mending;
 mod ordinary_forge;
 mod percentage_fee;
 mod repair;
@@ -52,6 +53,10 @@ pub use master_enchant::{
     MasterEnchantPolicyError, MasterEnchantTier, MasterFullRepairChargePlan,
     MasterIIUpgradePreview, MasterIPurchasePolicy, master_i_purchase_policy,
     plan_master_full_repair_charge_use, preview_master_ii_upgrade,
+};
+pub use mending::{
+    MENDING_AUTOMATION_AEXP_PER_DURABILITY, MENDING_MANUAL_AEXP_PER_DURABILITY, MendingContext,
+    MendingPolicyError, MendingPreview, preview_mending,
 };
 pub use ordinary_forge::{
     FreshForgeOutcomePolicy, FreshForgeOutputLocation, FreshOrdinaryForgePolicyError,
