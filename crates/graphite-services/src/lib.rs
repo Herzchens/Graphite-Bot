@@ -1,4 +1,5 @@
 mod enchant_appraisal;
+mod enchant_catalog;
 mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
@@ -23,6 +24,10 @@ mod upgrade_outcome;
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,
+};
+pub use enchant_catalog::{
+    CanonicalEnchant, EnchantAcquisitionSource, EnchantCatalogPolicy, NORMAL_SHOP_MAX_BOOK_LEVEL,
+    enchant_catalog_policy,
 };
 pub use enchant_conflict::{
     ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,
