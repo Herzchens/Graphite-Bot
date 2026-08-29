@@ -1,4 +1,5 @@
 mod enchant_appraisal;
+mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
 mod forge;
@@ -19,6 +20,11 @@ mod upgrade_outcome;
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,
+};
+pub use enchant_conflict::{
+    ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,
+    armor_enchants_conflict, fishing_rod_enchants_conflict, pickaxe_enchants_conflict,
+    sword_enchants_conflict,
 };
 pub use equipment_appraisal::{
     CanonicalEquipmentAppraisal, CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
