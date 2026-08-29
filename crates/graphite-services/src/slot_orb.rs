@@ -194,11 +194,9 @@ pub fn preview_slot_orb_attempt(
         return Err(SlotOrbPolicyError::NegativeEnhancedAppraisal);
     }
 
-    let application_fee = checked_ceil_percentage(
-        current_enhanced_appraisal,
-        policy.application_fee_percent,
-    )
-    .ok_or(SlotOrbPolicyError::ArithmeticOverflow)?;
+    let application_fee =
+        checked_ceil_percentage(current_enhanced_appraisal, policy.application_fee_percent)
+            .ok_or(SlotOrbPolicyError::ArithmeticOverflow)?;
 
     Ok(SlotOrbAttemptPreview {
         policy,
