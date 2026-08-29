@@ -230,6 +230,68 @@ This slice does not invent:
 - the deterministic fractional-power algorithm for `UpgradeAEXP(N) = round10(20 × N^1.55)`;
 - any finite +N gameplay cap absent from the specification.
 
+## Ordinary fresh Forge policy slice
+
+Branch: `feat/ordinary-forge-policy`
+
+### 1. Structural-state persistence was deferred instead of inventing an authoritative classifier
+
+**Initial next-step plan**
+
+After finishing canonical appraisal composition, add typed ItemInstance persistence for immutable Creation Roll and mutable +N state, then expose an authoritative ItemInstance-to-appraisal resolver.
+
+**Implementation-time finding — `CONFIRMED`**
+
+Repository review found that ItemInstances still use generic `state JSONB` and exact versioned ItemDefinitions, but there is no authoritative typed ordinary/special equipment discriminator. The standard TierAnchor appraisal table is explicitly for ordinary equipment, while special definitions may use explicit `base_appraisal` overrides. A persistence table could store a rational roll, but it would not by itself let the resolver prove when the ordinary table is valid. The active specification also does not freeze the RNG distribution/quantization used to generate a fresh positive Creation Roll.
+
+**Final decision**
+
+Do not add persistence merely to create a storage location while the owning classification/generation semantics remain unresolved. Defer the ItemInstance appraisal bridge and implement the fully frozen ordinary fresh-Forge policy first. Revisit persistence when the authoritative ordinary/special classification and owning Forge/+N mutation boundaries can be modeled without guessing.
+
+### 2. Fresh ordinary Forge resolves its own standard base appraisal
+
+**Initial implementation possibility**
+
+Accept an already-resolved `BaseEquipmentAppraisal` from the caller and calculate Forge material/Money/AEXP/time policy from it.
+
+**Implementation-time finding — `CONFIRMED`**
+
+An arbitrary caller-supplied appraisal could be a definition-specific special-item override. Passing it into an API named ordinary fresh Forge would allow a special definition to be accidentally priced as an ordinary recipe.
+
+**Final decision**
+
+`preview_fresh_ordinary_forge(tier, slot)` resolves `base_equipment_appraisal(tier, slot, None)` internally after validating the fresh-Forge tier/slot domain. Starter Leather, Netherite, and Graphite reject the fresh path; Netherite/Graphite remain same-ItemInstance promotions. Gold rejects armor slots because current-v1 has no Gold armor.
+
+### 3. Creation Roll generation remains explicitly unresolved
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The specification freezes that Fresh Forge creates a new ItemInstance at +0 with a new normal positive Creation Roll, but current source review does not freeze the distribution, discrete precision, or RNG-to-percentile mapping for that roll.
+
+**Final decision**
+
+The preview records `requires_new_positive_creation_roll = true` and never generates a numeric roll. A future owning Forge transaction must freeze or receive the authoritative roll-generation policy before it can create production equipment. No uniform distribution or fixed decimal precision is assumed here.
+
+### 4. Ordinary Forge cancellation remains unspecified rather than guessed
+
+**Check result — `CONFIRMED`**
+
+The active specification says ordinary Forge may use recipe-specific cancellation policy, while the fresh-equipment table does not freeze a universal post-Confirm cancellation rule.
+
+**Final decision**
+
+Reuse `ForgePostConfirmCancellation::Unspecified`. This is not permission to cancel; it is an explicit blocker for the future owning job lifecycle until the recipe/service rule is frozen.
+
+### 5. No dependency or schema churn is required for the pure preview
+
+**Check result — `DISPROVED` for adding dependencies or migrations in this slice**
+
+The fresh Forge table, exact `round1000` Money fee, material mapping, AEXP/time schedule, output +0 contract, and eligibility restrictions are implementable with existing Services types and checked integer arithmetic. No new external crate or persistence mutation is needed.
+
+**Final decision**
+
+Keep the slice pure and dependency-neutral. The missing committed `Cargo.lock` and ItemInstance appraisal-state persistence remain separate unresolved work rather than being mixed into this policy commit.
+
 ## Update rule for future slices
 
 Append a new section when implementation materially diverges from its plan or when a challenged alternative is important enough to prevent the same question from being reopened later. Record the initial assumption, evidence classification, final decision, and why the alternative was accepted or rejected. Do not record speculative findings as confirmed defects.
