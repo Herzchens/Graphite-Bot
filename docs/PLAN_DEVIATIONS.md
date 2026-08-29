@@ -353,3 +353,50 @@ Keep this slice pure and dependency/schema-neutral. No ItemInstance mutation, do
 ## Update rule for future slices
 
 Append a new section when implementation materially diverges from its plan or when a challenged alternative is important enough to prevent the same question from being reopened later. Record the initial assumption, evidence classification, final decision, and why the alternative was accepted or rejected. Do not record speculative findings as confirmed defects.
+
+## Mending policy slice
+
+Branch: `feat/mending-policy`
+
+### 1. Mosaic refund policy was deferred instead of guessing what the 10% cap means
+
+**Initial next-step candidate**
+
+After the Grinding modifier slice, implement the Mosaic repair-refund policy because the specification names a 1% refund chance per ordinary material unit and a 10% maximum.
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The latest master freezes that Mosaic only refunds ordinary material units after successful settlement and never refunds Money, EXP, books, Orbs, Runes, equipment, or burned fuel. It also says `1% chance per ordinary material unit to be refunded, max 10%`. Unlike Grinding, Stabilize, and Sparkling, however, it does not say `per level`, and no deeper canonical formula was found that disambiguates whether the 10% maximum caps a level-scaled per-unit probability or caps the amount/rate refunded within one settlement.
+
+Encoding `1% × level` would therefore create a gameplay rule from an implementation assumption.
+
+**Final decision**
+
+Do not implement Mosaic probability composition yet. Keep its already-frozen eligibility/timing constraints as specification evidence only and defer the numeric policy until the 10% cap semantics are authoritative.
+
+### 2. Mending is a safer finite prerequisite than Mosaic
+
+**Implementation-time finding — `CONFIRMED`**
+
+Mending I has a complete finite cost/applicability contract for a pure preview:
+
+- manual Pickaxe, Fishing Rod, Sword, and per-item Armor restoration costs 5 Activity EXP per durability;
+- Pickaxe/Fishing Rod Automation restoration costs 8 Activity EXP per durability;
+- Automation Mending resolves before AEXP enters the machine Experience Pool;
+- `NUKE_BURNOUT` blocks Pickaxe restoration until the owning expedition is terminal.
+
+**Final decision**
+
+Implement a pure Mending cost preview using the existing shared `EquipmentSlot` vocabulary. Automation fails closed for Sword/Armor instead of borrowing the Pickaxe/Rod 8-AEXP rate. The preview records machine-pool ordering but deliberately does not choose the future transaction that owns earned/spendable AEXP flow.
+
+The caller remains responsible for proving authoritative ItemInstance/enchant applicability, that Mending I is actually present, that the item is not an unbreakable Starter item, that positive missing durability exists for a live restoration, and that the Pickaxe burnout flag is derived from authoritative expedition state.
+
+### 3. No dependency, schema, RNG, or new persistence abstraction is justified
+
+**Check result — `DISPROVED` for infrastructure churn in this slice**
+
+The Mending cost is exact integer multiplication over an existing `i64` durability domain. The current stable-only dependency/toolchain audit found no release-version upgrade needed by this feature, and the policy requires no RNG or new persistence representation.
+
+**Final decision**
+
+Keep the slice dependency-neutral and non-mutating. Use checked integer arithmetic and leave ItemInstance durability mutation, Activity EXP settlement, machine Experience Pool settlement, expedition burnout persistence, idempotency/outbox ownership, and command wiring to their future stateful owners. The separate missing committed `Cargo.lock` finding remains unresolved rather than being hand-authored here.
