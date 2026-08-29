@@ -3,6 +3,7 @@ mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
 mod forge;
+mod master_enchant;
 mod ordinary_forge;
 mod percentage_fee;
 mod repair;
@@ -39,6 +40,12 @@ pub use forge::{
     AdvancedForgeStackRecipe, ForgeFailurePolicy, ForgePolicyError, ForgePostConfirmCancellation,
     ForgeSuccessChance, advanced_forge_promotion_policy, advanced_forge_stack_policy,
     project_promoted_durability,
+};
+pub use master_enchant::{
+    MASTER_I_PURCHASE_AEXP, MASTER_II_UPGRADE_AEXP, MasterAcquisitionSource,
+    MasterEnchantPolicyError, MasterEnchantTier, MasterFullRepairChargePlan,
+    MasterIIUpgradePreview, MasterIPurchasePolicy, master_i_purchase_policy,
+    plan_master_full_repair_charge_use, preview_master_ii_upgrade,
 };
 pub use ordinary_forge::{
     FreshForgeOutcomePolicy, FreshForgeOutputLocation, FreshOrdinaryForgePolicyError,
