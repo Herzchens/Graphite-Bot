@@ -3,6 +3,7 @@ mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
 mod forge;
+mod grinding;
 mod master_enchant;
 mod ordinary_forge;
 mod percentage_fee;
@@ -40,6 +41,11 @@ pub use forge::{
     AdvancedForgeStackRecipe, ForgeFailurePolicy, ForgePolicyError, ForgePostConfirmCancellation,
     ForgeSuccessChance, advanced_forge_promotion_policy, advanced_forge_stack_policy,
     project_promoted_durability,
+};
+pub use grinding::{
+    GRINDING_MAX_LEVEL, GRINDING_MAX_REDUCTION_BPS, GRINDING_REDUCTION_BPS_PER_LEVEL,
+    GrindingPolicyError, GrindingRepairModifier, REPAIR_TIME_REDUCTION_BUCKET_CAP_BPS,
+    grinding_repair_modifier,
 };
 pub use master_enchant::{
     MASTER_I_PURCHASE_AEXP, MASTER_II_UPGRADE_AEXP, MasterAcquisitionSource,
