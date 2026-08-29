@@ -13,6 +13,7 @@ mod smelting_runtime;
 mod smelting_terminal;
 mod soulbind;
 mod upgrade_appraisal;
+mod upgrade_cost;
 mod upgrade_outcome;
 
 pub use enchant_appraisal::{
@@ -76,6 +77,10 @@ pub use soulbind::{
 pub use upgrade_appraisal::{
     ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
     scale_base_appraisal_by_upgrade, upgrade_appraisal_factors,
+};
+pub use upgrade_cost::{
+    UpgradeAttemptCostError, UpgradeAttemptResourceCostPreview,
+    preview_upgrade_attempt_resource_cost,
 };
 pub use upgrade_outcome::{
     UpgradeBaseOutcomePolicy, UpgradeOutcomePolicyError, UpgradeProbability,
