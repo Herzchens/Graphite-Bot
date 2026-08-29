@@ -8,6 +8,7 @@ mod smelting;
 mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
+mod upgrade_appraisal;
 
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
@@ -52,4 +53,8 @@ pub use smelting_runtime::{
 pub use smelting_terminal::{
     SmeltingTerminalError, SmeltingTerminalKind, SmeltingTerminalPlan, plan_smelting_terminal,
     project_smelting_runtime_progress,
+};
+pub use upgrade_appraisal::{
+    ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
+    scale_base_appraisal_by_upgrade, upgrade_appraisal_factors,
 };
