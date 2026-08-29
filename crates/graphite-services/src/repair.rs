@@ -1,3 +1,4 @@
+use crate::equipment_policy::{EquipmentMaterial, EquipmentSlot, EquipmentTier};
 use serde::Serialize;
 use thiserror::Error;
 
@@ -8,89 +9,9 @@ const GOLD_AEXP_PER_BASE_UNIT: i128 = 250;
 const CANCEL_REFUND_NUMERATOR: i128 = 4;
 const CANCEL_REFUND_DENOMINATOR: i128 = 5;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RepairTier {
-    StarterLeather,
-    Wood,
-    Stone,
-    Copper,
-    Gold,
-    Iron,
-    Diamond,
-    Obsidian,
-    Netherite,
-    Graphite,
-}
-
-impl RepairTier {
-    const fn ratio_percent(self) -> Option<i128> {
-        match self {
-            Self::StarterLeather => None,
-            Self::Wood => Some(10),
-            Self::Stone => Some(11),
-            Self::Copper => Some(13),
-            Self::Gold => Some(25),
-            Self::Iron => Some(14),
-            Self::Diamond => Some(16),
-            Self::Obsidian => Some(18),
-            Self::Netherite => Some(20),
-            Self::Graphite => Some(23),
-        }
-    }
-
-    pub const fn material(self) -> RepairMaterial {
-        match self {
-            Self::StarterLeather => RepairMaterial::Leather,
-            Self::Wood => RepairMaterial::WoodLog,
-            Self::Stone => RepairMaterial::Stone,
-            Self::Copper => RepairMaterial::CopperIngot,
-            Self::Gold => RepairMaterial::GoldIngot,
-            Self::Iron => RepairMaterial::IronIngot,
-            Self::Diamond => RepairMaterial::Diamond,
-            Self::Obsidian => RepairMaterial::Obsidian,
-            Self::Netherite => RepairMaterial::NetheriteScrap,
-            Self::Graphite => RepairMaterial::GraphiteLayer,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RepairSlot {
-    Pickaxe,
-    Sword,
-    FishingRod,
-    Helmet,
-    Chestplate,
-    Leggings,
-    Boots,
-}
-
-impl RepairSlot {
-    pub const fn base_material_units(self) -> i64 {
-        match self {
-            Self::Pickaxe | Self::Sword | Self::FishingRod | Self::Helmet | Self::Boots => 2,
-            Self::Chestplate => 4,
-            Self::Leggings => 3,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum RepairMaterial {
-    Leather,
-    WoodLog,
-    Stone,
-    CopperIngot,
-    GoldIngot,
-    IronIngot,
-    Diamond,
-    Obsidian,
-    NetheriteScrap,
-    GraphiteLayer,
-}
+pub type RepairTier = EquipmentTier;
+pub type RepairSlot = EquipmentSlot;
+pub type RepairMaterial = EquipmentMaterial;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct RepairPreview {
@@ -166,7 +87,7 @@ pub fn preview_full_repair(
     }
 
     let ratio_percent = tier
-        .ratio_percent()
+        .repair_ratio_percent()
         .ok_or(RepairMathError::UndefinedTierRepairRatio(tier))?;
     let base_material_units = i128::from(slot.base_material_units());
     let missing = i128::from(missing_durability);

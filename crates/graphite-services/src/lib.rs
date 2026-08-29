@@ -1,3 +1,4 @@
+mod equipment_policy;
 mod repair;
 mod reservation;
 mod smelting;
@@ -5,6 +6,10 @@ mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 
+pub use equipment_policy::{
+    BaseEquipmentAppraisal, BaseEquipmentAppraisalSource, EquipmentAppraisalError,
+    EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
+};
 pub use repair::{
     RepairCancelRefund, RepairMaterial, RepairMathError, RepairPreview, RepairSlot, RepairTier,
     preview_full_repair, repair_cancel_refund,
