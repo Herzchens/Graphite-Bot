@@ -1,6 +1,7 @@
 mod enchant_appraisal;
 mod equipment_policy;
 mod forge;
+mod percentage_fee;
 mod repair;
 mod reservation;
 mod slot_orb;
@@ -8,6 +9,7 @@ mod smelting;
 mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
+mod soulbind;
 mod upgrade_appraisal;
 
 pub use enchant_appraisal::{
@@ -53,6 +55,12 @@ pub use smelting_runtime::{
 pub use smelting_terminal::{
     SmeltingTerminalError, SmeltingTerminalKind, SmeltingTerminalPlan, plan_smelting_terminal,
     project_smelting_runtime_progress,
+};
+pub use soulbind::{
+    SOULBIND_MIN_REBIRTH, SOULBIND_REBIND_COOLDOWN_SECONDS, SoulBindBindingPackage,
+    SoulBindBindingPreview, SoulBindPolicyError, SoulBindTierComponent, SoulBindTopUpPreview,
+    SoulBindUnbindPreview, preview_soulbind_binding, preview_soulbind_top_up,
+    preview_soulbind_unbind, soulbind_binding_package,
 };
 pub use upgrade_appraisal::{
     ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
