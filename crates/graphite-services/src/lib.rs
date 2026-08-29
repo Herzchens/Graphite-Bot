@@ -1,9 +1,14 @@
+mod repair;
 mod reservation;
 mod smelting;
 mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 
+pub use repair::{
+    RepairCancelRefund, RepairMaterial, RepairMathError, RepairPreview, RepairSlot, RepairTier,
+    preview_full_repair, repair_cancel_refund,
+};
 pub use reservation::{
     ReservationRole, ServiceJobReservationError, ServiceJobReservationReceipt,
     ServiceJobReservationRequest, StackReservationRequest, reserve_service_job_stacks,
