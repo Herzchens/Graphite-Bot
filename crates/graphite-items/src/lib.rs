@@ -1,3 +1,10 @@
+mod transactional_stack;
+
+pub use transactional_stack::{
+    StackDeliveryMutationError, StackDeliveryMutationReceipt, StackDeliveryMutationRequest,
+    apply_stack_delivery_mutation,
+};
+
 use graphite_core::{OperationId, RootSeed};
 use graphite_store::PgStore;
 use serde::{Deserialize, Serialize};
