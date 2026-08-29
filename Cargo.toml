@@ -6,6 +6,7 @@ members = [
     "crates/graphite-economy",
     "crates/graphite-items",
     "crates/graphite-progression",
+    "crates/graphite-services",
     "crates/graphite-store",
 ]
 resolver = "2"

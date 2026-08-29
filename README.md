@@ -6,7 +6,7 @@ This repository is being built in the order defined by the Graphite master speci
 
 ## Implemented foundation
 
-- Rust workspace split into deterministic domain primitives, economy services, item/storage services, frozen content/price registry services, progression services, PostgreSQL persistence, and the Discord application.
+- Rust workspace split into deterministic domain primitives, economy services, item/storage services, frozen content/price registry services, progression services, service-policy math, PostgreSQL persistence, and the Discord application.
 - UUIDv7 player and operation identities.
 - Versioned Terms of Service storage and explicit acceptance during registration.
 - Global player identity keyed by a unique Discord snowflake.
@@ -23,8 +23,9 @@ This repository is being built in the order defined by the Graphite master speci
 - CatchBag weight accounting from the 1,000 kg baseline using integer grams internally.
 - Capacity-safe pending asset delivery instead of silent loss when an Item Bag delivery cannot fit.
 - Death-safe Tool Locker, equipped-slot consistency constraints, item inspection, and idempotent equip/unequip mutations.
-- Immutable versioned content/NPC-price registry containing the frozen resource lattice, explicit NPC-liquidity separation, normal-Shop availability classes, stock-policy classes, and the four canonical alloy recipes.
+- Immutable versioned content/NPC-price registry containing the frozen resource lattice, explicit NPC-liquidity separation, normal-Shop availability classes, stock-policy classes, canonical alloy recipes, and versioned ordinary-smelting recipes.
 - Integer-only regression math for the frozen processed-metal appraisal formula using the canonical 1/8-Coal fuel basis.
+- Canonical Smelting preview math using exact half-smelt heat units for Coal/Wood Log, 20-second base unit time, partial-fuel previews, stop/cancel fuel accounting, and per-job 8-unit Activity EXP remainder math.
 - Canonical Account XP/Level and derived Activity Level math, fixed Account Level Money rewards, deterministic Rebirth utility curves, and idempotent Rebirth reset semantics.
 - Transaction-composable Activity EXP settlement for already-effective integer grants, spends, and losses, with stable per-operation mutation keys, mandatory provenance, non-negative enforcement, and replay-safe receipts.
 - HMAC identity fingerprints for the temporary post-deletion re-registration cooldown.
@@ -53,11 +54,13 @@ Only implemented commands are registered right now:
 
 `/bank` supports balance information plus Wallet↔Bank deposit/withdraw mutations. Bank interest accrues automatically and is refreshed before balance-sensitive command paths; a bounded background worker catches up accounts that are not actively issuing commands.
 
-The storage slice exposes safe reads plus equipment movement. Generic future reward systems can settle stack delivery into Item Bag or an authoritative pending-delivery row when capacity is insufficient. `/discard` is intentionally not registered yet because the master specification names Trash Recovery but this slice does not invent missing recovery/expiry behavior. Storage-capacity purchases, fishing, mining, remaining economy mutations, services, market/trade, clan, automation, minigames, and other systems remain unavailable until their implementation slice satisfies the master specification.
+The storage slice exposes safe reads plus equipment movement. Generic future reward systems can settle stack delivery into Item Bag or an authoritative pending-delivery row when capacity is insufficient. `/discard` is intentionally not registered yet because the master specification names Trash Recovery but this slice does not invent missing recovery/expiry behavior. Storage-capacity purchases, fishing, mining, remaining economy mutations, live services, market/trade, clan, automation, minigames, and other systems remain unavailable until their implementation slice satisfies the master specification.
 
-The frozen content/price registry is deliberately read-only infrastructure in this phase. It does not activate `/shop`, NPC liquidation, or stock mutation. The specification defines per-definition stack caps but does not freeze numeric caps for the new resource definitions, so the registry does not guess those values or prematurely activate these catalog rows as stack ItemDefinitions.
+The frozen content/price registry is deliberately read-only infrastructure. Policy v2 preserves the full v1 price/content lattice and adds the fourteen canonical one-input ordinary-smelting mappings, including Bauxite → Aluminum Ingot and Ancient Debris → Netherite Scrap. It still does not activate `/shop`, NPC liquidation, or stock mutation. The specification defines per-definition stack caps but does not freeze numeric caps for the new resource definitions, so the repository does not guess those values or prematurely activate these catalog rows as stack ItemDefinitions.
 
-The progression domain now owns canonical Account XP, Activity EXP, derived levels, and Rebirth state. User-facing `/level`/`/activity`/`/rebirth` command wiring and live chat/Mine/Fish/monster/Quest source adapters are still intentionally unavailable until their qualification, risk, and gameplay slices exist. The Activity EXP transaction API accepts already-effective integer points; source-specific Rebirth/guild/clan/event/automation modifiers remain the responsibility of the owning source so they cannot be silently double-applied.
+The Smelting policy kernel is also deliberately preview-only. It computes exact base time, single-selected-fuel whole-item reservation requirements, partial processing when that selected fuel is insufficient, residual heat loss, stop/cancel returnable whole fuel, and the canonical `floor(completed_units / 8)` Activity EXP progression without mutating assets. It does not invent a mixed-fuel selection rule. `/smelt` and Confirm remain unavailable until resources have authoritative stack definitions and reservations are scoped per job; the existing generic `JOB_RESERVATION` stack location is not used as ownership for parallel service jobs because it has no job identifier.
+
+The progression domain owns canonical Account XP, Activity EXP, derived levels, and Rebirth state. User-facing `/level`/`/activity`/`/rebirth` command wiring and live chat/Mine/Fish/monster/Quest source adapters are still intentionally unavailable until their qualification, risk, and gameplay slices exist. The Activity EXP transaction API accepts already-effective integer points; source-specific Rebirth/guild/clan/event/automation modifiers remain the responsibility of the owning source so they cannot be silently double-applied.
 
 ## Requirements
 
@@ -94,4 +97,4 @@ The CI workflow provisions PostgreSQL 18.6 and runs PostgreSQL integration cover
 
 ## Architecture rule
 
-PostgreSQL owns canonical player, asset, storage, equipment, content, price-policy, progression, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership, pricing policy, progression, or Money. State-changing handlers must resolve a bounded mutation and settle it atomically before Discord side effects are emitted.
+PostgreSQL owns canonical player, asset, storage, equipment, content, price-policy, progression, balance, operation, interest, and outbox state. In-memory data may accelerate reads, but it is never the source of truth for ownership, pricing policy, progression, or Money. Read-only policy previews may be computed in pure Rust, but state-changing handlers must revalidate authoritative inputs, resolve a bounded mutation, and settle it atomically before Discord side effects are emitted.
