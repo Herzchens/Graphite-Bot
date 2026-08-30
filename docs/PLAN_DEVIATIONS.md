@@ -838,3 +838,47 @@ The master freezes that Multi Treasure repeats treasure-result quantity after se
 **Final decision**
 
 Do not resolve repeated Book quantity, RNG draws, ItemDefinitions, inventory settlement or `/fish` runtime here. Phase 7 remains Pending.
+
+## Multi Treasure Level X count policy slice
+
+Branch: `feat/multi-treasure-level-x-policy`
+
+### 1. Only the Level X count distribution is numerically frozen
+
+**Implementation-time finding — `UNRESOLVED` for Levels I–IX**
+
+The current 2026-08-28 Master Specification states only the Level X result: 6% double Treasure and 1.5% triple Treasure, with expected Treasure count approximately 1.09× after a Treasure proc. It provides no table, interpolation rule, linearity rule, or other numeric mapping for Multi Treasure Levels I–IX.
+
+**Final decision**
+
+Expose a deliberately Level-X-only policy. The complete Level X distribution is exactly 92.5% single / 6% double / 1.5% triple, represented as integer basis points `9,250 / 600 / 150`. Do not accept an enchant-level argument and do not extrapolate Level X probabilities to lower levels. Levels I–IX remain blocked until an authoritative progression rule exists.
+
+### 2. Multi Treasure owns the canonical maximum Treasure count
+
+**Implementation-time finding — `CONFIRMED`**
+
+The existing Manual Fishing AEXP policy independently encoded a maximum landed Treasure count of three only to validate its 10-AEXP-per-cast cap. Once a canonical Multi Treasure count policy exists, retaining a separate AEXP-owned `3` would create two sources of truth for the same gameplay boundary.
+
+**Final decision**
+
+Move the shared maximum to `MULTI_TREASURE_MAX_ITEMS = 3` in the Multi Treasure domain and make Manual Fishing AEXP reuse it. AEXP continues to own only reward math: 5 base AEXP per landed Treasure with a 10-base-AEXP cap.
+
+### 3. Exact count probability does not activate RNG or repeated-result semantics
+
+**Implementation-time finding — `UNRESOLVED`**
+
+`graphite-core::DomainRng` already owns deterministic weighted sampling, but the Fishing lifecycle and RNG domain assignment are not implemented. The specification also still does not freeze whether a double/triple stateful result such as an Enchant Book independently rerolls pool/member/level for each item or duplicates the already-selected result.
+
+**Final decision**
+
+Keep the Level X policy as exact pure data only. Do not draw RNG, choose a domain string, mint items, duplicate/reroll Enchant Books, settle inventory, or register `/fish`. Multi Catch remains independent and is not multiplied by Multi Treasure.
+
+### 4. No dependency, schema, persistence, or runtime change is justified
+
+**Check result — `DISPROVED` for infrastructure churn in this slice**
+
+The complete frozen Level X distribution fits exact bounded integer basis-point arithmetic and the existing Services layer. Repository-wide review found no current stateful Fishing owner or migration to update, and the executable still does not depend on `graphite-services`.
+
+**Final decision**
+
+Keep the slice dependency/schema-neutral and non-mutating. Phase 7 remains Pending; exact-head CI must verify rustfmt, Clippy, full workspace tests, and PostgreSQL integration before merge.
