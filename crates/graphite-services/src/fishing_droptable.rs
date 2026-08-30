@@ -109,9 +109,8 @@ mod tests {
 
     #[test]
     fn catch_branch_weights_reproduce_exact_zero_modifier_chances() {
-        let weights = CATCH_BRANCHES.map(|branch| {
-            fishing_base_catch_branch_policy(branch).relative_weight
-        });
+        let weights =
+            CATCH_BRANCHES.map(|branch| fishing_base_catch_branch_policy(branch).relative_weight);
         assert_eq!(weights, [176, 17, 7]);
 
         let total: u16 = weights.iter().sum();
@@ -124,9 +123,8 @@ mod tests {
 
     #[test]
     fn treasure_result_weights_reproduce_exact_internal_chances() {
-        let weights = TREASURE_RESULTS.map(|result| {
-            fishing_base_treasure_result_policy(result).relative_weight
-        });
+        let weights = TREASURE_RESULTS
+            .map(|result| fishing_base_treasure_result_policy(result).relative_weight);
         assert_eq!(weights, [19, 13, 5, 4, 5, 4]);
 
         let total: u16 = weights.iter().sum();
@@ -139,14 +137,15 @@ mod tests {
 
     #[test]
     fn nested_treasure_weights_reproduce_exact_overall_base_chances() {
-        let branch_weights = CATCH_BRANCHES.map(|branch| {
-            fishing_base_catch_branch_policy(branch).relative_weight
-        });
-        let treasure_weights = TREASURE_RESULTS.map(|result| {
-            fishing_base_treasure_result_policy(result).relative_weight
-        });
+        let branch_weights =
+            CATCH_BRANCHES.map(|branch| fishing_base_catch_branch_policy(branch).relative_weight);
+        let treasure_weights = TREASURE_RESULTS
+            .map(|result| fishing_base_treasure_result_policy(result).relative_weight);
         let branch_total: u32 = branch_weights.iter().map(|weight| u32::from(*weight)).sum();
-        let treasure_total: u32 = treasure_weights.iter().map(|weight| u32::from(*weight)).sum();
+        let treasure_total: u32 = treasure_weights
+            .iter()
+            .map(|weight| u32::from(*weight))
+            .sum();
         let treasure_branch_weight =
             fishing_base_catch_branch_policy(FishingCatchBranch::Treasure).relative_weight;
 
