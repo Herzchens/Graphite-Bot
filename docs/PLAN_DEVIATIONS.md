@@ -1050,3 +1050,73 @@ This slice does not invent or activate:
 - enchant-definition → appraisal-class mapping;
 - live Repair/Forge/+N/SoulBind integration;
 - a repository `Cargo.lock`.
+
+## Ordinary equipment Recraft resolver slice
+
+Branch: `feat/ordinary-equipment-recraft-resolver`
+
+### 1. Full Enhanced resolution was narrowed to the authoritative ordinary structural boundary
+
+**Initial next-step plan**
+
+After structural-state persistence and its owner-scoped resolver, build one authoritative ItemInstance→canonical-appraisal resolver for downstream Repair, Forge, +N, Slot Orb, and SoulBind owners.
+
+**Implementation-time finding — `CONFIRMED` for Recraft / `UNRESOLVED` for Enhanced**
+
+The repository now has authoritative immutable ordinary/special classification, exact pinned ItemDefinition versions, and typed locked Creation Roll/+N state. Those inputs are sufficient to derive the ordinary structural `RecraftAppraisal`. However, repository/schema review still found no authoritative embedded-enchant instance/slot persistence and no concrete persisted enchant-definition→appraisal-class bridge. Treating the missing contribution as zero would turn absence of persistence into a gameplay claim.
+
+**Final decision**
+
+Expose only an owner-scoped transaction-composable ordinary ItemInstance→`RecraftAppraisal` resolver. Do not return or cache `EnhancedCanonicalAppraisal` until the embedded-enchant state/bridge is authoritative. The pure Enhanced composer remains available for already-resolved inputs, but this stateful bridge does not synthesize an enchant value.
+
+### 2. Services composes appraisal policy; Items remains the authoritative storage/lock owner
+
+**Implementation-time finding — `CONFIRMED`**
+
+`graphite-items` already owns owner-scoped ItemInstance and structural-row locking, while `graphite-services` owns base/Creation Roll/+N appraisal policy. Making Items depend on Services would invert that layering and risk a dependency cycle as service lifecycles grow.
+
+**Final decision**
+
+Add a one-way `graphite-services → graphite-items` path dependency. Services calls the item-domain lock resolver, then reads only the exact immutable ItemDefinition version pinned by the locked ItemInstance. The mutable lock order remains caller operation/player locks → ItemInstance → structural row; the subsequent immutable definition read adds no competing mutable lock owner.
+
+### 3. Current-v1 Gold armor must fail closed even though generic appraisal math is defined
+
+**Full-review finding — `CONFIRMED`**
+
+The shared TierAnchor×SlotFactor table can mathematically price Gold armor slots, but the active current-v1 ordinary Forge contract explicitly allows Gold only for Pickaxe, Sword, and Fishing Rod. Accepting a malformed persisted ordinary `GOLD + ARMOR` definition would therefore legitimize an unavailable current-v1 equipment shape merely because the generic math can evaluate it.
+
+**Final decision**
+
+The ordinary resolver explicitly rejects Gold armor before appraisal. A regression keeps Gold tools valid while proving Helmet/Chestplate/Leggings/Boots fail closed.
+
+### 4. An ordinary `base_appraisal` parser was rejected after source-authority review
+
+**Static-review suspicion — `DISPROVED`**
+
+A first self-review pass suspected that calling `base_equipment_appraisal(tier, slot, None)` ignored a definition-specific override. Before retaining that change, the normative 2026-08-28 master was rechecked. It states the standard table for ordinary equipment and separately says a **special ItemDefinition** may freeze its own `base_appraisal` override. Repository history had already made the same ordinary-vs-special distinction.
+
+No authoritative persistence representation for a special override is frozen by this ordinary resolver slice; inventing `data["base_appraisal"]` as the stateful bridge would therefore create an implementation-owned schema convention.
+
+**Final decision**
+
+Keep this resolver strictly ordinary and standard-table based. Reject non-ordinary definitions before appraisal. Leave special ItemDefinition override resolution to a future dedicated special-definition bridge when its persistence representation and consumers are authoritative.
+
+### 5. Structural appraisal is shared internally without pretending embedded enchants are zero
+
+**Implementation-time finding — `CONFIRMED`**
+
+The first resolver shape reused `compose_canonical_equipment_appraisal(..., embedded_enchant_value = 0)` only to extract `RecraftAppraisal`. Although the returned structural value was mathematically correct, this implementation shape unnecessarily represented missing authoritative enchant state as a concrete zero inside a stateful resolver path.
+
+**Final decision**
+
+Factor the structural calculation into a crate-private `recraft_equipment_appraisal` helper used by both the public canonical composer and the stateful ordinary resolver. This changes no public rational model and creates no second appraisal formula; it removes the synthetic enchant input while keeping one structural arithmetic owner.
+
+### 6. Stable-release audit did not justify dependency/toolchain churn
+
+**Check result — `DISPROVED` for version churn**
+
+Rust 1.98.0 and the relevant direct stable dependencies (`sqlx`, `serde`, `thiserror`, `uuid`) were rechecked before implementation. No stable update was proven necessary for this slice, and no new external crate is required.
+
+**Final decision**
+
+Keep the existing Rust/dependency pins. The only manifest change is the first-party `graphite-items` path dependency required by the intended layering. Do not mix unrelated dependency upgrades or prerelease versions into this resolver commit.
