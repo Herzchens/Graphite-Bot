@@ -7,6 +7,7 @@ mod equipment_policy;
 mod fishing_aexp;
 mod fishing_area;
 mod fishing_bait;
+mod fishing_bait_cast;
 mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_capability_routing;
@@ -83,6 +84,11 @@ pub use fishing_bait::{
     SchoolBaitNoExtraFishReason, SchoolBaitProcResolution, SchoolBaitQuantityError,
     SchoolBaitQuantityResolution, TreasureBaitBranchWeightPreview, bait_rack_capacity_policy,
     fishing_bait_policy, preview_treasure_bait_base_branch_weight, resolve_school_bait_quantity,
+};
+pub use fishing_bait_cast::{
+    ActiveFishingBaitInventory, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
+    FishingBaitCastConsumptionError, FishingBaitCastConsumptionPlan,
+    plan_fishing_bait_cast_consumption,
 };
 pub use fishing_book_pool::{
     DirectFishingBookLevelProfile, DirectFishingBookPolicyError, DirectFishingBookPool,
