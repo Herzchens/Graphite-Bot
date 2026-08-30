@@ -19,9 +19,7 @@ pub enum ManualFishingAexpOutcome {
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum ManualFishingAexpError {
-    #[error(
-        "landed treasure count must be between 1 and {MULTI_TREASURE_MAX_ITEMS}; got {0}"
-    )]
+    #[error("landed treasure count must be between 1 and {MULTI_TREASURE_MAX_ITEMS}; got {0}")]
     LandedTreasureCountOutOfRange(u8),
 }
 
