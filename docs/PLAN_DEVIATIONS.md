@@ -660,3 +660,65 @@ The policy uses existing `serde`/`thiserror` plus standard-library checked integ
 **Final decision**
 
 Keep Rust 1.98.0 and the current direct dependency set. Do not mix localization/emoji infrastructure or unrelated dependency changes into this Fishing policy slice.
+
+## Manual Fishing base AEXP policy slice
+
+Branch: `feat/manual-fishing-aexp-base-policy`
+
+### 1. The Fishing reward table is base AEXP, not a final progression mutation amount
+
+**Initial implementation plan**
+
+Expose the frozen Manual Fishing AEXP table directly as the amount to grant for Junk, Treasure, or landed fish.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The active specification has a Rebirth Activity EXP gain bonus and a global AEXP gain-modifier cap of 1.75×. The progression mutation kernel also explicitly requires callers to provide the final integer AEXP amount after source-specific modifiers and caps; its integration regression records `modifiers_already_applied = true` in provenance. Treating the Fishing table as a final mutation amount would therefore make a future Fishing adapter capable of silently bypassing the modifier layer.
+
+**Final decision**
+
+Name the public Fishing functions and constants as **base AEXP**. The Services policy owns only the source table and source-local Multi Treasure cap. A future stateful Fishing settlement owner must apply the authoritative AEXP gain modifier stack after this base policy and only then pass the final positive integer grant to `apply_activity_xp_mutation`. This slice does not duplicate Rebirth/global modifier composition inside Fishing.
+
+### 2. Heterogeneous Multi Catch AEXP cap basis remains undefined
+
+**Initial implementation possibility**
+
+Aggregate all landed fish AEXP and cap the result at `3 × single-cast fish AEXP` in the same helper.
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The active specification says Multi Catch grants each successfully landed fish's rarity AEXP but caps the cast at `3× the single-cast fish AEXP`. It does not define which fish supplies that cap basis when one cast lands fish with different rarities. Using the first fish, lowest rarity, highest rarity, average rarity, or another basis would each produce different canonical progression output.
+
+**Final decision**
+
+Do not expose an aggregate Multi Catch AEXP function yet. Freeze only the per-fish rarity base table. The future aggregate resolver must remain blocked until the cap basis for heterogeneous landed fish is authoritative.
+
+### 3. Multi Treasure has a finite landed-count domain and a separate base-AEXP cap
+
+**Implementation-time finding — `CONFIRMED`**
+
+The canonical Multi Treasure contract produces single, double, or triple Treasure; no four-or-more Treasure result is defined. Separately, Treasure pays 5 base AEXP and total Treasure AEXP is capped at 10 per cast.
+
+**Final decision**
+
+`manual_fishing_base_treasure_cast_aexp` accepts only authoritative landed Treasure counts `1..=3`, computes `5 × count`, and caps the source-local base result at 10. Count 0 or 4+ fails closed rather than being hidden by the cap. The helper does not own Multi Treasure RNG or infer enchant-level proc distributions.
+
+### 4. Failed fish outcomes skip the progression mutation instead of emitting a zero grant
+
+**Implementation-time finding — `CONFIRMED`**
+
+Fish escape and line-break outcomes grant zero Fishing AEXP. The shared progression mutation kernel intentionally rejects non-positive mutation amounts.
+
+**Final decision**
+
+The base outcome policy returns `None` for `FishEscaped` and `LineBreak`. The future owning Fishing transaction must omit the Activity EXP grant sub-mutation for those outcomes rather than manufacture a zero-value progression event.
+
+### 5. No dependency, schema, RNG, or runtime activation is justified
+
+**Check result — `DISPROVED` for infrastructure churn in this slice**
+
+The source table and Multi Treasure cap use bounded integer arithmetic and existing `FishingRarity`, `serde`, and `thiserror` types. Repository-wide integration review found no existing Manual Fishing AEXP source owner to migrate and no live Fishing command/runtime that needs compatibility wiring.
+
+**Final decision**
+
+Keep the slice dependency/schema-neutral and non-mutating. Do not add migrations, RNG draws, ItemInstance settlement, Modifier Registry implementation, progression writes, or `/fish` command wiring. Phase 7 remains unactivated until the owning Fishing lifecycle is implemented.
