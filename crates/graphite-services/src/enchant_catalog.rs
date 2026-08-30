@@ -1,6 +1,9 @@
 use serde::Serialize;
 
-use crate::EnchantAppraisalClass;
+use crate::enchant_appraisal::embedded_enchant_value_from_book_appraisals;
+use crate::{
+    CanonicalBookAppraisal, EnchantAppraisalClass, EnchantAppraisalError, canonical_book_appraisal,
+};
 
 pub const NORMAL_SHOP_MAX_BOOK_LEVEL: u8 = 5;
 pub const BAIT_RACK_MAX_BOOK_LEVEL: u8 = crate::fishing_bait::BAIT_RACK_MAX_LEVEL;
@@ -89,6 +92,17 @@ impl EnchantCatalogPolicy {
     pub const fn normal_shop_eligible(self) -> bool {
         self.normal_shop_max_book_level.is_some()
     }
+}
+
+/// Concrete canonical enchant identity plus its already-resolved resulting Level I-X.
+///
+/// This type deliberately carries no caller-supplied appraisal class. The class is derived from
+/// [`enchant_catalog_policy`] at appraisal time so identity and canonical value classification
+/// cannot drift independently.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct CanonicalEmbeddedEnchantAppraisalInput {
+    pub enchant: CanonicalEnchant,
+    pub level: u8,
 }
 
 /// Resolves the frozen acquisition family and appraisal value class for one canonical enchant.
@@ -191,6 +205,41 @@ pub const fn enchant_catalog_policy(enchant: CanonicalEnchant) -> EnchantCatalog
         appraisal_class,
         normal_shop_max_book_level,
     }
+}
+
+/// Resolves canonical book appraisal from a concrete canonical enchant identity.
+///
+/// The appraisal class is always derived from [`enchant_catalog_policy`]. Callers cannot relabel an
+/// ordinary enchant as Mythic/Special or otherwise choose a more valuable class independently from
+/// its identity. Resulting-level validation and numeric appraisal math remain owned by
+/// [`canonical_book_appraisal`].
+///
+/// This pure bridge does not prove that the enchant is actually embedded in a particular item, does
+/// not resolve Master tier state into a resulting level, and does not persist or mutate enchant
+/// slots. Those remain responsibilities of the future authoritative ItemInstance enchant owner.
+pub fn canonical_enchant_book_appraisal(
+    enchant: CanonicalEnchant,
+    level: u8,
+) -> Result<CanonicalBookAppraisal, EnchantAppraisalError> {
+    let policy = enchant_catalog_policy(enchant);
+    canonical_book_appraisal(policy.appraisal_class, level)
+}
+
+/// Computes canonical embedded-enchant contribution from concrete canonical enchant identities.
+///
+/// This is the identity-aware counterpart to the lower-level class-based appraisal API. Every
+/// element derives its class from the catalog and then shares the same checked book summation plus
+/// frozen 70%-round-half-up accumulator as [`crate::embedded_enchant_value`]. No intermediate
+/// allocation is required.
+///
+/// Compatibility, slot occupancy, provenance, ItemInstance ownership, and persistence are outside
+/// this pure bridge and must be supplied by a future authoritative enchant-state owner.
+pub fn canonical_embedded_enchant_value(
+    enchants: &[CanonicalEmbeddedEnchantAppraisalInput],
+) -> Result<i64, EnchantAppraisalError> {
+    embedded_enchant_value_from_book_appraisals(enchants.iter().map(|enchant| {
+        canonical_enchant_book_appraisal(enchant.enchant, enchant.level)
+    }))
 }
 
 #[cfg(test)]
@@ -328,5 +377,105 @@ mod tests {
         );
         assert_eq!(master.appraisal_class, EnchantAppraisalClass::SpecialRare);
         assert!(!master.normal_shop_eligible());
+    }
+
+    #[test]
+    fn identity_aware_book_appraisal_derives_class_from_catalog() {
+        for (enchant, level, class, value) in [
+            (
+                CanonicalEnchant::Efficiency,
+                1,
+                EnchantAppraisalClass::ShopCommon,
+                60_000,
+            ),
+            (
+                CanonicalEnchant::Stabilize,
+                1,
+                EnchantAppraisalClass::SpecialCommon,
+                120_000,
+            ),
+            (
+                CanonicalEnchant::PickaxeTreasure,
+                1,
+                EnchantAppraisalClass::FishingChestMidHigh,
+                180_000,
+            ),
+            (
+                CanonicalEnchant::Trench,
+                1,
+                EnchantAppraisalClass::FishingChestRare,
+                480_000,
+            ),
+            (
+                CanonicalEnchant::Mending,
+                1,
+                EnchantAppraisalClass::Mending,
+                480_000,
+            ),
+            (
+                CanonicalEnchant::Nuke,
+                1,
+                EnchantAppraisalClass::Mythic,
+                1_200_000,
+            ),
+            (
+                CanonicalEnchant::Empowering,
+                1,
+                EnchantAppraisalClass::SpecialMid,
+                300_000,
+            ),
+            (
+                CanonicalEnchant::Master,
+                1,
+                EnchantAppraisalClass::SpecialRare,
+                720_000,
+            ),
+            (
+                CanonicalEnchant::ShadowWalker,
+                4,
+                EnchantAppraisalClass::FishingChestMidHigh,
+                945_000,
+            ),
+        ] {
+            let appraisal = canonical_enchant_book_appraisal(enchant, level).unwrap();
+            assert_eq!(appraisal.class, class, "{enchant:?}");
+            assert_eq!(appraisal.value, value, "{enchant:?}");
+        }
+    }
+
+    #[test]
+    fn identity_aware_embedded_value_reuses_the_exact_seventy_percent_accumulator() {
+        let inputs = [
+            CanonicalEmbeddedEnchantAppraisalInput {
+                enchant: CanonicalEnchant::Efficiency,
+                level: 2,
+            },
+            CanonicalEmbeddedEnchantAppraisalInput {
+                enchant: CanonicalEnchant::Mending,
+                level: 1,
+            },
+            CanonicalEmbeddedEnchantAppraisalInput {
+                enchant: CanonicalEnchant::Master,
+                level: 3,
+            },
+        ];
+        // 105,000 + 480,000 + 2,160,000 = 2,745,000; 70% = 1,921,500.
+        assert_eq!(canonical_embedded_enchant_value(&inputs).unwrap(), 1_921_500);
+        assert_eq!(canonical_embedded_enchant_value(&[]).unwrap(), 0);
+    }
+
+    #[test]
+    fn identity_aware_bridge_preserves_resulting_level_validation() {
+        assert_eq!(
+            canonical_enchant_book_appraisal(CanonicalEnchant::Efficiency, 0),
+            Err(EnchantAppraisalError::InvalidLevel(0))
+        );
+        assert_eq!(
+            canonical_embedded_enchant_value(&[CanonicalEmbeddedEnchantAppraisalInput {
+                enchant: CanonicalEnchant::Nuke,
+                level: 11,
+            }]),
+            Err(EnchantAppraisalError::InvalidLevel(11))
+        );
     }
 }
