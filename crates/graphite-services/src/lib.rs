@@ -9,6 +9,7 @@ mod fishing_area;
 mod fishing_bait;
 mod fishing_book_pool;
 mod fishing_capability;
+mod fishing_capability_routing;
 mod fishing_droptable;
 mod fishing_gold_rod;
 mod fishing_limits;
@@ -93,6 +94,9 @@ pub use fishing_capability::{
     ManualFishingLineStrength, NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT,
     STRENGTHEN_MAX_LEVEL, fishing_catch_load, fishing_rarity_tension_multiplier, fishing_tension,
     manual_fishing_capability_ratio, manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
+};
+pub use fishing_capability_routing::{
+    FishingCapabilityRoute, FishingCapabilityRoutingPolicy, fishing_capability_routing_policy,
 };
 pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,
