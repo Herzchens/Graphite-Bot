@@ -39,7 +39,7 @@ fn public_api_reproduces_exact_within_treasure_chances() {
     let policies = TREASURE_RESULTS.map(fishing_base_treasure_result_policy);
     assert_eq!(
         policies.map(|policy| policy.relative_weight),
-        [19, 13, 5, 4, 5, 4]
+        [20, 15, 4, 4, 5, 2]
     );
     for (policy, result) in policies.into_iter().zip(TREASURE_RESULTS) {
         assert_eq!(policy.result, result);
@@ -50,7 +50,7 @@ fn public_api_reproduces_exact_within_treasure_chances() {
     assert_eq!(total, 50);
     assert_eq!(
         weights.map(|weight| u32::from(weight) * 10_000 / u32::from(total)),
-        [3_800, 2_600, 1_000, 800, 1_000, 800]
+        [4_000, 3_000, 800, 800, 1_000, 400]
     );
 }
 
@@ -74,5 +74,5 @@ fn public_api_preserves_exact_nested_treasure_base_chances() {
         u32::from(treasure_branch_weight) * u32::from(result_weight) * 10_000
             / (branch_total * treasure_total)
     });
-    assert_eq!(overall_basis_points, [133, 91, 35, 28, 35, 28]);
+    assert_eq!(overall_basis_points, [140, 105, 28, 28, 35, 14]);
 }

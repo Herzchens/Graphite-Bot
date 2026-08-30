@@ -63,11 +63,11 @@ pub const fn fishing_base_catch_branch_policy(
 
 /// Resolves one row of the base result table after the Treasure branch has already been selected.
 ///
-/// The canonical within-Treasure chances 38% / 26% / 10% / 8% / 10% / 8% are represented as the
-/// reduced common-scale relative weights 19 / 13 / 5 / 4 / 5 / 4. Treasure-branch modifiers do not
-/// get applied a second time to this internal table: for example, Treasure X changes the Treasure
-/// branch relatively but does not multiply an Enchant Book's internal rarity. Multi Treasure also
-/// resolves quantity only after a Treasure proc/result selection.
+/// The current canonical within-Treasure chances 40% / 30% / 8% / 8% / 10% / 4% are represented
+/// as the reduced common-scale relative weights 20 / 15 / 4 / 4 / 5 / 2. Treasure-branch modifiers
+/// do not get applied a second time to this internal table: for example, Treasure X changes the
+/// Treasure branch relatively but does not multiply an Enchant Book's internal rarity. Multi
+/// Treasure also resolves quantity only after a Treasure proc/result selection.
 ///
 /// This policy does not resolve the direct Enchant Book pool, item quantities, RNG, or settlement.
 #[must_use]
@@ -75,12 +75,12 @@ pub const fn fishing_base_treasure_result_policy(
     result: FishingTreasureResult,
 ) -> FishingTreasureResultBasePolicy {
     let relative_weight = match result {
-        FishingTreasureResult::MaterialBundle => 19,
-        FishingTreasureResult::CrateOrChest => 13,
-        FishingTreasureResult::EnchantBook => 5,
+        FishingTreasureResult::MaterialBundle => 20,
+        FishingTreasureResult::CrateOrChest => 15,
+        FishingTreasureResult::EnchantBook => 4,
         FishingTreasureResult::OrbOrCatalystFragmentOrItem => 4,
         FishingTreasureResult::RareBaitOrUtilityItem => 5,
-        FishingTreasureResult::RelicOrCollectible => 4,
+        FishingTreasureResult::RelicOrCollectible => 2,
     };
 
     FishingTreasureResultBasePolicy {
@@ -125,13 +125,13 @@ mod tests {
     fn treasure_result_weights_reproduce_exact_internal_chances() {
         let weights = TREASURE_RESULTS
             .map(|result| fishing_base_treasure_result_policy(result).relative_weight);
-        assert_eq!(weights, [19, 13, 5, 4, 5, 4]);
+        assert_eq!(weights, [20, 15, 4, 4, 5, 2]);
 
         let total: u16 = weights.iter().sum();
         assert_eq!(total, 50);
         assert_eq!(
             weights.map(|weight| u32::from(weight) * 10_000 / u32::from(total)),
-            [3_800, 2_600, 1_000, 800, 1_000, 800]
+            [4_000, 3_000, 800, 800, 1_000, 400]
         );
     }
 
@@ -153,6 +153,6 @@ mod tests {
             u32::from(treasure_branch_weight) * u32::from(result_weight) * 10_000
                 / (branch_total * treasure_total)
         });
-        assert_eq!(overall_basis_points, [133, 91, 35, 28, 35, 28]);
+        assert_eq!(overall_basis_points, [140, 105, 28, 28, 35, 14]);
     }
 }
