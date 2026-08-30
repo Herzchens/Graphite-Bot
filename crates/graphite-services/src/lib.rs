@@ -5,6 +5,7 @@ mod equipment_appraisal;
 mod equipment_policy;
 mod fishing_area;
 mod fishing_bait;
+mod fishing_capability;
 mod fishing_species;
 mod fishing_variant;
 mod forge;
@@ -57,6 +58,11 @@ pub use fishing_bait::{
     FishingBait, FishingBaitCategory, FishingBaitEffect, FishingBaitPolicy, FishingBaitRatio,
     FishingRarity, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, MAX_FISH_PER_CAST,
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, bait_rack_capacity_policy, fishing_bait_policy,
+};
+pub use fishing_capability::{
+    NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT, FishingCapabilityError,
+    FishingRodBaseStats, FishingTension, FishingTensionRatio, fishing_rarity_tension_multiplier,
+    fishing_tension, ordinary_fishing_rod_base_stats,
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
