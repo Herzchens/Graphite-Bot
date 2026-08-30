@@ -65,6 +65,14 @@ pub struct OwnedItemOrdinaryEquipmentClassification {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedItemEquipmentStructuralState {
+    pub item: OwnedItemOrdinaryEquipmentClassification,
+    pub creation_roll_numerator: u64,
+    pub creation_roll_denominator: u64,
+    pub upgrade_level: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StackView {
     pub definition_key: String,
     pub definition_version: i32,
@@ -163,6 +171,10 @@ pub enum ItemError {
     OperationMissingAfterInsert,
     #[error("item/storage arithmetic exceeded the supported range")]
     ArithmeticOverflow,
+    #[error("equipment structural state was not found for this item instance")]
+    EquipmentStructuralStateMissing,
+    #[error("stored equipment structural state is invalid")]
+    InvalidEquipmentStructuralState,
     #[error("equipment state is internally inconsistent")]
     EquipmentIntegrityMismatch,
 }
@@ -867,13 +879,73 @@ pub async fn lock_owned_item_ordinary_equipment_classification(
     item_id: Uuid,
 ) -> Result<OwnedItemOrdinaryEquipmentClassification, ItemError> {
     let item = lock_owned_item(tx, player_id, item_id).await?;
-    Ok(OwnedItemOrdinaryEquipmentClassification {
+    Ok(ordinary_equipment_classification_snapshot(
+        player_id, item_id, &item,
+    ))
+}
+
+/// Locks one owner-scoped ItemInstance plus its persisted equipment structural state.
+///
+/// The ItemInstance lock is always acquired before the structural-state row lock. Stateful callers
+/// must first acquire their owning operation/player locks, preserving the canonical
+/// `operation -> player -> item -> structural state` order. The returned state is authoritative only
+/// while `tx` remains open; callers must not cache it across transactions.
+///
+/// The nested item snapshot reuses the exact immutable pinned-definition classification boundary.
+/// Missing structural state fails closed instead of being interpreted as Creation Roll zero or +0.
+/// This resolver neither creates/mutates structural state nor computes Recraft/Enhanced appraisal.
+pub async fn lock_owned_item_equipment_structural_state(
+    tx: &mut Transaction<'_, Postgres>,
+    player_id: Uuid,
+    item_id: Uuid,
+) -> Result<OwnedItemEquipmentStructuralState, ItemError> {
+    let item = lock_owned_item(tx, player_id, item_id).await?;
+    let classification = ordinary_equipment_classification_snapshot(player_id, item_id, &item);
+    let row = sqlx::query(
+        r#"
+        SELECT trim_scale(creation_roll_numerator)::TEXT AS creation_roll_numerator,
+               trim_scale(creation_roll_denominator)::TEXT AS creation_roll_denominator,
+               trim_scale(upgrade_level)::TEXT AS upgrade_level
+          FROM item_instance_equipment_structural_state
+         WHERE item_instance_id = $1
+         FOR UPDATE
+        "#,
+    )
+    .bind(item_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(ItemError::EquipmentStructuralStateMissing)?;
+
+    let numerator: String = row.try_get("creation_roll_numerator")?;
+    let denominator: String = row.try_get("creation_roll_denominator")?;
+    let upgrade_level: String = row.try_get("upgrade_level")?;
+
+    Ok(OwnedItemEquipmentStructuralState {
+        item: classification,
+        creation_roll_numerator: parse_structural_u64(&numerator)?,
+        creation_roll_denominator: parse_structural_u64(&denominator)?,
+        upgrade_level: parse_structural_u64(&upgrade_level)?,
+    })
+}
+
+fn ordinary_equipment_classification_snapshot(
+    player_id: Uuid,
+    item_id: Uuid,
+    item: &LockedItem,
+) -> OwnedItemOrdinaryEquipmentClassification {
+    OwnedItemOrdinaryEquipmentClassification {
         item_instance_id: item_id,
         owner_player_id: player_id,
-        definition_key: item.definition.key,
+        definition_key: item.definition.key.clone(),
         definition_version: item.definition.version,
         is_ordinary_equipment: item.is_ordinary_equipment,
-    })
+    }
+}
+
+fn parse_structural_u64(value: &str) -> Result<u64, ItemError> {
+    value
+        .parse()
+        .map_err(|_| ItemError::InvalidEquipmentStructuralState)
 }
 
 async fn resolve_operation(
