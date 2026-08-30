@@ -882,3 +882,57 @@ The complete frozen Level X distribution fits exact bounded integer basis-point 
 **Final decision**
 
 Keep the slice dependency/schema-neutral and non-mutating. Phase 7 remains Pending; exact-head CI must verify rustfmt, Clippy, full workspace tests, and PostgreSQL integration before merge.
+
+## Multicatch Level X count policy slice
+
+Branch: `feat/multicatch-level-x-policy`
+
+### 1. Only the Level X count distribution is numerically frozen
+
+**Implementation-time finding — `UNRESOLVED` for Levels I–IX**
+
+The current 2026-08-28 Master Specification gives only the Level X Multicatch result: 10% double, 3% triple, 1% quadruple, and 0.25% quintuple fish, with expected fish count approximately 1.20×. It does not define a table, interpolation rule, or progression formula for Levels I–IX.
+
+**Final decision**
+
+Expose a deliberately Level-X-only count policy. The complementary single-fish probability is exactly 85.75%, so the complete distribution is `8,575 / 1,000 / 300 / 100 / 25` basis points for single through quintuple. The weighted expected count is exactly 1.20 fish. The API accepts no enchant-level argument and does not infer lower-level scaling.
+
+### 2. The five-fish ceiling is a global Fishing invariant, not Bait-owned state
+
+**Implementation-time finding — `CONFIRMED`**
+
+Before this slice, `MAX_FISH_PER_CAST = 5` lived in `fishing_bait.rs` even though the capability kernel already imported it to validate CatchLoad. Multicatch introduces another independent consumer, and the master explicitly describes five as the shared cap after School Bait and Multicatch composition. Leaving the source under Bait would make a global Fishing invariant appear owned by one modifier subsystem.
+
+**Final decision**
+
+Move the authoritative constant to the neutral `fishing_limits` module and preserve the existing root public API name `graphite_services::MAX_FISH_PER_CAST`. `fishing_bait` keeps only a crate-internal re-export as compatibility plumbing for existing internal imports; there is no second numeric definition. School Bait, Multicatch, and capability therefore share one source of truth.
+
+### 3. Count policy does not define additional FishInstance identity or AEXP aggregation
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The master says Multicatch changes fish count only and requires CatchLoad to sum FishTension across all candidate fish, but it does not specify whether extra fish independently sample species, weight, variant, and biological noise or duplicate the initial fish. Separately, the existing Manual Fishing AEXP policy already records an unresolved cap-basis question for heterogeneous Multi Catch fish rarities.
+
+**Final decision**
+
+Keep this slice count-only. Do not generate FishInstances, choose species/weight/variant, resolve heterogeneous Multi Catch AEXP, or invent a reroll/clone rule. The existing capability kernel remains ready to sum up to five already-resolved fish tensions once a future lifecycle owner has authoritative candidate fish.
+
+### 4. School Bait and Multi Treasure remain independent composition stages
+
+**Check result — `CONFIRMED`**
+
+School Bait may add exactly one same-area fish after a Fish result, non-recursively, and is independent from Multicatch while still sharing the five-fish ceiling. Multi Treasure belongs to the Treasure branch and never multiplies Multicatch.
+
+**Final decision**
+
+The Level X Multicatch policy exposes count probabilities only. It does not compose School Bait, does not consume extra bait, and does not touch Multi Treasure quantity. A future Fishing lifecycle must compose independent quantity stages under the shared global cap without changing the one-normal-Rod-durability-event-per-cast rule.
+
+### 5. No dependency, schema, persistence, RNG, or runtime activation is justified
+
+**Check result — `DISPROVED` for infrastructure churn in this slice**
+
+The complete Level X distribution and global count invariant are exact bounded integer data. Repository-wide review found no stateful Fishing owner or migration to update, and the executable still does not depend on `graphite-services`.
+
+**Final decision**
+
+Keep the slice dependency/schema-neutral and non-mutating. Do not add RNG draws/domain strings, FishInstance minting, inventory settlement, progression writes, or `/fish` command wiring. Phase 7 remains Pending.

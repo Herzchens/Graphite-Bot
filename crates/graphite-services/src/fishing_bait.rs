@@ -1,12 +1,13 @@
 use serde::Serialize;
 use thiserror::Error;
 
+pub(crate) use crate::fishing_limits::MAX_FISH_PER_CAST;
+
 pub const BAIT_RACK_MAX_LEVEL: u8 = 3;
 pub const NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS: u8 = 3;
 pub const BAIT_RACK_ACTIVE_SLOTS_PER_LEVEL: u8 = 1;
 pub const MAX_ACTIVE_BAIT_CATEGORY_SLOTS: u8 = 6;
 pub const BAIT_UNITS_CONSUMED_PER_ACTIVE_CATEGORY_PER_CAST: u8 = 1;
-pub const MAX_FISH_PER_CAST: u8 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct BaitRackCapacityPolicy {
@@ -320,7 +321,7 @@ mod tests {
         );
         assert_eq!(extra_fish_count, 1);
         assert!(non_recursive);
-        assert_eq!(max_total_fish_per_cast, 5);
+        assert_eq!(max_total_fish_per_cast, MAX_FISH_PER_CAST);
 
         let FishingBaitEffect::Sturdy {
             line_strength_factor,
