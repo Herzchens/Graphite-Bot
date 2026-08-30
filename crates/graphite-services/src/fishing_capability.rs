@@ -53,6 +53,8 @@ impl FishingTension {
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum FishingCapabilityError {
+    #[error("Fishing Rod definition is not an ordinary Rod")]
+    NotOrdinaryFishingRod,
     #[error("Starter Leather is not an ordinary Fishing Rod tier")]
     StarterLeatherIsNotOrdinaryRodTier,
     #[error("fish weight must be positive")]
@@ -63,14 +65,21 @@ pub enum FishingCapabilityError {
 
 /// Resolves the frozen base line strength and ordinary durability for an ordinary Fishing Rod.
 ///
+/// `is_ordinary_rod` must be derived from authoritative versioned item-definition state before this
+/// function is called. Tier alone is insufficient because the separate system-bound Starter Basic
+/// Rod currently carries Wood-like metadata but must not inherit the ordinary Wood durability row.
+///
 /// Line strength is represented exactly as integer gram-tension instead of the specification's
-/// kilogram-tension display unit. The Starter Basic Rod is intentionally excluded: it is a separate
-/// system-bound, unbreakable definition and must not inherit the ordinary Wood durability row.
-/// Gold remains an explicit side-grade, so callers must not derive progression order from the
-/// numeric line-strength or durability values.
+/// kilogram-tension display unit. Gold remains an explicit side-grade, so callers must not derive
+/// progression order from the numeric line-strength or durability values.
 pub const fn ordinary_fishing_rod_base_stats(
     tier: EquipmentTier,
+    is_ordinary_rod: bool,
 ) -> Result<FishingRodBaseStats, FishingCapabilityError> {
+    if !is_ordinary_rod {
+        return Err(FishingCapabilityError::NotOrdinaryFishingRod);
+    }
+
     let (base_line_strength_grams_tension, base_durability, gold_side_grade) = match tier {
         EquipmentTier::StarterLeather => {
             return Err(FishingCapabilityError::StarterLeatherIsNotOrdinaryRodTier);
@@ -170,7 +179,7 @@ mod tests {
 
         for (tier, line_strength, durability, gold_side_grade) in expected {
             assert_eq!(
-                ordinary_fishing_rod_base_stats(tier),
+                ordinary_fishing_rod_base_stats(tier, true),
                 Ok(FishingRodBaseStats {
                     tier,
                     base_line_strength_grams_tension: line_strength,
@@ -182,9 +191,17 @@ mod tests {
     }
 
     #[test]
+    fn non_ordinary_wood_definition_cannot_borrow_the_ordinary_wood_row() {
+        assert_eq!(
+            ordinary_fishing_rod_base_stats(EquipmentTier::Wood, false),
+            Err(FishingCapabilityError::NotOrdinaryFishingRod)
+        );
+    }
+
+    #[test]
     fn starter_leather_cannot_be_interpreted_as_an_ordinary_rod() {
         assert_eq!(
-            ordinary_fishing_rod_base_stats(EquipmentTier::StarterLeather),
+            ordinary_fishing_rod_base_stats(EquipmentTier::StarterLeather, true),
             Err(FishingCapabilityError::StarterLeatherIsNotOrdinaryRodTier)
         );
     }
