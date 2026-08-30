@@ -139,7 +139,8 @@ pub use fishing_rod_level_x::{
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
-    FishingSpecies, FishingSpeciesPolicy, fishing_area_species_pool, fishing_species_policy,
+    FishingSpecies, FishingSpeciesPolicy, RareBaitAreaSpeciesWeightPreview,
+    fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
 };
 pub use fishing_variant::{
     CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,

@@ -1,6 +1,7 @@
 use graphite_services::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingArea, FishingRarity,
     FishingSpecies, FishingSpeciesPolicy, fishing_area_species_pool, fishing_species_policy,
+    preview_rare_bait_area_species_weight,
 };
 
 #[test]
@@ -255,5 +256,72 @@ fn public_api_keeps_species_metadata_independent_from_area_weight() {
     assert_eq!(
         fishing_species_policy(deep_sea.species),
         fishing_species_policy(abyss.species)
+    );
+}
+
+#[test]
+fn public_api_rare_bait_transforms_every_canonical_area_row_before_normalization() {
+    let areas = [
+        FishingArea::StarterPool,
+        FishingArea::River,
+        FishingArea::Lake,
+        FishingArea::Coast,
+        FishingArea::DeepSea,
+        FishingArea::Abyss,
+    ];
+
+    let mut row_count = 0;
+    for area in areas {
+        for row in fishing_area_species_pool(area) {
+            row_count += 1;
+            let preview = preview_rare_bait_area_species_weight(area, row.species).unwrap();
+            let rarity = fishing_species_policy(row.species).rarity;
+            let eligible = matches!(
+                rarity,
+                FishingRarity::Rare
+                    | FishingRarity::Epic
+                    | FishingRarity::Legendary
+                    | FishingRarity::Mythic
+            );
+            let expected_factor = if eligible { (28_u16, 25_u16) } else { (1, 1) };
+
+            assert_eq!(preview.area, area);
+            assert_eq!(preview.species, row.species);
+            assert_eq!(preview.rarity, rarity);
+            assert_eq!(preview.base_pool_weight, row.pool_weight);
+            assert_eq!(preview.rare_bait_applied, eligible);
+            assert_eq!(
+                (
+                    preview.relative_weight_factor_numerator(),
+                    preview.relative_weight_factor_denominator(),
+                ),
+                expected_factor
+            );
+            assert_eq!(
+                preview.adjusted_pool_weight_numerator(),
+                u32::from(row.pool_weight) * u32::from(expected_factor.0)
+            );
+            assert_eq!(
+                preview.adjusted_pool_weight_denominator(),
+                expected_factor.1
+            );
+        }
+    }
+
+    assert_eq!(row_count, CANONICAL_FISH_AREA_ROWS);
+}
+
+#[test]
+fn public_api_rare_bait_rejects_noncanonical_area_species_pairs() {
+    assert_eq!(
+        preview_rare_bait_area_species_weight(
+            FishingArea::StarterPool,
+            FishingSpecies::LeviathanFry,
+        ),
+        None
+    );
+    assert_eq!(
+        preview_rare_bait_area_species_weight(FishingArea::River, FishingSpecies::Bluegill),
+        None
     );
 }
