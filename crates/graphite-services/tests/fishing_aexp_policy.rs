@@ -55,9 +55,7 @@ fn public_api_caps_base_multi_treasure_and_rejects_noncanonical_counts() {
     for count in [0, 4, u8::MAX] {
         assert_eq!(
             manual_fishing_base_treasure_cast_aexp(count),
-            Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(
-                count
-            ))
+            Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(count))
         );
     }
 }
