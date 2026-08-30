@@ -1,3 +1,4 @@
+mod action_speed;
 mod enchant_appraisal;
 mod enchant_catalog;
 mod enchant_conflict;
@@ -35,6 +36,12 @@ mod upgrade_appraisal;
 mod upgrade_cost;
 mod upgrade_outcome;
 
+pub use action_speed::{
+    ActionSpeedBonus, ActionSpeedPolicyError, BASE_REPEATABLE_MANUAL_REWARD_ACTION_COOLDOWN_MILLIS,
+    MAX_SHARED_ACTION_SPEED_BONUS_DENOMINATOR, MAX_SHARED_ACTION_SPEED_BONUS_NUMERATOR,
+    MIN_MINE_FISH_COOLDOWN_MILLIS, SharedActionSpeedBonusPolicy, cap_shared_action_speed_bonus,
+    max_shared_action_speed_bonus,
+};
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,

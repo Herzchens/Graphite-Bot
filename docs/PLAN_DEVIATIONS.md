@@ -936,3 +936,37 @@ The complete Level X distribution and global count invariant are exact bounded i
 **Final decision**
 
 Keep the slice dependency/schema-neutral and non-mutating. Do not add RNG draws/domain strings, FishInstance minting, inventory settlement, progression writes, or `/fish` command wiring. Phase 7 remains Pending.
+
+## Shared action-speed cap primitives slice
+
+Branch: `feat/shared-action-speed-policy`
+
+### 1. Sharing one capped speed bucket does not freeze the within-bucket combination rule
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The current 2026-08-28 Master Specification says action-speed modifiers share the same capped bucket instead of multiplying separately. Gold Rod, Gold Pickaxe, Lure, Efficiency, Day/Night Walker, Event and Partner sources can all contribute speed-rating inputs. The Modifier Registry contract also requires every modifier to carry an explicit `Combination Rule`, but the current source does not freeze the rule that combines those source values into one uncapped bucket total.
+
+**Final decision**
+
+Do not assume additive stacking. The neutral Services policy accepts an already-authoritatively-composed non-negative bucket total and only applies the frozen shared cap. Source-local policies continue to expose their own speed-rating inputs. A future Modifier Registry owner must resolve and version the combination rule before live Mine/Fish timing composition is activated.
+
+### 2. The shared bonus cap is frozen, but rating-to-cooldown conversion is not
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The active master freezes a 10.0-second base repeatable manual reward-action cooldown, a 7.5-second minimum Mine/Fish cooldown after speed modifiers, and a maximum shared action-speed bonus of +33.33%. Repository/spec review found no canonical formula mapping an already-resolved action-speed rating to final cooldown duration.
+
+**Final decision**
+
+Represent the shared cap exactly as 3,333 basis points and expose the 10,000 ms base plus 7,500 ms Mine/Fish minimum as independent timing invariants. Do not infer `base / (1 + rating)`, direct percentage subtraction, or another rating-to-duration transform. A future runtime may convert the capped rating only after that formula becomes authoritative.
+
+### 3. The cap owner is cross-domain and does not activate gameplay runtime
+
+**Implementation-time finding — `CONFIRMED`**
+
+The master treats action speed as a shared modifier concern across Mining and Fishing. Existing Gold Rod and Lure policies correctly expose source-local inputs, while repository-wide search found no canonical shared cap owner.
+
+**Final decision**
+
+Place the cap primitive in neutral Services `action_speed` policy rather than duplicating it under Gold Rod, Lure, Fishing, or future Mining modules. Keep the slice dependency/schema-neutral and non-mutating: no cooldown persistence, clock selection, RNG, command wiring, `/fish`, or `/mine` activation is introduced. Phase 7 and Phase 8 remain Pending.
