@@ -770,3 +770,27 @@ Both tables are finite exact integer policy data and repository review found no 
 **Final decision**
 
 Keep the slice pure, dependency/schema-neutral, and non-mutating. Phase 7 remains unactivated until the owning Fishing lifecycle and deterministic RNG composition are implemented.
+
+## Base Fishing droptable latest-spec correction
+
+Branch: `fix/fishing-treasure-table-latest-spec`
+
+### 1. Newer authoritative master supersedes the initially implemented Treasure-result weights
+
+**Implementation-time finding — `CONFIRMED`**
+
+A post-merge source-authority audit found that the newer current Master Specification dated 2026-08-28 explicitly replaces the older within-Treasure row used by the first droptable slice. The active table is 40% Material bundle / 30% Crate-or-Chest / 8% Enchant Book / 8% Orb-or-Catalyst / 10% Rare bait-or-utility / 4% Relic-or-collectible. The catch-branch baseline 88.00% / 8.50% / 3.50% is unchanged.
+
+Under `AGENTS.md` source precedence, the newer normative Master Specification overrides the older implementation-time decision.
+
+**Final decision**
+
+Keep catch-branch weights `176 / 17 / 7`. Replace within-Treasure reduced weights `19 / 13 / 5 / 4 / 5 / 4` with `20 / 15 / 4 / 4 / 5 / 2`, reproducing 40% / 30% / 8% / 8% / 10% / 4% exactly. At the unchanged 3.50% Treasure baseline, nested overall chances become 1.400% / 1.050% / 0.280% / 0.280% / 0.350% / 0.140%.
+
+The direct-fishing Enchant Book pool remains a separate next slice and must use the same newer master (`58 / 24 / 12 / 4 / 2`, mythic `45 / 30 / 25`) rather than the superseded older table.
+
+### 2. The correction does not activate Fishing runtime
+
+**Check result — `DISPROVED` for wider infrastructure changes**
+
+This correction changes only finite policy data, regressions, and source-authority documentation. It adds no RNG, migration, persistence, dependency, command, or live settlement. Phase 7 remains Pending.
