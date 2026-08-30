@@ -3,7 +3,7 @@ use serde::Serialize;
 use crate::EnchantAppraisalClass;
 
 pub const NORMAL_SHOP_MAX_BOOK_LEVEL: u8 = 5;
-pub const BAIT_RACK_MAX_BOOK_LEVEL: u8 = crate::bait_rack::BAIT_RACK_MAX_LEVEL;
+pub const BAIT_RACK_MAX_BOOK_LEVEL: u8 = crate::fishing_bait::BAIT_RACK_MAX_LEVEL;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
