@@ -1,6 +1,8 @@
 use graphite_services::{
     BAIT_UNITS_CONSUMED_PER_ACTIVE_CATEGORY_PER_CAST, FishingBait, FishingBaitCategory,
-    FishingBaitEffect, FishingRarity, MAX_FISH_PER_CAST, fishing_bait_policy,
+    FishingBaitEffect, FishingCatchBranch, FishingRarity, MAX_FISH_PER_CAST,
+    SchoolBaitNoExtraFishReason, SchoolBaitProcResolution, SchoolBaitQuantityError,
+    SchoolBaitQuantityResolution, fishing_bait_policy, resolve_school_bait_quantity,
 };
 
 #[test]
@@ -145,4 +147,89 @@ fn public_api_preserves_quality_rare_treasure_and_sturdy_factors() {
         ),
         (9, 10)
     );
+}
+
+#[test]
+fn public_api_school_bait_rejects_non_fish_results_and_invalid_counts() {
+    for branch in [FishingCatchBranch::Junk, FishingCatchBranch::Treasure] {
+        assert_eq!(
+            resolve_school_bait_quantity(branch, 1, SchoolBaitProcResolution::Triggered),
+            Err(SchoolBaitQuantityError::RequiresFishResult(branch))
+        );
+    }
+
+    for fish_count in [0, MAX_FISH_PER_CAST + 1, u8::MAX] {
+        assert_eq!(
+            resolve_school_bait_quantity(
+                FishingCatchBranch::Fish,
+                fish_count,
+                SchoolBaitProcResolution::Triggered,
+            ),
+            Err(SchoolBaitQuantityError::FishCountOutOfRange(fish_count))
+        );
+    }
+}
+
+#[test]
+fn public_api_school_bait_applies_one_non_recursive_extra_fish_under_shared_cap() {
+    for fish_count in 1..MAX_FISH_PER_CAST {
+        let unchanged = resolve_school_bait_quantity(
+            FishingCatchBranch::Fish,
+            fish_count,
+            SchoolBaitProcResolution::NotTriggered,
+        )
+        .unwrap();
+        assert_eq!(
+            unchanged,
+            SchoolBaitQuantityResolution::Unchanged {
+                fish_count,
+                reason: SchoolBaitNoExtraFishReason::ProcNotTriggered,
+            }
+        );
+        assert_eq!(unchanged.final_fish_count(), fish_count);
+        assert_eq!(unchanged.extra_fish_count(), 0);
+
+        let triggered = resolve_school_bait_quantity(
+            FishingCatchBranch::Fish,
+            fish_count,
+            SchoolBaitProcResolution::Triggered,
+        )
+        .unwrap();
+        assert_eq!(
+            triggered,
+            SchoolBaitQuantityResolution::AddOneSameAreaFish {
+                initial_fish_count: fish_count,
+                final_fish_count: fish_count + 1,
+            }
+        );
+        assert_eq!(triggered.final_fish_count(), fish_count + 1);
+        assert_eq!(triggered.extra_fish_count(), 1);
+    }
+
+    for proc_resolution in [
+        SchoolBaitProcResolution::NotTriggered,
+        SchoolBaitProcResolution::Triggered,
+    ] {
+        let capped = resolve_school_bait_quantity(
+            FishingCatchBranch::Fish,
+            MAX_FISH_PER_CAST,
+            proc_resolution,
+        )
+        .unwrap();
+        let expected_reason = match proc_resolution {
+            SchoolBaitProcResolution::NotTriggered => SchoolBaitNoExtraFishReason::ProcNotTriggered,
+            SchoolBaitProcResolution::Triggered => {
+                SchoolBaitNoExtraFishReason::GlobalFishCapReached
+            }
+        };
+        assert_eq!(
+            capped,
+            SchoolBaitQuantityResolution::Unchanged {
+                fish_count: MAX_FISH_PER_CAST,
+                reason: expected_reason,
+            }
+        );
+        assert_eq!(capped.final_fish_count(), MAX_FISH_PER_CAST);
+        assert_eq!(capped.extra_fish_count(), 0);
+    }
 }
