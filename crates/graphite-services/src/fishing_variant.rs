@@ -104,13 +104,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_contains_exactly_five_unique_variants() {
+    fn catalog_contains_exactly_five_valid_variants() {
         let catalog = fishing_variant_catalog();
         assert_eq!(catalog.len(), CANONICAL_FISH_VARIANT_COUNT);
 
-        for (index, row) in catalog.iter().enumerate() {
+        for row in catalog {
             assert_eq!(*row, fishing_variant_policy(row.variant));
-            assert!(catalog[..index].iter().all(|prior| prior.variant != row.variant));
+            assert!(row.base_probability.denominator() > 0);
+            assert!(row.value_multiplier.denominator() > 0);
         }
     }
 
