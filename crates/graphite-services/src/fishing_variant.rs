@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::fishing_bait::{FishingBait, FishingBaitEffect, fishing_bait_policy};
+
 pub const CANONICAL_FISH_VARIANT_COUNT: usize = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -35,6 +37,39 @@ pub struct FishingVariantPolicy {
     pub variant: FishingVariant,
     pub base_probability: FishingVariantRatio,
     pub value_multiplier: FishingVariantRatio,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct QualityBaitVariantWeightPreview {
+    pub variant: FishingVariant,
+    pub base_probability: FishingVariantRatio,
+    pub quality_bait_applied: bool,
+    relative_weight_factor_numerator: u16,
+    relative_weight_factor_denominator: u16,
+    adjusted_relative_weight_numerator: u32,
+    adjusted_relative_weight_denominator: u32,
+}
+
+impl QualityBaitVariantWeightPreview {
+    #[must_use]
+    pub const fn relative_weight_factor_numerator(self) -> u16 {
+        self.relative_weight_factor_numerator
+    }
+
+    #[must_use]
+    pub const fn relative_weight_factor_denominator(self) -> u16 {
+        self.relative_weight_factor_denominator
+    }
+
+    #[must_use]
+    pub const fn adjusted_relative_weight_numerator(self) -> u32 {
+        self.adjusted_relative_weight_numerator
+    }
+
+    #[must_use]
+    pub const fn adjusted_relative_weight_denominator(self) -> u32 {
+        self.adjusted_relative_weight_denominator
+    }
 }
 
 const NORMAL_POLICY: FishingVariantPolicy = variant_policy(FishingVariant::Normal, 47, 50, 1, 1);
@@ -77,6 +112,58 @@ pub const fn fishing_variant_policy(variant: FishingVariant) -> FishingVariantPo
 #[must_use]
 pub const fn fishing_variant_catalog() -> &'static [FishingVariantPolicy] {
     &VARIANT_CATALOG
+}
+
+/// Applies Quality Bait to one canonical fish-variant row without normalizing the variant pool.
+///
+/// Quality Bait multiplies every non-Normal variant's relative selection weight by `1.10`
+/// (`11/10`) before normalization. Normal remains unchanged. The `11/10` factor is read from the
+/// existing Quality Bait catalog row so this module does not create a second source of truth for bait
+/// semantics.
+///
+/// `base_probability` is the canonical zero-modifier probability row, but after applying the factor
+/// it is used only as a relative selection weight. The returned adjusted numerator/denominator are
+/// therefore not a final probability and deliberately do not sum to one across the five rows.
+///
+/// This policy does not implement Quality Bait's separate sampled-weight-center factor because the
+/// authoritative fish-weight sampler and deterministic fractional-power/log-normal evaluation are
+/// still outside this slice. It also does not compose Luck, shared Fishing caps, final normalization,
+/// RNG selection, FishInstance creation, bait consumption, AEXP, or settlement.
+#[must_use]
+pub fn preview_quality_bait_variant_weight(
+    variant: FishingVariant,
+) -> QualityBaitVariantWeightPreview {
+    let base_policy = fishing_variant_policy(variant);
+    let FishingBaitEffect::Quality {
+        non_normal_variant_relative_weight_factor,
+        ..
+    } = fishing_bait_policy(FishingBait::Quality).effect
+    else {
+        unreachable!("Quality Bait catalog row returned a non-Quality effect")
+    };
+
+    let quality_bait_applied = !matches!(variant, FishingVariant::Normal);
+    let (relative_weight_factor_numerator, relative_weight_factor_denominator) =
+        if quality_bait_applied {
+            (
+                non_normal_variant_relative_weight_factor.numerator(),
+                non_normal_variant_relative_weight_factor.denominator(),
+            )
+        } else {
+            (1, 1)
+        };
+
+    QualityBaitVariantWeightPreview {
+        variant,
+        base_probability: base_policy.base_probability,
+        quality_bait_applied,
+        relative_weight_factor_numerator,
+        relative_weight_factor_denominator,
+        adjusted_relative_weight_numerator: u32::from(base_policy.base_probability.numerator())
+            * u32::from(relative_weight_factor_numerator),
+        adjusted_relative_weight_denominator: u32::from(base_policy.base_probability.denominator())
+            * u32::from(relative_weight_factor_denominator),
+    }
 }
 
 const fn variant_policy(
@@ -163,5 +250,58 @@ mod tests {
             assert_eq!(ratio.numerator(), numerator);
             assert_eq!(ratio.denominator(), denominator);
         }
+    }
+
+    #[test]
+    fn quality_bait_boosts_only_non_normal_variant_weights_exactly() {
+        let expected = [
+            (FishingVariant::Normal, false, (1, 1), (47, 50)),
+            (FishingVariant::Silver, true, (11, 10), (33, 1_000)),
+            (FishingVariant::Golden, true, (11, 10), (33, 2_000)),
+            (FishingVariant::Albino, true, (11, 10), (11, 1_000)),
+            (FishingVariant::Iridescent, true, (11, 10), (11, 2_000)),
+        ];
+
+        for (variant, applied, factor, adjusted) in expected {
+            let preview = preview_quality_bait_variant_weight(variant);
+            assert_eq!(preview.variant, variant);
+            assert_eq!(
+                preview.base_probability,
+                fishing_variant_policy(variant).base_probability
+            );
+            assert_eq!(preview.quality_bait_applied, applied);
+            assert_eq!(
+                (
+                    preview.relative_weight_factor_numerator(),
+                    preview.relative_weight_factor_denominator(),
+                ),
+                factor
+            );
+            assert_eq!(
+                (
+                    preview.adjusted_relative_weight_numerator(),
+                    preview.adjusted_relative_weight_denominator(),
+                ),
+                adjusted
+            );
+        }
+    }
+
+    #[test]
+    fn quality_bait_preview_remains_pre_normalization_relative_weight() {
+        const COMMON_DENOMINATOR: u32 = 2_000;
+
+        let adjusted_weight_sum = fishing_variant_catalog()
+            .iter()
+            .map(|row| {
+                let preview = preview_quality_bait_variant_weight(row.variant);
+                let denominator = preview.adjusted_relative_weight_denominator();
+                assert_eq!(COMMON_DENOMINATOR % denominator, 0);
+                preview.adjusted_relative_weight_numerator() * (COMMON_DENOMINATOR / denominator)
+            })
+            .sum::<u32>();
+
+        assert_eq!(adjusted_weight_sum, 2_012);
+        assert_ne!(adjusted_weight_sum, COMMON_DENOMINATOR);
     }
 }

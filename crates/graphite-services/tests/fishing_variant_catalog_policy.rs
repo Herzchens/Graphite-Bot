@@ -1,6 +1,6 @@
 use graphite_services::{
     CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,
-    fishing_variant_catalog, fishing_variant_policy,
+    fishing_variant_catalog, fishing_variant_policy, preview_quality_bait_variant_weight,
 };
 
 #[test]
@@ -49,6 +49,55 @@ fn public_api_keeps_variant_value_multiplier_independent_from_species_rarity() {
 
     assert_ratio(iridescent.value_multiplier, (3, 1));
     assert_eq!(iridescent.variant, FishingVariant::Iridescent);
+}
+
+#[test]
+fn public_api_quality_bait_boosts_only_non_normal_variant_weights_before_normalization() {
+    let expected = [
+        (FishingVariant::Normal, false, (1, 1), (47, 50)),
+        (FishingVariant::Silver, true, (11, 10), (33, 1_000)),
+        (FishingVariant::Golden, true, (11, 10), (33, 2_000)),
+        (FishingVariant::Albino, true, (11, 10), (11, 1_000)),
+        (FishingVariant::Iridescent, true, (11, 10), (11, 2_000)),
+    ];
+
+    for (variant, applied, factor, adjusted) in expected {
+        let preview = preview_quality_bait_variant_weight(variant);
+        assert_eq!(preview.variant, variant);
+        assert_eq!(
+            preview.base_probability,
+            fishing_variant_policy(variant).base_probability
+        );
+        assert_eq!(preview.quality_bait_applied, applied);
+        assert_eq!(
+            (
+                preview.relative_weight_factor_numerator(),
+                preview.relative_weight_factor_denominator(),
+            ),
+            factor
+        );
+        assert_eq!(
+            (
+                preview.adjusted_relative_weight_numerator(),
+                preview.adjusted_relative_weight_denominator(),
+            ),
+            adjusted
+        );
+    }
+
+    const COMMON_DENOMINATOR: u32 = 2_000;
+    let adjusted_weight_sum = fishing_variant_catalog()
+        .iter()
+        .map(|row| {
+            let preview = preview_quality_bait_variant_weight(row.variant);
+            let denominator = preview.adjusted_relative_weight_denominator();
+            assert_eq!(COMMON_DENOMINATOR % denominator, 0);
+            preview.adjusted_relative_weight_numerator() * (COMMON_DENOMINATOR / denominator)
+        })
+        .sum::<u32>();
+
+    assert_eq!(adjusted_weight_sum, 2_012);
+    assert_ne!(adjusted_weight_sum, COMMON_DENOMINATOR);
 }
 
 fn assert_ratio(actual: FishingVariantRatio, expected: (u16, u16)) {
