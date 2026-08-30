@@ -60,8 +60,8 @@ pub use fishing_bait::{
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, bait_rack_capacity_policy, fishing_bait_policy,
 };
 pub use fishing_capability::{
-    NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT, FishingCapabilityError,
-    FishingRodBaseStats, FishingTension, FishingTensionRatio, fishing_rarity_tension_multiplier,
+    FishingCapabilityError, FishingRodBaseStats, FishingTension, FishingTensionRatio,
+    NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT, fishing_rarity_tension_multiplier,
     fishing_tension, ordinary_fishing_rod_base_stats,
 };
 pub use fishing_species::{
