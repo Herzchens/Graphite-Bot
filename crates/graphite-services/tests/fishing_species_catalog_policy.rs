@@ -1,13 +1,18 @@
 use graphite_services::{
-    CANONICAL_AREA_POOL_WEIGHT_TOTAL, CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT,
-    FishingArea, FishingRarity, FishingSpecies, FishingSpeciesPolicy, fishing_area_species_pool,
-    fishing_species_policy,
+    CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingArea, FishingRarity,
+    FishingSpecies, FishingSpeciesPolicy, fishing_area_species_pool, fishing_species_policy,
 };
 
 #[test]
 fn public_api_preserves_all_twenty_two_species_rows() {
     let expected = [
-        (FishingSpecies::Bluegill, FishingRarity::Common, 400, 50, 200),
+        (
+            FishingSpecies::Bluegill,
+            FishingRarity::Common,
+            400,
+            50,
+            200,
+        ),
         (FishingSpecies::Carp, FishingRarity::Common, 2_000, 90, 450),
         (
             FishingSpecies::Catfish,
@@ -17,7 +22,13 @@ fn public_api_preserves_all_twenty_two_species_rows() {
             550,
         ),
         (FishingSpecies::Koi, FishingRarity::Rare, 1_500, 400, 400),
-        (FishingSpecies::Trout, FishingRarity::Common, 1_000, 100, 350),
+        (
+            FishingSpecies::Trout,
+            FishingRarity::Common,
+            1_000,
+            100,
+            350,
+        ),
         (
             FishingSpecies::Salmon,
             FishingRarity::Uncommon,
@@ -48,7 +59,13 @@ fn public_api_preserves_all_twenty_two_species_rows() {
             250,
             450,
         ),
-        (FishingSpecies::Tuna, FishingRarity::Rare, 15_000, 700, 1_200),
+        (
+            FishingSpecies::Tuna,
+            FishingRarity::Rare,
+            15_000,
+            700,
+            1_200,
+        ),
         (
             FishingSpecies::Pufferfish,
             FishingRarity::Rare,
@@ -207,10 +224,9 @@ fn public_api_preserves_every_area_pool_and_weight() {
     for (area, expected_rows) in expected {
         let actual = fishing_area_species_pool(area);
         assert_eq!(actual.len(), expected_rows.len());
-        assert_eq!(
-            actual.iter().map(|row| row.pool_weight).sum::<u16>(),
-            CANONICAL_AREA_POOL_WEIGHT_TOTAL
-        );
+        // Current frozen rows total 100, but pool_weight remains a relative weight and callers are
+        // not given a public "must total 100" contract.
+        assert_eq!(actual.iter().map(|row| row.pool_weight).sum::<u16>(), 100);
 
         for (row, &(species, pool_weight)) in actual.iter().zip(expected_rows) {
             assert_eq!(row.area, area);
