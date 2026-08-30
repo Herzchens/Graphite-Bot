@@ -6,6 +6,7 @@ mod equipment_policy;
 mod fishing_area;
 mod fishing_bait;
 mod fishing_species;
+mod fishing_variant;
 mod forge;
 mod grinding;
 mod master_enchant;
@@ -60,6 +61,10 @@ pub use fishing_bait::{
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
     FishingSpecies, FishingSpeciesPolicy, fishing_area_species_pool, fishing_species_policy,
+};
+pub use fishing_variant::{
+    CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,
+    fishing_variant_catalog, fishing_variant_policy,
 };
 pub use forge::{
     AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
