@@ -5,6 +5,7 @@ mod equipment_appraisal;
 mod equipment_policy;
 mod fishing_area;
 mod fishing_bait;
+mod fishing_species;
 mod forge;
 mod grinding;
 mod master_enchant;
@@ -55,6 +56,11 @@ pub use fishing_bait::{
     FishingBait, FishingBaitCategory, FishingBaitEffect, FishingBaitPolicy, FishingBaitRatio,
     FishingRarity, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, MAX_FISH_PER_CAST,
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, bait_rack_capacity_policy, fishing_bait_policy,
+};
+pub use fishing_species::{
+    CANONICAL_AREA_POOL_WEIGHT_TOTAL, CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT,
+    FishingAreaSpeciesPolicy, FishingSpecies, FishingSpeciesPolicy, fishing_area_species_pool,
+    fishing_species_policy,
 };
 pub use forge::{
     AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
