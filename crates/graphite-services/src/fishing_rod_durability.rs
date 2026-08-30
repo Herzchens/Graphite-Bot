@@ -1,7 +1,13 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::fishing_capability::NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT;
+use crate::{
+    enchant_conflict::FishingRodEnchant,
+    fishing_capability::NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT,
+    fishing_rod_level_x::{
+        FishingRodLevelXEffect, FishingRodLevelXPolicyError, fishing_rod_level_x_policy,
+    },
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -28,6 +34,25 @@ pub struct FishingRodDurabilityPreview {
     pub consequence: FishingRodDurabilityConsequence,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct FishingUnbreakingLevelXPolicy {
+    pub prevents_line_break: bool,
+    ordinary_event_prevention_probability_numerator: u16,
+    ordinary_event_prevention_probability_denominator: u16,
+}
+
+impl FishingUnbreakingLevelXPolicy {
+    #[must_use]
+    pub const fn ordinary_event_prevention_probability_numerator(self) -> u16 {
+        self.ordinary_event_prevention_probability_numerator
+    }
+
+    #[must_use]
+    pub const fn ordinary_event_prevention_probability_denominator(self) -> u16 {
+        self.ordinary_event_prevention_probability_denominator
+    }
+}
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum FishingRodDurabilityPolicyError {
     #[error("Fishing Rod definition is not an ordinary Rod")]
@@ -36,6 +61,42 @@ pub enum FishingRodDurabilityPolicyError {
     InvalidMaxDurability,
     #[error("current Fishing Rod durability must be between 1 and maximum durability")]
     InvalidCurrentDurability,
+    #[error(transparent)]
+    LevelXPolicy(#[from] FishingRodLevelXPolicyError),
+    #[error("Unbreaking Level X scalar policy returned an unexpected non-Unbreaking effect")]
+    UnexpectedUnbreakingLevelXPolicy,
+}
+
+/// Resolves the frozen Unbreaking Level X chance for an ordinary Rod durability event.
+///
+/// The scalar `20%` remains owned by [`fishing_rod_level_x_policy`]. This policy reads that value and
+/// exposes it as the exact reduced probability `1/5` for the one ordinary durability event attached
+/// to a completed cast attempt. It also freezes the existing durability rule that Unbreaking never
+/// prevents a line-break destruction event.
+///
+/// This policy performs no RNG draw and does not mutate durability. A future Fishing lifecycle must
+/// draw from its authoritative RNG domain and pass the resulting boolean into
+/// [`FishingRodDurabilityResolution::CompletedCastAttempt`]. Line breaks bypass that draw entirely.
+pub fn fishing_unbreaking_level_x_policy()
+-> Result<FishingUnbreakingLevelXPolicy, FishingRodDurabilityPolicyError> {
+    let policy = fishing_rod_level_x_policy(FishingRodEnchant::Unbreaking)?;
+    let FishingRodLevelXEffect::Unbreaking {
+        ignore_normal_rod_durability_event_chance_percent,
+    } = policy.effect
+    else {
+        return Err(FishingRodDurabilityPolicyError::UnexpectedUnbreakingLevelXPolicy);
+    };
+
+    let (
+        ordinary_event_prevention_probability_numerator,
+        ordinary_event_prevention_probability_denominator,
+    ) = reduced_percent(ignore_normal_rod_durability_event_chance_percent);
+
+    Ok(FishingUnbreakingLevelXPolicy {
+        prevents_line_break: false,
+        ordinary_event_prevention_probability_numerator,
+        ordinary_event_prevention_probability_denominator,
+    })
 }
 
 /// Previews the frozen durability consequence for one completed cast attempt using an ordinary Rod.
@@ -99,9 +160,38 @@ pub const fn preview_fishing_rod_durability(
     })
 }
 
+const fn reduced_percent(percent: u8) -> (u16, u16) {
+    let numerator = percent as u16;
+    let denominator = 100_u16;
+    let divisor = gcd(numerator, denominator);
+    (numerator / divisor, denominator / divisor)
+}
+
+const fn gcd(mut left: u16, mut right: u16) -> u16 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unbreaking_level_x_is_exactly_one_fifth_of_ordinary_events_only() {
+        let policy = fishing_unbreaking_level_x_policy().unwrap();
+        assert_eq!(
+            (
+                policy.ordinary_event_prevention_probability_numerator(),
+                policy.ordinary_event_prevention_probability_denominator(),
+            ),
+            (1, 5)
+        );
+        assert!(!policy.prevents_line_break);
+    }
 
     #[test]
     fn ordinary_completed_cast_consumes_exactly_one_durability() {

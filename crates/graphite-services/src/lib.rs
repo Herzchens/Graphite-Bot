@@ -133,7 +133,8 @@ pub use fishing_over_cap::{
 };
 pub use fishing_rod_durability::{
     FishingRodDurabilityConsequence, FishingRodDurabilityPolicyError, FishingRodDurabilityPreview,
-    FishingRodDurabilityResolution, preview_fishing_rod_durability,
+    FishingRodDurabilityResolution, FishingUnbreakingLevelXPolicy,
+    fishing_unbreaking_level_x_policy, preview_fishing_rod_durability,
 };
 pub use fishing_rod_level_x::{
     FishingRodLevelXEffect, FishingRodLevelXPolicy, FishingRodLevelXPolicyError,
