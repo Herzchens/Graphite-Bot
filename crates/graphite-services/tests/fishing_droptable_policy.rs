@@ -20,10 +20,7 @@ const TREASURE_RESULTS: [FishingTreasureResult; 6] = [
 #[test]
 fn public_api_reproduces_exact_zero_modifier_catch_branch_chances() {
     let policies = CATCH_BRANCHES.map(fishing_base_catch_branch_policy);
-    assert_eq!(
-        policies.map(|policy| policy.relative_weight),
-        [176, 17, 7]
-    );
+    assert_eq!(policies.map(|policy| policy.relative_weight), [176, 17, 7]);
     for (policy, branch) in policies.into_iter().zip(CATCH_BRANCHES) {
         assert_eq!(policy.branch, branch);
     }
@@ -66,7 +63,10 @@ fn public_api_preserves_exact_nested_treasure_base_chances() {
         .map(fishing_base_treasure_result_policy)
         .map(|policy| policy.relative_weight);
     let branch_total: u32 = branch_weights.iter().map(|weight| u32::from(*weight)).sum();
-    let treasure_total: u32 = treasure_weights.iter().map(|weight| u32::from(*weight)).sum();
+    let treasure_total: u32 = treasure_weights
+        .iter()
+        .map(|weight| u32::from(*weight))
+        .sum();
     let treasure_branch_weight =
         fishing_base_catch_branch_policy(FishingCatchBranch::Treasure).relative_weight;
 
