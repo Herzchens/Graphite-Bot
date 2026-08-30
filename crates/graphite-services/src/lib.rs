@@ -6,6 +6,7 @@ mod equipment_policy;
 mod fishing_aexp;
 mod fishing_area;
 mod fishing_bait;
+mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_droptable;
 mod fishing_gold_rod;
@@ -67,6 +68,12 @@ pub use fishing_bait::{
     FishingBait, FishingBaitCategory, FishingBaitEffect, FishingBaitPolicy, FishingBaitRatio,
     FishingRarity, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, MAX_FISH_PER_CAST,
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, bait_rack_capacity_policy, fishing_bait_policy,
+};
+pub use fishing_book_pool::{
+    DirectFishingBookLevelProfile, DirectFishingBookPolicyError, DirectFishingBookPool,
+    DirectFishingBookPoolPolicy, direct_fishing_book_pool_membership,
+    direct_fishing_book_pool_policy, direct_fishing_mythic_enchant_weight,
+    direct_fishing_raw_book_level_weight,
 };
 pub use fishing_capability::{
     FishingCapabilityClassification, FishingCapabilityError, FishingCapabilityRatio,
