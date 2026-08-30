@@ -27,12 +27,30 @@ fn public_api_exposes_latest_direct_fishing_pool_weights() {
 #[test]
 fn public_api_reuses_catalog_membership_without_exposing_uniform_member_weights() {
     for (enchant, expected_pool) in [
-        (CanonicalEnchant::Efficiency, Some(DirectFishingBookPool::ShopCommon)),
-        (CanonicalEnchant::BaitRack, Some(DirectFishingBookPool::ShopCommon)),
-        (CanonicalEnchant::Carving, Some(DirectFishingBookPool::MidLoot)),
-        (CanonicalEnchant::Execution, Some(DirectFishingBookPool::Rare)),
-        (CanonicalEnchant::Mending, Some(DirectFishingBookPool::Mending)),
-        (CanonicalEnchant::Phoenix, Some(DirectFishingBookPool::Mythic)),
+        (
+            CanonicalEnchant::Efficiency,
+            Some(DirectFishingBookPool::ShopCommon),
+        ),
+        (
+            CanonicalEnchant::BaitRack,
+            Some(DirectFishingBookPool::ShopCommon),
+        ),
+        (
+            CanonicalEnchant::Carving,
+            Some(DirectFishingBookPool::MidLoot),
+        ),
+        (
+            CanonicalEnchant::Execution,
+            Some(DirectFishingBookPool::Rare),
+        ),
+        (
+            CanonicalEnchant::Mending,
+            Some(DirectFishingBookPool::Mending),
+        ),
+        (
+            CanonicalEnchant::Phoenix,
+            Some(DirectFishingBookPool::Mythic),
+        ),
         (CanonicalEnchant::ShadowWalker, None),
         (CanonicalEnchant::Master, None),
     ] {
@@ -108,10 +126,7 @@ fn raw_level_profiles_fail_closed_outside_frozen_support() {
     ] {
         assert_eq!(
             direct_fishing_raw_book_level_weight(profile, level),
-            Err(DirectFishingBookPolicyError::LevelOutsideProfile {
-                profile,
-                level,
-            })
+            Err(DirectFishingBookPolicyError::LevelOutsideProfile { profile, level })
         );
     }
 }
