@@ -20,7 +20,7 @@ fn public_api_preserves_every_ordinary_rod_base_row() {
 
     for (tier, line_strength, durability, gold_side_grade) in expected {
         assert_eq!(
-            ordinary_fishing_rod_base_stats(tier),
+            ordinary_fishing_rod_base_stats(tier, true),
             Ok(FishingRodBaseStats {
                 tier,
                 base_line_strength_grams_tension: line_strength,
@@ -32,9 +32,17 @@ fn public_api_preserves_every_ordinary_rod_base_row() {
 }
 
 #[test]
+fn public_api_requires_authoritative_ordinary_rod_classification() {
+    assert_eq!(
+        ordinary_fishing_rod_base_stats(EquipmentTier::Wood, false),
+        Err(FishingCapabilityError::NotOrdinaryFishingRod)
+    );
+}
+
+#[test]
 fn public_api_rejects_non_rod_starter_leather_tier() {
     assert_eq!(
-        ordinary_fishing_rod_base_stats(EquipmentTier::StarterLeather),
+        ordinary_fishing_rod_base_stats(EquipmentTier::StarterLeather, true),
         Err(FishingCapabilityError::StarterLeatherIsNotOrdinaryRodTier)
     );
 }
