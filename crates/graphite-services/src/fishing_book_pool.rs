@@ -158,10 +158,7 @@ pub const fn direct_fishing_raw_book_level_weight(
         (DirectFishingBookLevelProfile::Phoenix, 1) => 100,
 
         _ => {
-            return Err(DirectFishingBookPolicyError::LevelOutsideProfile {
-                profile,
-                level,
-            });
+            return Err(DirectFishingBookPolicyError::LevelOutsideProfile { profile, level });
         }
     };
 
@@ -193,7 +190,10 @@ mod tests {
     fn pool_weights_match_latest_master_and_sum_to_one_hundred() {
         let weights = POOLS.map(|pool| direct_fishing_book_pool_policy(pool).relative_weight);
         assert_eq!(weights, [58, 24, 12, 4, 2]);
-        assert_eq!(weights.iter().map(|weight| u16::from(*weight)).sum::<u16>(), 100);
+        assert_eq!(
+            weights.iter().map(|weight| u16::from(*weight)).sum::<u16>(),
+            100
+        );
     }
 
     #[test]
@@ -222,7 +222,10 @@ mod tests {
             direct_fishing_book_pool_membership(CanonicalEnchant::ShadowWalker),
             None
         );
-        assert_eq!(direct_fishing_book_pool_membership(CanonicalEnchant::Master), None);
+        assert_eq!(
+            direct_fishing_book_pool_membership(CanonicalEnchant::Master),
+            None
+        );
     }
 
     #[test]
@@ -233,7 +236,10 @@ mod tests {
             direct_fishing_mythic_enchant_weight(CanonicalEnchant::Phoenix).unwrap(),
         ];
         assert_eq!(weights, [45, 30, 25]);
-        assert_eq!(weights.iter().map(|weight| u16::from(*weight)).sum::<u16>(), 100);
+        assert_eq!(
+            weights.iter().map(|weight| u16::from(*weight)).sum::<u16>(),
+            100
+        );
         assert_eq!(
             direct_fishing_mythic_enchant_weight(CanonicalEnchant::Mending),
             Err(DirectFishingBookPolicyError::NotDirectFishingMythic(
@@ -258,7 +264,10 @@ mod tests {
                 direct_fishing_raw_book_level_weight(profile, level as u8).unwrap_or(0)
             });
             assert_eq!(actual, expected_weights);
-            assert_eq!(actual.iter().map(|weight| u16::from(*weight)).sum::<u16>(), 100);
+            assert_eq!(
+                actual.iter().map(|weight| u16::from(*weight)).sum::<u16>(),
+                100
+            );
         }
     }
 
@@ -277,10 +286,7 @@ mod tests {
         ] {
             assert_eq!(
                 direct_fishing_raw_book_level_weight(profile, level),
-                Err(DirectFishingBookPolicyError::LevelOutsideProfile {
-                    profile,
-                    level,
-                })
+                Err(DirectFishingBookPolicyError::LevelOutsideProfile { profile, level })
             );
         }
     }
