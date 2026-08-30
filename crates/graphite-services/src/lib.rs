@@ -10,7 +10,9 @@ mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_droptable;
 mod fishing_gold_rod;
+mod fishing_limits;
 mod fishing_multi_treasure;
+mod fishing_multicatch;
 mod fishing_over_cap;
 mod fishing_species;
 mod fishing_variant;
@@ -67,8 +69,8 @@ pub use fishing_bait::{
     BAIT_RACK_ACTIVE_SLOTS_PER_LEVEL, BAIT_RACK_MAX_LEVEL,
     BAIT_UNITS_CONSUMED_PER_ACTIVE_CATEGORY_PER_CAST, BaitRackCapacityPolicy, BaitRackPolicyError,
     FishingBait, FishingBaitCategory, FishingBaitEffect, FishingBaitPolicy, FishingBaitRatio,
-    FishingRarity, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, MAX_FISH_PER_CAST,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, bait_rack_capacity_policy, fishing_bait_policy,
+    FishingRarity, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    bait_rack_capacity_policy, fishing_bait_policy,
 };
 pub use fishing_book_pool::{
     DirectFishingBookLevelProfile, DirectFishingBookPolicyError, DirectFishingBookPool,
@@ -94,9 +96,14 @@ pub use fishing_gold_rod::{
     GoldFishingRodModifierStage, GoldFishingRodPolicyError, GoldFishingRodSideGradePolicy,
     gold_fishing_rod_side_grade_policy,
 };
+pub use fishing_limits::MAX_FISH_PER_CAST;
 pub use fishing_multi_treasure::{
     MULTI_TREASURE_MAX_ITEMS, MULTI_TREASURE_PROBABILITY_BASIS_POINTS, MultiTreasureLevelXCount,
     MultiTreasureLevelXCountPolicy, multi_treasure_level_x_count_policy,
+};
+pub use fishing_multicatch::{
+    MULTICATCH_PROBABILITY_BASIS_POINTS, MulticatchLevelXCount, MulticatchLevelXCountPolicy,
+    multicatch_level_x_count_policy,
 };
 pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
