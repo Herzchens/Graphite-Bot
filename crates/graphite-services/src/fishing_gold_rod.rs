@@ -70,9 +70,8 @@ pub fn gold_fishing_rod_side_grade_policy(
         return Err(GoldFishingRodPolicyError::NotGoldFishingRod);
     }
 
-    let relative_weight_multiplier = relative_weight_multiplier(
-        GOLD_ROD_RARE_OR_BETTER_RELATIVE_WEIGHT_PERCENT,
-    );
+    let relative_weight_multiplier =
+        relative_weight_multiplier(GOLD_ROD_RARE_OR_BETTER_RELATIVE_WEIGHT_PERCENT);
     let treasure_relative_weight_multiplier =
         relative_weight_multiplier(GOLD_ROD_TREASURE_RELATIVE_WEIGHT_PERCENT);
 
@@ -128,8 +127,12 @@ mod tests {
         );
         assert_eq!(
             (
-                policy.treasure_branch_relative_weight_multiplier.numerator(),
-                policy.treasure_branch_relative_weight_multiplier.denominator(),
+                policy
+                    .treasure_branch_relative_weight_multiplier
+                    .numerator(),
+                policy
+                    .treasure_branch_relative_weight_multiplier
+                    .denominator(),
             ),
             (23, 20)
         );
