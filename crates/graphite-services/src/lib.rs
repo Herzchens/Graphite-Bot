@@ -5,6 +5,7 @@ mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
 mod fishing_area;
+mod fishing_capability;
 mod forge;
 mod grinding;
 mod master_enchant;
@@ -19,6 +20,7 @@ mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 mod soulbind;
+mod tool_stats;
 mod upgrade_appraisal;
 mod upgrade_cost;
 mod upgrade_outcome;
@@ -53,6 +55,14 @@ pub use fishing_area::{
     FishingArea, FishingAreaFirstUnlockPolicy, FishingAreaFirstUnlockPreview,
     FishingAreaPolicyError, FishingRodForUnlock, fishing_area_first_unlock_policy,
     preview_first_fishing_area_unlock,
+};
+pub use fishing_capability::{
+    BASELINE_BAIT_STRENGTH_FACTOR_BPS, CAPABILITY_FACTOR_BASIS_POINTS,
+    FishRarity, FishingCapabilityPolicyError, FishingLineStrengthFoundation,
+    MANUAL_AUTOMATION_STRENGTH_FACTOR_BPS, RarityTensionMultiplier,
+    STRENGTHEN_LINE_STRENGTH_BONUS_BPS_PER_LEVEL, STRENGTHEN_MAX_LEVEL,
+    STRENGTHEN_MAX_LINE_STRENGTH_BONUS_BPS, StrengthenLineStrengthPolicy,
+    fishing_line_strength_foundation, rarity_tension_multiplier, strengthen_line_strength_policy,
 };
 pub use forge::{
     AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
@@ -114,6 +124,10 @@ pub use soulbind::{
     SoulBindBindingPreview, SoulBindPolicyError, SoulBindTierComponent, SoulBindTopUpPreview,
     SoulBindUnbindPreview, preview_soulbind_binding, preview_soulbind_top_up,
     preview_soulbind_unbind, soulbind_binding_package,
+};
+pub use tool_stats::{
+    OrdinaryFishingRodStats, OrdinaryPickaxeStats, OrdinarySwordStats, OrdinaryToolStatsError,
+    ordinary_fishing_rod_stats, ordinary_pickaxe_stats, ordinary_sword_stats,
 };
 pub use upgrade_appraisal::{
     ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
