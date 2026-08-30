@@ -552,3 +552,67 @@ Immediately before branching, verified `main` remained `2ee11cc245d820201b872fd4
 **Final decision**
 
 Keep the slice dependency/schema-neutral. Do not mix unrelated crate updates or prerelease/beta/RC versions into the area-policy commit.
+
+## Fishing species catalog policy slice
+
+Branch: `feat/fishing-species-catalog-policy`
+
+### 1. Full FishInstance math was narrowed instead of inventing deterministic transcendental semantics
+
+**Initial next-step plan**
+
+Use the newly frozen species/area table as the direct prerequisite for a complete FishInstance kernel covering weight sampling, NPC Money valuation, and derived length.
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The authoritative Fishing rules freeze a truncated log-normal weight distribution, the valuation term `(Weight / Wref)^0.85`, and a cube-root term in the length formula. Graphite requires deterministic replayable arithmetic, but repository/spec review found no canonical fixed-point precision, approximation algorithm, lookup table, or cross-platform evaluation contract for those transcendental/fractional operations.
+
+Using native floating point, `powf`, an arbitrary approximation table, or a dependency-selected implementation would make canonical RNG/economy results depend on an implementation choice not frozen by the specification.
+
+**Final decision**
+
+Do not activate weight sampling, Money valuation, or derived length yet. Freeze only the fully discrete species/area catalog and exact ReferenceLength prerequisite. Keep the sampler and fractional/transcendental evaluators as explicit blockers for the later FishInstance/runtime slice.
+
+### 2. Exact decimal catalog values are represented in integral physical units
+
+**Implementation-time finding — `CONFIRMED`**
+
+The species table and ReferenceLength table contain finite decimal kilogram/metre values that convert exactly to whole grams and millimetres for all current canonical rows. No gameplay precision is lost by storing the pure policy values in those units.
+
+**Final decision**
+
+Expose reference weight as integer grams and ReferenceLength as integer millimetres. Keep Base NPC value as integer Money. This avoids introducing floating-point persistence/arithmetic semantics while leaving the future FishInstance storage representation open.
+
+### 3. Current area-pool sums are an integrity fact, not a public percentage contract
+
+**Initial implementation possibility**
+
+Expose a public constant declaring every canonical area pool to total `100`, since all current rows happen to sum to that value.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The specification defines the entries as relative species weights. Later modifiers such as Rare Bait or Luck alter eligible relative weights before normalization. A public `100` total would therefore invite callers to treat the raw field as a frozen percentage representation that the specification does not promise.
+
+**Final decision**
+
+Do not expose a public total-weight constant. Preserve the raw relative weights and keep the current sum-of-100 assertion as test-only catalog integrity evidence.
+
+### 4. Species rarity must not be multiplied into NPC value a second time
+
+**Implementation-time finding — `CONFIRMED`**
+
+The latest authoritative Fishing correction states that the species Base NPC Money value already prices rarity into the species economy value. Applying another rarity multiplier during valuation would double-count rarity and distort the economy.
+
+**Final decision**
+
+Keep rarity as species metadata for selection/display/policy purposes, but expose Base NPC Money value independently and document that future valuation must not apply rarity again. The unresolved weight exponent remains the only size-based valuation factor from this slice's boundary.
+
+### 5. Stable toolchain/dependency baseline remains sufficient
+
+**Check result — `DISPROVED` for dependency churn in this slice**
+
+Rust 1.98.0 remains the current stable toolchain baseline and the finite catalog needs no external numeric or data dependency. Adding a transcendental/fixed-point crate merely to bypass the unresolved arithmetic contract would move an unfrozen gameplay choice into dependency behavior rather than solve the specification gap.
+
+**Final decision**
+
+Keep the slice dependency/schema-neutral. Do not add a numeric crate, migration, FishInstance persistence, command, or runtime state until the owning semantics are authoritative.
