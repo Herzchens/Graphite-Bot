@@ -51,9 +51,9 @@ pub use equipment_policy::{
     EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
 };
 pub use fishing_aexp::{
-    MANUAL_FISHING_JUNK_AEXP, MANUAL_FISHING_MULTI_TREASURE_AEXP_CAP,
-    MANUAL_FISHING_TREASURE_AEXP, ManualFishingAexpError, ManualFishingAexpOutcome,
-    manual_fishing_outcome_aexp, manual_fishing_treasure_cast_aexp,
+    MANUAL_FISHING_BASE_JUNK_AEXP, MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP,
+    MANUAL_FISHING_BASE_TREASURE_AEXP, ManualFishingAexpError, ManualFishingAexpOutcome,
+    manual_fishing_base_outcome_aexp, manual_fishing_base_treasure_cast_aexp,
 };
 pub use fishing_area::{
     FishingArea, FishingAreaFirstUnlockPolicy, FishingAreaFirstUnlockPreview,
