@@ -6,6 +6,7 @@ mod equipment_policy;
 mod fishing_area;
 mod fishing_bait;
 mod fishing_capability;
+mod fishing_over_cap;
 mod fishing_species;
 mod fishing_variant;
 mod forge;
@@ -65,6 +66,11 @@ pub use fishing_capability::{
     ManualFishingLineStrength, NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT,
     STRENGTHEN_MAX_LEVEL, fishing_catch_load, fishing_rarity_tension_multiplier, fishing_tension,
     manual_fishing_capability_ratio, manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
+};
+pub use fishing_over_cap::{
+    FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
+    OverCapCatchChanceBound, OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL,
+    SHARP_HOOK_PERCENTAGE_POINTS_PER_LEVEL, preview_over_cap_catch_chance,
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
