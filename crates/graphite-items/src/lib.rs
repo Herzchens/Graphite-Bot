@@ -56,6 +56,15 @@ pub struct ItemMutationReceipt {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedItemOrdinaryEquipmentClassification {
+    pub item_instance_id: Uuid,
+    pub owner_player_id: Uuid,
+    pub definition_key: String,
+    pub definition_version: i32,
+    pub is_ordinary_equipment: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StackView {
     pub definition_key: String,
     pub definition_version: i32,
@@ -182,6 +191,7 @@ struct DefinitionVersion {
 struct LockedItem {
     location: String,
     definition: DefinitionVersion,
+    is_ordinary_equipment: bool,
 }
 
 enum OperationResolution {
@@ -843,6 +853,29 @@ impl ItemService {
     }
 }
 
+/// Locks one owner-scoped ItemInstance and resolves its ordinary-equipment classification from the
+/// exact immutable ItemDefinition version pinned by that instance.
+///
+/// This primitive intentionally does not lock or validate the player/account row. Stateful callers
+/// must preserve Graphite's lock order by acquiring their owning operation and player lock before
+/// calling it. The returned snapshot is authoritative only while `tx` remains open and must not be
+/// cached or reused for a later transaction, because a future lifecycle may repin the ItemInstance
+/// to a newer immutable definition version.
+pub async fn lock_owned_item_ordinary_equipment_classification(
+    tx: &mut Transaction<'_, Postgres>,
+    player_id: Uuid,
+    item_id: Uuid,
+) -> Result<OwnedItemOrdinaryEquipmentClassification, ItemError> {
+    let item = lock_owned_item(tx, player_id, item_id).await?;
+    Ok(OwnedItemOrdinaryEquipmentClassification {
+        item_instance_id: item_id,
+        owner_player_id: player_id,
+        definition_key: item.definition.key,
+        definition_version: item.definition.version,
+        is_ordinary_equipment: item.is_ordinary_equipment,
+    })
+}
+
 async fn resolve_operation(
     tx: &mut Transaction<'_, Postgres>,
     discord_user_id: i64,
@@ -977,7 +1010,8 @@ async fn lock_owned_item(
                d.category,
                d.stackable,
                d.stack_limit,
-               d.data
+               d.data,
+               d.is_ordinary_equipment
           FROM item_instances i
           JOIN item_definition_versions d
             ON d.key = i.definition_key
@@ -1003,6 +1037,7 @@ async fn lock_owned_item(
             stack_limit: row.try_get("stack_limit")?,
             data: row.try_get("data")?,
         },
+        is_ordinary_equipment: row.try_get("is_ordinary_equipment")?,
     })
 }
 
