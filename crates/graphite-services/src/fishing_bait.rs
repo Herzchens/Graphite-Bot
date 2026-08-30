@@ -1,6 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
+use crate::fishing_droptable::FishingCatchBranch;
 pub(crate) use crate::fishing_limits::MAX_FISH_PER_CAST;
 
 pub const BAIT_RACK_MAX_LEVEL: u8 = 3;
@@ -8,6 +9,8 @@ pub const NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS: u8 = 3;
 pub const BAIT_RACK_ACTIVE_SLOTS_PER_LEVEL: u8 = 1;
 pub const MAX_ACTIVE_BAIT_CATEGORY_SLOTS: u8 = 6;
 pub const BAIT_UNITS_CONSUMED_PER_ACTIVE_CATEGORY_PER_CAST: u8 = 1;
+
+const SCHOOL_BAIT_EXTRA_FISH_COUNT: u8 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct BaitRackCapacityPolicy {
@@ -114,6 +117,61 @@ pub struct FishingBaitPolicy {
     pub effect: FishingBaitEffect,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SchoolBaitProcResolution {
+    NotTriggered,
+    Triggered,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SchoolBaitNoExtraFishReason {
+    ProcNotTriggered,
+    GlobalFishCapReached,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SchoolBaitQuantityResolution {
+    Unchanged {
+        fish_count: u8,
+        reason: SchoolBaitNoExtraFishReason,
+    },
+    AddOneSameAreaFish {
+        initial_fish_count: u8,
+        final_fish_count: u8,
+    },
+}
+
+impl SchoolBaitQuantityResolution {
+    #[must_use]
+    pub const fn final_fish_count(self) -> u8 {
+        match self {
+            Self::Unchanged { fish_count, .. } => fish_count,
+            Self::AddOneSameAreaFish {
+                final_fish_count, ..
+            } => final_fish_count,
+        }
+    }
+
+    #[must_use]
+    pub const fn extra_fish_count(self) -> u8 {
+        match self {
+            Self::Unchanged { .. } => 0,
+            Self::AddOneSameAreaFish { .. } => SCHOOL_BAIT_EXTRA_FISH_COUNT,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum SchoolBaitQuantityError {
+    #[error("School Bait quantity resolution requires a Fish result; got {0:?}")]
+    RequiresFishResult(FishingCatchBranch),
+    #[error("School Bait current fish count must be between 1 and {MAX_FISH_PER_CAST}; got {0}")]
+    FishCountOutOfRange(u8),
+}
+
 /// Resolves the frozen active bait-category capacity for a normal Fishing Rod.
 ///
 /// Normal fishing starts with three native active bait-category slots. Bait Rack is a Rod-only
@@ -170,7 +228,7 @@ pub const fn fishing_bait_policy(bait: FishingBait) -> FishingBaitPolicy {
             FishingBaitEffect::School {
                 requires_fish_result: true,
                 extra_same_area_fish_chance: ratio(2, 25),
-                extra_fish_count: 1,
+                extra_fish_count: SCHOOL_BAIT_EXTRA_FISH_COUNT,
                 non_recursive: true,
                 max_total_fish_per_cast: MAX_FISH_PER_CAST,
             },
@@ -225,6 +283,54 @@ pub const fn fishing_bait_policy(bait: FishingBait) -> FishingBaitPolicy {
         multi_treasure_consumes_extra_bait: false,
         effect,
     }
+}
+
+/// Applies one already-authoritative School Bait proc result to an existing Fish-result count.
+///
+/// School Bait is eligible only after a Fish branch has produced at least one candidate fish. A
+/// triggered proc adds exactly one extra **same-area** fish, never recursively, while the shared
+/// global five-fish ceiling remains authoritative. A trigger at the ceiling therefore adds nothing
+/// rather than overflowing or replacing an existing fish.
+///
+/// `current_fish_count` is intentionally agnostic to how prior independent quantity policy reached
+/// that count. In particular, this kernel does not choose an ordering between School Bait and
+/// Multicatch, and it does not decide whether any future quantity stage runs before or after it.
+/// The future owning Fishing lifecycle must compose those independent stages once under the shared
+/// cap. The proc evidence is supplied by the caller because this function does not draw RNG.
+///
+/// `AddOneSameAreaFish` is a count/area requirement only. This policy does not select the additional
+/// fish's species, rarity, weight, variant, biological noise, AEXP contribution, or FishInstance
+/// identity, and it does not consume bait or activate `/fish`.
+pub fn resolve_school_bait_quantity(
+    branch: FishingCatchBranch,
+    current_fish_count: u8,
+    proc_resolution: SchoolBaitProcResolution,
+) -> Result<SchoolBaitQuantityResolution, SchoolBaitQuantityError> {
+    if branch != FishingCatchBranch::Fish {
+        return Err(SchoolBaitQuantityError::RequiresFishResult(branch));
+    }
+    if !(1..=MAX_FISH_PER_CAST).contains(&current_fish_count) {
+        return Err(SchoolBaitQuantityError::FishCountOutOfRange(
+            current_fish_count,
+        ));
+    }
+
+    Ok(match proc_resolution {
+        SchoolBaitProcResolution::NotTriggered => SchoolBaitQuantityResolution::Unchanged {
+            fish_count: current_fish_count,
+            reason: SchoolBaitNoExtraFishReason::ProcNotTriggered,
+        },
+        SchoolBaitProcResolution::Triggered if current_fish_count == MAX_FISH_PER_CAST => {
+            SchoolBaitQuantityResolution::Unchanged {
+                fish_count: current_fish_count,
+                reason: SchoolBaitNoExtraFishReason::GlobalFishCapReached,
+            }
+        }
+        SchoolBaitProcResolution::Triggered => SchoolBaitQuantityResolution::AddOneSameAreaFish {
+            initial_fish_count: current_fish_count,
+            final_fish_count: current_fish_count + SCHOOL_BAIT_EXTRA_FISH_COUNT,
+        },
+    })
 }
 
 const fn ratio(numerator: u16, denominator: u16) -> FishingBaitRatio {
@@ -319,7 +425,7 @@ mod tests {
             ),
             (2, 25)
         );
-        assert_eq!(extra_fish_count, 1);
+        assert_eq!(extra_fish_count, SCHOOL_BAIT_EXTRA_FISH_COUNT);
         assert!(non_recursive);
         assert_eq!(max_total_fish_per_cast, MAX_FISH_PER_CAST);
 
@@ -415,5 +521,86 @@ mod tests {
             ),
             (9, 10)
         );
+    }
+
+    #[test]
+    fn school_bait_quantity_requires_a_valid_fish_result_count() {
+        for branch in [FishingCatchBranch::Junk, FishingCatchBranch::Treasure] {
+            assert_eq!(
+                resolve_school_bait_quantity(branch, 1, SchoolBaitProcResolution::Triggered),
+                Err(SchoolBaitQuantityError::RequiresFishResult(branch))
+            );
+        }
+        for fish_count in [0, MAX_FISH_PER_CAST + 1, u8::MAX] {
+            assert_eq!(
+                resolve_school_bait_quantity(
+                    FishingCatchBranch::Fish,
+                    fish_count,
+                    SchoolBaitProcResolution::Triggered,
+                ),
+                Err(SchoolBaitQuantityError::FishCountOutOfRange(fish_count))
+            );
+        }
+    }
+
+    #[test]
+    fn school_bait_no_proc_preserves_every_valid_existing_count() {
+        for fish_count in 1..=MAX_FISH_PER_CAST {
+            let resolution = resolve_school_bait_quantity(
+                FishingCatchBranch::Fish,
+                fish_count,
+                SchoolBaitProcResolution::NotTriggered,
+            )
+            .unwrap();
+            assert_eq!(
+                resolution,
+                SchoolBaitQuantityResolution::Unchanged {
+                    fish_count,
+                    reason: SchoolBaitNoExtraFishReason::ProcNotTriggered,
+                }
+            );
+            assert_eq!(resolution.final_fish_count(), fish_count);
+            assert_eq!(resolution.extra_fish_count(), 0);
+        }
+    }
+
+    #[test]
+    fn school_bait_trigger_adds_one_same_area_fish_until_global_cap() {
+        for fish_count in 1..MAX_FISH_PER_CAST {
+            let resolution = resolve_school_bait_quantity(
+                FishingCatchBranch::Fish,
+                fish_count,
+                SchoolBaitProcResolution::Triggered,
+            )
+            .unwrap();
+            assert_eq!(
+                resolution,
+                SchoolBaitQuantityResolution::AddOneSameAreaFish {
+                    initial_fish_count: fish_count,
+                    final_fish_count: fish_count + SCHOOL_BAIT_EXTRA_FISH_COUNT,
+                }
+            );
+            assert_eq!(
+                resolution.final_fish_count(),
+                fish_count + SCHOOL_BAIT_EXTRA_FISH_COUNT
+            );
+            assert_eq!(resolution.extra_fish_count(), SCHOOL_BAIT_EXTRA_FISH_COUNT);
+        }
+
+        let capped = resolve_school_bait_quantity(
+            FishingCatchBranch::Fish,
+            MAX_FISH_PER_CAST,
+            SchoolBaitProcResolution::Triggered,
+        )
+        .unwrap();
+        assert_eq!(
+            capped,
+            SchoolBaitQuantityResolution::Unchanged {
+                fish_count: MAX_FISH_PER_CAST,
+                reason: SchoolBaitNoExtraFishReason::GlobalFishCapReached,
+            }
+        );
+        assert_eq!(capped.final_fish_count(), MAX_FISH_PER_CAST);
+        assert_eq!(capped.extra_fish_count(), 0);
     }
 }
