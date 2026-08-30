@@ -1,7 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::{FishingCapabilityClassification, FishingCapabilityRatio};
+use crate::fishing_capability::{FishingCapabilityClassification, FishingCapabilityRatio};
 
 pub const SHARP_HOOK_MAX_LEVEL: u8 = 10;
 pub const SHARP_HOOK_PERCENTAGE_POINTS_PER_LEVEL: u8 = 2;
