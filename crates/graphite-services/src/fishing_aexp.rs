@@ -70,8 +70,10 @@ pub fn manual_fishing_base_treasure_cast_aexp(
         ));
     }
 
-    Ok((i64::from(landed_treasure_count) * MANUAL_FISHING_BASE_TREASURE_AEXP)
-        .min(MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP))
+    Ok(
+        (i64::from(landed_treasure_count) * MANUAL_FISHING_BASE_TREASURE_AEXP)
+            .min(MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP),
+    )
 }
 
 #[must_use]
@@ -141,9 +143,7 @@ mod tests {
         for count in [0, 4, u8::MAX] {
             assert_eq!(
                 manual_fishing_base_treasure_cast_aexp(count),
-                Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(
-                    count
-                ))
+                Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(count))
             );
         }
     }
