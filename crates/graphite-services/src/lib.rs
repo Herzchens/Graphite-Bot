@@ -81,8 +81,8 @@ pub use fishing_bait::{
     FishingBait, FishingBaitCategory, FishingBaitEffect, FishingBaitPolicy, FishingBaitRatio,
     FishingRarity, MAX_ACTIVE_BAIT_CATEGORY_SLOTS, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
     SchoolBaitNoExtraFishReason, SchoolBaitProcResolution, SchoolBaitQuantityError,
-    SchoolBaitQuantityResolution, bait_rack_capacity_policy, fishing_bait_policy,
-    resolve_school_bait_quantity,
+    SchoolBaitQuantityResolution, TreasureBaitBranchWeightPreview, bait_rack_capacity_policy,
+    fishing_bait_policy, preview_treasure_bait_base_branch_weight, resolve_school_bait_quantity,
 };
 pub use fishing_book_pool::{
     DirectFishingBookLevelProfile, DirectFishingBookPolicyError, DirectFishingBookPool,

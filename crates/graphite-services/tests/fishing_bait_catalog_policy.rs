@@ -2,7 +2,8 @@ use graphite_services::{
     BAIT_UNITS_CONSUMED_PER_ACTIVE_CATEGORY_PER_CAST, FishingBait, FishingBaitCategory,
     FishingBaitEffect, FishingCatchBranch, FishingRarity, MAX_FISH_PER_CAST,
     SchoolBaitNoExtraFishReason, SchoolBaitProcResolution, SchoolBaitQuantityError,
-    SchoolBaitQuantityResolution, fishing_bait_policy, resolve_school_bait_quantity,
+    SchoolBaitQuantityResolution, fishing_bait_policy, preview_treasure_bait_base_branch_weight,
+    resolve_school_bait_quantity,
 };
 
 #[test]
@@ -231,5 +232,32 @@ fn public_api_school_bait_applies_one_non_recursive_extra_fish_under_shared_cap(
         );
         assert_eq!(capped.final_fish_count(), MAX_FISH_PER_CAST);
         assert_eq!(capped.extra_fish_count(), 0);
+    }
+}
+
+#[test]
+fn public_api_treasure_bait_transforms_base_branch_weights_without_normalizing() {
+    for (branch, base, factor, adjusted) in [
+        (FishingCatchBranch::Fish, 176, (1, 1), (176, 1)),
+        (FishingCatchBranch::Junk, 17, (9, 10), (153, 10)),
+        (FishingCatchBranch::Treasure, 7, (23, 20), (161, 20)),
+    ] {
+        let preview = preview_treasure_bait_base_branch_weight(branch);
+        assert_eq!(preview.branch, branch);
+        assert_eq!(preview.base_relative_weight, base);
+        assert_eq!(
+            (
+                preview.relative_weight_factor.numerator(),
+                preview.relative_weight_factor.denominator()
+            ),
+            factor
+        );
+        assert_eq!(
+            (
+                preview.adjusted_relative_weight_numerator(),
+                preview.adjusted_relative_weight_denominator()
+            ),
+            adjusted
+        );
     }
 }
