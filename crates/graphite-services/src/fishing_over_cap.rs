@@ -88,48 +88,48 @@ pub fn preview_over_cap_catch_chance(
     let sharp_hook_bonus_percent = u128::from(sharp_hook_level_value)
         .checked_mul(u128::from(SHARP_HOOK_PERCENTAGE_POINTS_PER_LEVEL))
         .ok_or(FishingOverCapError::ArithmeticOverflow)?;
+    let intercept_percent = BASE_OVER_CAP_CATCH_PERCENT
+        .checked_add(OVER_CAP_PENALTY_PERCENT_PER_EXCESS_RATIO)
+        .ok_or(FishingOverCapError::ArithmeticOverflow)?;
 
-    // raw chance <= 15% iff 25R >= 95 + 2L.
+    // raw chance <= minimum iff 25R >= (110 - minimum) + 2L.
+    let minimum_threshold_factor = intercept_percent
+        .checked_sub(u128::from(OVER_CAP_CATCH_CHANCE_MIN_PERCENT))
+        .and_then(|value| value.checked_add(sharp_hook_bonus_percent))
+        .ok_or(FishingOverCapError::ArithmeticOverflow)?;
     let minimum_threshold = ratio_denominator
-        .checked_mul(
-            95_u128
-                .checked_add(sharp_hook_bonus_percent)
-                .ok_or(FishingOverCapError::ArithmeticOverflow)?,
-        )
+        .checked_mul(minimum_threshold_factor)
         .ok_or(FishingOverCapError::ArithmeticOverflow)?;
     if penalty_scaled_numerator >= minimum_threshold {
-        return Ok(OverCapCatchChancePolicy {
+        return Ok(percent_policy(
             sharp_hook_level,
-            bound: OverCapCatchChanceBound::Minimum,
-            numerator: 3,
-            denominator: 20,
-        });
+            OverCapCatchChanceBound::Minimum,
+            OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
+        ));
     }
 
-    // raw chance >= 95% iff 25R <= 15 + 2L.
+    // raw chance >= maximum iff 25R <= (110 - maximum) + 2L.
+    let maximum_threshold_factor = intercept_percent
+        .checked_sub(u128::from(OVER_CAP_CATCH_CHANCE_MAX_PERCENT))
+        .and_then(|value| value.checked_add(sharp_hook_bonus_percent))
+        .ok_or(FishingOverCapError::ArithmeticOverflow)?;
     let maximum_threshold = ratio_denominator
-        .checked_mul(
-            15_u128
-                .checked_add(sharp_hook_bonus_percent)
-                .ok_or(FishingOverCapError::ArithmeticOverflow)?,
-        )
+        .checked_mul(maximum_threshold_factor)
         .ok_or(FishingOverCapError::ArithmeticOverflow)?;
     if penalty_scaled_numerator <= maximum_threshold {
-        return Ok(OverCapCatchChancePolicy {
+        return Ok(percent_policy(
             sharp_hook_level,
-            bound: OverCapCatchChanceBound::Maximum,
-            numerator: 19,
-            denominator: 20,
-        });
+            OverCapCatchChanceBound::Maximum,
+            OVER_CAP_CATCH_CHANCE_MAX_PERCENT,
+        ));
     }
 
     // 0.85 - 0.25(R - 1) + 0.02L = (110 + 2L - 25R) / 100.
+    let positive_factor = intercept_percent
+        .checked_add(sharp_hook_bonus_percent)
+        .ok_or(FishingOverCapError::ArithmeticOverflow)?;
     let positive_term = ratio_denominator
-        .checked_mul(
-            110_u128
-                .checked_add(sharp_hook_bonus_percent)
-                .ok_or(FishingOverCapError::ArithmeticOverflow)?,
-        )
+        .checked_mul(positive_factor)
         .ok_or(FishingOverCapError::ArithmeticOverflow)?;
     let numerator = positive_term
         .checked_sub(penalty_scaled_numerator)
@@ -145,6 +145,21 @@ pub fn preview_over_cap_catch_chance(
         numerator: numerator / divisor,
         denominator: denominator / divisor,
     })
+}
+
+fn percent_policy(
+    sharp_hook_level: Option<u8>,
+    bound: OverCapCatchChanceBound,
+    percent: u8,
+) -> OverCapCatchChancePolicy {
+    let numerator = u128::from(percent);
+    let divisor = gcd(numerator, PERCENT_DENOMINATOR);
+    OverCapCatchChancePolicy {
+        sharp_hook_level,
+        bound,
+        numerator: numerator / divisor,
+        denominator: PERCENT_DENOMINATOR / divisor,
+    }
 }
 
 const fn gcd(mut left: u128, mut right: u128) -> u128 {
