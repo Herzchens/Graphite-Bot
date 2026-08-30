@@ -109,7 +109,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn Gold_Rod_policy_matches_all_frozen_side_grade_inputs() {
+    fn gold_rod_policy_matches_all_frozen_side_grade_inputs() {
         let policy = gold_fishing_rod_side_grade_policy(EquipmentTier::Gold, true).unwrap();
 
         assert_eq!(policy.action_speed_rating_percent, 10);
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn non_Gold_ordinary_Rod_cannot_borrow_side_grade_modifiers() {
+    fn non_gold_ordinary_rod_cannot_borrow_side_grade_modifiers() {
         assert_eq!(
             gold_fishing_rod_side_grade_policy(EquipmentTier::Diamond, true),
             Err(GoldFishingRodPolicyError::NotGoldFishingRod)
@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn non_ordinary_Gold_like_definition_fails_closed() {
+    fn non_ordinary_gold_like_definition_fails_closed() {
         assert_eq!(
             gold_fishing_rod_side_grade_policy(EquipmentTier::Gold, false),
             Err(GoldFishingRodPolicyError::InvalidOrdinaryRod(
