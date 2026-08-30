@@ -94,23 +94,11 @@ pub fn compose_canonical_equipment_appraisal(
     upgrade_level: u64,
     embedded_enchant_value: i64,
 ) -> Result<CanonicalEquipmentAppraisal, CanonicalEquipmentAppraisalError> {
-    if base.value < 0 {
-        return Err(CanonicalEquipmentAppraisalError::NegativeBaseAppraisal);
-    }
     if embedded_enchant_value < 0 {
         return Err(CanonicalEquipmentAppraisalError::NegativeEmbeddedEnchantValue);
     }
 
-    let upgrade_scaled =
-        scale_base_appraisal_by_upgrade(base.value, upgrade_level).map_err(map_upgrade_error)?;
-    let (roll_numerator, roll_denominator) = creation_roll_factor(creation_roll)?;
-    let (structural_numerator, structural_denominator) = multiply_fractions(
-        upgrade_scaled.numerator(),
-        upgrade_scaled.denominator(),
-        roll_numerator,
-        roll_denominator,
-    )?;
-    let recraft_appraisal = round_half_up_fraction(structural_numerator, structural_denominator)?;
+    let recraft_appraisal = recraft_equipment_appraisal(base, creation_roll, upgrade_level)?;
     let enhanced_canonical_appraisal = recraft_appraisal
         .checked_add(embedded_enchant_value)
         .ok_or(CanonicalEquipmentAppraisalError::ArithmeticOverflow)?;
@@ -123,6 +111,27 @@ pub fn compose_canonical_equipment_appraisal(
         recraft_appraisal,
         enhanced_canonical_appraisal,
     })
+}
+
+pub(crate) fn recraft_equipment_appraisal(
+    base: BaseEquipmentAppraisal,
+    creation_roll: CreationRoll,
+    upgrade_level: u64,
+) -> Result<i64, CanonicalEquipmentAppraisalError> {
+    if base.value < 0 {
+        return Err(CanonicalEquipmentAppraisalError::NegativeBaseAppraisal);
+    }
+
+    let upgrade_scaled =
+        scale_base_appraisal_by_upgrade(base.value, upgrade_level).map_err(map_upgrade_error)?;
+    let (roll_numerator, roll_denominator) = creation_roll_factor(creation_roll)?;
+    let (structural_numerator, structural_denominator) = multiply_fractions(
+        upgrade_scaled.numerator(),
+        upgrade_scaled.denominator(),
+        roll_numerator,
+        roll_denominator,
+    )?;
+    round_half_up_fraction(structural_numerator, structural_denominator)
 }
 
 fn creation_roll_factor(
