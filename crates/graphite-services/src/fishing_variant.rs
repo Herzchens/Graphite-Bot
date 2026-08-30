@@ -141,8 +141,7 @@ mod tests {
             .filter(|row| row.variant != FishingVariant::Normal)
             .map(|row| {
                 let ratio = row.base_probability;
-                u32::from(ratio.numerator())
-                    * (COMMON_DENOMINATOR / u32::from(ratio.denominator()))
+                u32::from(ratio.numerator()) * (COMMON_DENOMINATOR / u32::from(ratio.denominator()))
             })
             .sum::<u32>();
 
