@@ -56,9 +56,10 @@ pub enum EnchantAppraisalError {
 
 /// Resolves the frozen canonical book appraisal for an already-classified embedded enchant.
 ///
-/// The owning enchant/content layer is responsible for mapping a concrete enchant definition to
-/// its acquisition/value class. In particular, Shadow Walker must be passed as
-/// [`EnchantAppraisalClass::FishingChestMidHigh`] at its resulting level. SoulBind is not an
+/// This is the low-level numeric kernel. Stateful or identity-aware callers should prefer the
+/// canonical-enchant bridge owned by `enchant_catalog`, which derives the appraisal class from the
+/// canonical enchant identity instead of accepting caller-supplied classification. Shadow Walker
+/// uses [`EnchantAppraisalClass::FishingChestMidHigh`] at its resulting level. SoulBind is not an
 /// enchant and must not be passed to this policy kernel.
 pub fn canonical_book_appraisal(
     class: EnchantAppraisalClass,
@@ -78,17 +79,30 @@ pub fn canonical_book_appraisal(
     })
 }
 
-/// Computes the frozen value contributed by all enchants embedded in one equipment item.
+/// Computes the frozen value contributed by all already-classified enchants embedded in one item.
 ///
-/// Each input is first valued by [`canonical_book_appraisal`], then the sum is multiplied by 70%
-/// and rounded half-up to an integer. This function intentionally does not inspect enchant
-/// compatibility, slots, inventory ownership, Market prices, or SoulBind state.
+/// This remains the low-level class-based API for policy composition and compatibility. Callers
+/// that own concrete canonical enchant identities should use the catalog bridge so an appraisal
+/// class cannot be supplied independently from the enchant identity.
 pub fn embedded_enchant_value(
     enchants: &[EmbeddedEnchantAppraisalInput],
 ) -> Result<i64, EnchantAppraisalError> {
+    embedded_enchant_value_from_book_appraisals(
+        enchants
+            .iter()
+            .map(|enchant| canonical_book_appraisal(enchant.class, enchant.level)),
+    )
+}
+
+pub(crate) fn embedded_enchant_value_from_book_appraisals<I>(
+    appraisals: I,
+) -> Result<i64, EnchantAppraisalError>
+where
+    I: IntoIterator<Item = Result<CanonicalBookAppraisal, EnchantAppraisalError>>,
+{
     let mut total = 0_i128;
-    for enchant in enchants {
-        let appraisal = canonical_book_appraisal(enchant.class, enchant.level)?;
+    for appraisal in appraisals {
+        let appraisal = appraisal?;
         total = total
             .checked_add(i128::from(appraisal.value))
             .ok_or(EnchantAppraisalError::ArithmeticOverflow)?;
