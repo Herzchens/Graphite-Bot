@@ -6,6 +6,7 @@ use crate::fishing_bait::FishingRarity;
 pub const MANUAL_FISHING_JUNK_AEXP: i64 = 2;
 pub const MANUAL_FISHING_TREASURE_AEXP: i64 = 5;
 pub const MANUAL_FISHING_MULTI_TREASURE_AEXP_CAP: i64 = 10;
+pub const MANUAL_FISHING_MULTI_TREASURE_MAX_ITEMS: u8 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -19,8 +20,10 @@ pub enum ManualFishingAexpOutcome {
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum ManualFishingAexpError {
-    #[error("landed treasure count must be positive")]
-    ZeroLandedTreasureCount,
+    #[error(
+        "landed treasure count must be between 1 and {MANUAL_FISHING_MULTI_TREASURE_MAX_ITEMS}; got {0}"
+    )]
+    LandedTreasureCountOutOfRange(u8),
 }
 
 /// Resolves the frozen Manual Fishing Activity EXP for one terminal single-result outcome.
@@ -47,13 +50,17 @@ pub const fn manual_fishing_outcome_aexp(outcome: ManualFishingAexpOutcome) -> O
 /// Applies the frozen total Treasure Activity EXP cap for one successfully landed Treasure cast.
 ///
 /// The caller supplies the authoritative number of landed Treasure items after Multi Treasure has
-/// already resolved. This function does not own Multi Treasure RNG or enchant-level count
-/// distributions; it only applies `5 AEXP × landed treasure count`, capped at 10 AEXP per cast.
+/// already resolved. Canonical Multi Treasure output is single, double, or triple Treasure, so any
+/// count outside `1..=3` fails closed instead of being silently hidden by the AEXP cap. This function
+/// does not own Multi Treasure RNG or enchant-level count distributions; it only applies
+/// `5 AEXP × landed treasure count`, capped at 10 AEXP per cast.
 pub fn manual_fishing_treasure_cast_aexp(
     landed_treasure_count: u8,
 ) -> Result<i64, ManualFishingAexpError> {
-    if landed_treasure_count == 0 {
-        return Err(ManualFishingAexpError::ZeroLandedTreasureCount);
+    if !(1..=MANUAL_FISHING_MULTI_TREASURE_MAX_ITEMS).contains(&landed_treasure_count) {
+        return Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(
+            landed_treasure_count,
+        ));
     }
 
     Ok((i64::from(landed_treasure_count) * MANUAL_FISHING_TREASURE_AEXP)
@@ -120,14 +127,17 @@ mod tests {
         assert_eq!(manual_fishing_treasure_cast_aexp(1), Ok(5));
         assert_eq!(manual_fishing_treasure_cast_aexp(2), Ok(10));
         assert_eq!(manual_fishing_treasure_cast_aexp(3), Ok(10));
-        assert_eq!(manual_fishing_treasure_cast_aexp(u8::MAX), Ok(10));
     }
 
     #[test]
-    fn zero_landed_treasure_count_fails_closed() {
-        assert_eq!(
-            manual_fishing_treasure_cast_aexp(0),
-            Err(ManualFishingAexpError::ZeroLandedTreasureCount)
-        );
+    fn noncanonical_treasure_counts_fail_closed() {
+        for count in [0, 4, u8::MAX] {
+            assert_eq!(
+                manual_fishing_treasure_cast_aexp(count),
+                Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(
+                    count
+                ))
+            );
+        }
     }
 }
