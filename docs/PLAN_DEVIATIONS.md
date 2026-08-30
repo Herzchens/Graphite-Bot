@@ -722,3 +722,51 @@ The source table and Multi Treasure cap use bounded integer arithmetic and exist
 **Final decision**
 
 Keep the slice dependency/schema-neutral and non-mutating. Do not add migrations, RNG draws, ItemInstance settlement, Modifier Registry implementation, progression writes, or `/fish` command wiring. Phase 7 remains unactivated until the owning Fishing lifecycle is implemented.
+
+## Base Fishing droptable policy slice
+
+Branch: `feat/fishing-base-droptable-policy`
+
+### 1. Baseline catch percentages are represented as relative weights before normalization
+
+**Initial implementation possibility**
+
+Expose the zero-temporary-modifier 88.00% Fish / 8.50% Junk / 3.50% Treasure rows as immutable final probability values.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The active Fishing rules state that Gold Rod, Treasure Bait, Treasure enchant, and other eligible Fishing modifiers alter branch weights relatively before shared normalization/caps. Treating the baseline rows as permanently final probabilities would invite callers to apply relative modifiers to already-final values or bypass the future shared composer.
+
+**Final decision**
+
+Represent the exact baseline with reduced common-scale relative weights `176 / 17 / 7`. At zero modifiers these normalize exactly to 88.00% / 8.50% / 3.50%, while preserving the correct pre-normalization ownership boundary. This slice does not compose temporary modifiers, apply shared caps, or perform RNG.
+
+### 2. “A valid cast still always catches something” is an initial branch invariant, not a final-settlement guarantee
+
+**Implementation-time finding — `CONFIRMED`**
+
+The droptable has no empty initial branch, but the later Fishing capability rules can still make a Fish candidate escape or be lost to a line break.
+
+**Final decision**
+
+Keep the base branch enum exhaustive over Fish, Junk, and Treasure and do not add a no-result branch. Do not expose a misleading `always_settles_item` or equivalent guarantee: successful initial selection and final settlement remain separate stages.
+
+### 3. Treasure-branch modifiers do not leak into the internal Treasure result table
+
+**Implementation-time finding — `CONFIRMED`**
+
+The specification explicitly says Treasure X modifies the Treasure branch relatively and does not multiply an Enchant Book's internal rarity. Multi Treasure repeats Treasure-result quantity only after a Treasure proc and result selection.
+
+**Final decision**
+
+Freeze the internal Treasure result table separately as reduced relative weights `19 / 13 / 5 / 4 / 5 / 4`, reproducing 38% / 26% / 10% / 8% / 10% / 8% exactly. Gold/Treasure Bait/Treasure-enchant branch modifiers are not applied again inside this table. The direct Enchant Book pool and Multi Treasure quantity RNG remain later slices.
+
+### 4. No dependency, schema, RNG, or runtime activation is justified
+
+**Check result — `DISPROVED` for infrastructure churn in this slice**
+
+Both tables are finite exact integer policy data and repository review found no existing base catch/treasure droptable owner to migrate. No external numeric/data crate, schema state, RNG draw, settlement path, or command wiring is needed.
+
+**Final decision**
+
+Keep the slice pure, dependency/schema-neutral, and non-mutating. Phase 7 remains unactivated until the owning Fishing lifecycle and deterministic RNG composition are implemented.
