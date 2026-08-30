@@ -1,7 +1,8 @@
 use graphite_services::{
-    EquipmentTier, FishingCapabilityError, FishingRarity, FishingRodBaseStats,
-    NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT, fishing_rarity_tension_multiplier,
-    fishing_tension, ordinary_fishing_rod_base_stats,
+    EquipmentTier, FishingCapabilityClassification, FishingCapabilityError, FishingRarity,
+    FishingRodBaseStats, NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT, STRENGTHEN_MAX_LEVEL,
+    fishing_catch_load, fishing_rarity_tension_multiplier, fishing_tension,
+    manual_fishing_capability_ratio, manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
 };
 
 #[test]
@@ -35,6 +36,10 @@ fn public_api_preserves_every_ordinary_rod_base_row() {
 fn public_api_requires_authoritative_ordinary_rod_classification() {
     assert_eq!(
         ordinary_fishing_rod_base_stats(EquipmentTier::Wood, false),
+        Err(FishingCapabilityError::NotOrdinaryFishingRod)
+    );
+    assert_eq!(
+        manual_fishing_line_strength(EquipmentTier::Wood, false, None, false),
         Err(FishingCapabilityError::NotOrdinaryFishingRod)
     );
 }
@@ -76,6 +81,79 @@ fn public_api_computes_exact_reduced_fish_tension_without_rounding() {
     let uncommon = fishing_tension(1, FishingRarity::Uncommon).unwrap();
     assert_eq!(uncommon.numerator_gram_tension(), 11);
     assert_eq!(uncommon.denominator(), 10);
+}
+
+#[test]
+fn public_api_sums_candidate_fish_load_exactly_and_enforces_global_cap() {
+    let tensions = [
+        fishing_tension(1, FishingRarity::Uncommon).unwrap(),
+        fishing_tension(1, FishingRarity::Epic).unwrap(),
+    ];
+    let load = fishing_catch_load(&tensions).unwrap();
+    assert_eq!(load.fish_count, 2);
+    assert_eq!(load.numerator_gram_tension(), 51);
+    assert_eq!(load.denominator(), 20);
+
+    assert_eq!(
+        fishing_catch_load(&[]),
+        Err(FishingCapabilityError::FishCountOutOfRange(0))
+    );
+
+    let common = fishing_tension(1, FishingRarity::Common).unwrap();
+    assert_eq!(
+        fishing_catch_load(&[common; 6]),
+        Err(FishingCapabilityError::FishCountOutOfRange(6))
+    );
+}
+
+#[test]
+fn public_api_composes_manual_strengthen_and_sturdy_factors_exactly() {
+    assert_eq!(STRENGTHEN_MAX_LEVEL, 10);
+
+    let base = manual_fishing_line_strength(EquipmentTier::Wood, true, None, false).unwrap();
+    assert_eq!(base.numerator_gram_tension(), 6_000);
+    assert_eq!(base.denominator(), 1);
+
+    let strengthen_x =
+        manual_fishing_line_strength(EquipmentTier::Wood, true, Some(10), false).unwrap();
+    assert_eq!(strengthen_x.numerator_gram_tension(), 8_400);
+    assert_eq!(strengthen_x.denominator(), 1);
+
+    let strengthen_x_sturdy =
+        manual_fishing_line_strength(EquipmentTier::Wood, true, Some(10), true).unwrap();
+    assert_eq!(strengthen_x_sturdy.numerator_gram_tension(), 9_240);
+    assert_eq!(strengthen_x_sturdy.denominator(), 1);
+
+    for level in [0, 11, u8::MAX] {
+        assert_eq!(
+            manual_fishing_line_strength(EquipmentTier::Wood, true, Some(level), false),
+            Err(FishingCapabilityError::StrengthenLevelOutOfRange(level))
+        );
+    }
+}
+
+#[test]
+fn public_api_classifies_exact_manual_capability_boundary_without_float() {
+    let mythic = [fishing_tension(3_000, FishingRarity::Mythic).unwrap()];
+    let load = fishing_catch_load(&mythic).unwrap();
+
+    let base = manual_fishing_line_strength(EquipmentTier::Wood, true, None, false).unwrap();
+    let over_cap = manual_fishing_capability_ratio(load, base).unwrap();
+    assert_eq!(over_cap.numerator(), 11);
+    assert_eq!(over_cap.denominator(), 10);
+    assert_eq!(
+        over_cap.classification,
+        FishingCapabilityClassification::OverRodCapability
+    );
+
+    let sturdy = manual_fishing_line_strength(EquipmentTier::Wood, true, None, true).unwrap();
+    let boundary = manual_fishing_capability_ratio(load, sturdy).unwrap();
+    assert_eq!(boundary.numerator(), 1);
+    assert_eq!(boundary.denominator(), 1);
+    assert_eq!(
+        boundary.classification,
+        FishingCapabilityClassification::WithinRodCapability
+    );
 }
 
 #[test]
