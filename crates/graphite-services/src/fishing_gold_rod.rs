@@ -84,7 +84,9 @@ pub fn gold_fishing_rod_side_grade_policy(
     })
 }
 
-const fn relative_weight_multiplier(relative_increase_percent: u8) -> FishingRelativeWeightMultiplier {
+const fn relative_weight_multiplier(
+    relative_increase_percent: u8,
+) -> FishingRelativeWeightMultiplier {
     let numerator = 100_u16 + relative_increase_percent as u16;
     let denominator = 100_u16;
     let divisor = gcd(numerator, denominator);
