@@ -1,6 +1,9 @@
 use serde::Serialize;
 
-use crate::{fishing_area::FishingArea, fishing_bait::FishingRarity};
+use crate::{
+    fishing_area::FishingArea,
+    fishing_bait::{FishingBait, FishingBaitEffect, FishingRarity, fishing_bait_policy},
+};
 
 pub const CANONICAL_FISH_SPECIES_COUNT: usize = 22;
 pub const CANONICAL_FISH_AREA_ROWS: usize = 31;
@@ -46,6 +49,41 @@ pub struct FishingAreaSpeciesPolicy {
     pub area: FishingArea,
     pub species: FishingSpecies,
     pub pool_weight: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct RareBaitAreaSpeciesWeightPreview {
+    pub area: FishingArea,
+    pub species: FishingSpecies,
+    pub rarity: FishingRarity,
+    pub base_pool_weight: u16,
+    pub rare_bait_applied: bool,
+    relative_weight_factor_numerator: u16,
+    relative_weight_factor_denominator: u16,
+    adjusted_pool_weight_numerator: u32,
+    adjusted_pool_weight_denominator: u16,
+}
+
+impl RareBaitAreaSpeciesWeightPreview {
+    #[must_use]
+    pub const fn relative_weight_factor_numerator(self) -> u16 {
+        self.relative_weight_factor_numerator
+    }
+
+    #[must_use]
+    pub const fn relative_weight_factor_denominator(self) -> u16 {
+        self.relative_weight_factor_denominator
+    }
+
+    #[must_use]
+    pub const fn adjusted_pool_weight_numerator(self) -> u32 {
+        self.adjusted_pool_weight_numerator
+    }
+
+    #[must_use]
+    pub const fn adjusted_pool_weight_denominator(self) -> u16 {
+        self.adjusted_pool_weight_denominator
+    }
 }
 
 const STARTER_POOL: [FishingAreaSpeciesPolicy; 4] = [
@@ -164,6 +202,63 @@ pub const fn fishing_area_species_pool(area: FishingArea) -> &'static [FishingAr
         FishingArea::DeepSea => &DEEP_SEA,
         FishingArea::Abyss => &ABYSS,
     }
+}
+
+/// Applies Rare Bait to one authoritative species-pool row without normalizing the area pool.
+///
+/// Rare Bait multiplies Rare/Epic/Legendary/Mythic species pool weights by `1.12` (`28/25`) before
+/// normalization. Common and Uncommon rows remain unchanged. Both the affected-rarity set and the
+/// boost factor are read from the existing Rare Bait catalog row so this species preview does not
+/// create a second source of truth for bait semantics.
+///
+/// The caller supplies only `area` and `species`; the canonical base `pool_weight` and rarity are
+/// re-derived from the existing species owners. A species not present in the requested area returns
+/// `None` rather than allowing a fabricated area/species weight pair into the preview.
+///
+/// This policy is intentionally Rare-Bait-only. It does not compose Gold Rod, Luck of the Sea,
+/// shared Fishing modifier caps, final normalization, RNG selection, FishInstance creation, bait
+/// consumption, AEXP, or settlement.
+#[must_use]
+pub fn preview_rare_bait_area_species_weight(
+    area: FishingArea,
+    species: FishingSpecies,
+) -> Option<RareBaitAreaSpeciesWeightPreview> {
+    let base_row = fishing_area_species_pool(area)
+        .iter()
+        .find(|row| row.species == species)?;
+    let rarity = fishing_species_policy(species).rarity;
+
+    let FishingBaitEffect::Rare {
+        affected_species_rarities,
+        eligible_species_relative_weight_factor,
+    } = fishing_bait_policy(FishingBait::Rare).effect
+    else {
+        unreachable!("Rare Bait catalog row returned a non-Rare effect")
+    };
+
+    let rare_bait_applied = affected_species_rarities.contains(&rarity);
+    let (relative_weight_factor_numerator, relative_weight_factor_denominator) =
+        if rare_bait_applied {
+            (
+                eligible_species_relative_weight_factor.numerator(),
+                eligible_species_relative_weight_factor.denominator(),
+            )
+        } else {
+            (1, 1)
+        };
+
+    Some(RareBaitAreaSpeciesWeightPreview {
+        area,
+        species,
+        rarity,
+        base_pool_weight: base_row.pool_weight,
+        rare_bait_applied,
+        relative_weight_factor_numerator,
+        relative_weight_factor_denominator,
+        adjusted_pool_weight_numerator: u32::from(base_row.pool_weight)
+            * u32::from(relative_weight_factor_numerator),
+        adjusted_pool_weight_denominator: relative_weight_factor_denominator,
+    })
 }
 
 const fn area_row(
@@ -294,6 +389,65 @@ mod tests {
         assert_eq!(
             fishing_species_policy(FishingSpecies::Coelacanth).base_npc_value_money,
             5_000
+        );
+    }
+
+    #[test]
+    fn rare_bait_applies_catalog_factor_to_every_eligible_area_row_only() {
+        let mut rows_seen = 0;
+        for area in ALL_AREAS {
+            for row in fishing_area_species_pool(area) {
+                rows_seen += 1;
+                let preview = preview_rare_bait_area_species_weight(area, row.species).unwrap();
+                let rarity = fishing_species_policy(row.species).rarity;
+                let eligible = matches!(
+                    rarity,
+                    FishingRarity::Rare
+                        | FishingRarity::Epic
+                        | FishingRarity::Legendary
+                        | FishingRarity::Mythic
+                );
+
+                assert_eq!(preview.area, area);
+                assert_eq!(preview.species, row.species);
+                assert_eq!(preview.rarity, rarity);
+                assert_eq!(preview.base_pool_weight, row.pool_weight);
+                assert_eq!(preview.rare_bait_applied, eligible);
+
+                let expected_factor = if eligible { (28, 25) } else { (1, 1) };
+                assert_eq!(
+                    (
+                        preview.relative_weight_factor_numerator(),
+                        preview.relative_weight_factor_denominator(),
+                    ),
+                    expected_factor
+                );
+                assert_eq!(
+                    preview.adjusted_pool_weight_numerator(),
+                    u32::from(row.pool_weight) * u32::from(expected_factor.0)
+                );
+                assert_eq!(
+                    preview.adjusted_pool_weight_denominator(),
+                    expected_factor.1
+                );
+            }
+        }
+
+        assert_eq!(rows_seen, CANONICAL_FISH_AREA_ROWS);
+    }
+
+    #[test]
+    fn rare_bait_preview_rejects_noncanonical_area_species_pairs() {
+        assert_eq!(
+            preview_rare_bait_area_species_weight(
+                FishingArea::StarterPool,
+                FishingSpecies::LeviathanFry,
+            ),
+            None
+        );
+        assert_eq!(
+            preview_rare_bait_area_species_weight(FishingArea::River, FishingSpecies::Bluegill),
+            None
         );
     }
 }
