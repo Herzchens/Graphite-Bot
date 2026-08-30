@@ -970,3 +970,83 @@ The master treats action speed as a shared modifier concern across Mining and Fi
 **Final decision**
 
 Place the cap primitive in neutral Services `action_speed` policy rather than duplicating it under Gold Rod, Lure, Fishing, or future Mining modules. Keep the slice dependency/schema-neutral and non-mutating: no cooldown persistence, clock selection, RNG, command wiring, `/fish`, or `/mine` activation is introduced. Phase 7 and Phase 8 remain Pending.
+
+## Equipment structural state persistence slice
+
+Branch: `feat/equipment-structural-state`
+
+### 1. Exact structural persistence no longer requires freezing Creation Roll generation
+
+**Earlier plan state**
+
+Structural persistence was deferred because ordinary/special classification was not authoritative and the Fresh Forge Creation Roll distribution/quantization was still unresolved.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The classification blocker has since been removed: immutable ItemDefinition versions now carry explicit ordinary-equipment classification and the item domain can resolve it from the exact version pinned by an ItemInstance. Separately, the pure appraisal API already defines `CreationRoll` as an exact validated `u64/u64` rational in `[0,1]`. Persisting an already-resolved rational value therefore does not require choosing how a future Forge owner samples that value.
+
+**Final decision**
+
+Persist the exact rational numerator/denominator and +N structural state without implementing Creation Roll generation. PostgreSQL unbounded `NUMERIC` plus explicit integer and `u64` range checks preserves the current pure-policy input domain without selecting a fixed decimal scale, quantization, probability distribution, or RNG mapping. Fresh Forge generation remains `UNRESOLVED` and no live writer is activated by this slice.
+
+### 2. Structural state is a dedicated one-to-one row rather than generic ItemInstance JSON
+
+**Challenged alternative — `CONFIRMED` for a dedicated row**
+
+`item_instances.state JSONB` remains a generic read-model/state payload, while Creation Roll and +N are authoritative structural appraisal inputs. Storing the same values there would create weakly typed mutation semantics and make a future typed bridge compete with generic JSON as a second source of truth. Adding structural columns directly to `item_instances` would also couple mutable +N churn to the existing identity/location row.
+
+**Final decision**
+
+Use `item_instance_equipment_structural_state` as an optional one-to-one row keyed by the ItemInstance. Existing/starter ItemInstances need no backfill because no live structural writer or appraisal resolver currently requires those rows. Structural rows are constrained to equipment definition categories but are not restricted to ordinary equipment, preserving the definition-override path for special equipment.
+
+### 3. Authoritative Creation Roll storage must use the same normalized representation as the pure type
+
+**Full-review finding — `CONFIRMED`**
+
+`CreationRoll::new` reduces equivalent fractions by GCD, so `1/2` is the canonical public representation of the same value as `2/4`. Allowing both encodings in authoritative persistence would create duplicate canonical representations even though they appraise identically.
+
+**Final decision**
+
+Require `gcd(creation_roll_numerator, creation_roll_denominator) = 1` at the database layer. PostgreSQL 18 supports `gcd` for `NUMERIC`, so this constraint does not introduce a new gameplay precision or dependency. PostgreSQL 18.6 regression coverage proves that a reduced value is accepted and `2/4` is rejected.
+
+### 4. Fixed-scale NUMERIC was rejected because coercion could choose precision implicitly
+
+**Implementation-time finding — `CONFIRMED`**
+
+A fixed-scale declaration such as `NUMERIC(20,0)` can coerce an incoming fractional value to the declared scale before later constraints inspect the stored value. That would let the persistence type silently choose a rounding/quantization behavior that the specification has not frozen.
+
+**Final decision**
+
+Use unbounded PostgreSQL `NUMERIC` and require each persisted numerator, denominator, and +N value to equal its own `trunc(...)`, then apply explicit `u64` bounds. Fractional input fails closed rather than being rounded into an authoritative integer.
+
+### 5. Creation Roll immutability must also block delete/reinsert replacement
+
+**Implementation-time finding — `CONFIRMED`**
+
+An UPDATE-only immutability trigger is bypassable by deleting the one-to-one structural row and inserting a replacement with a different Creation Roll while leaving the ItemInstance itself alive.
+
+**Final decision**
+
+Reject direct structural-row deletion while the parent ItemInstance still exists. Keep `ON DELETE CASCADE` on the parent relationship so a real ItemInstance deletion still removes its structural row. PostgreSQL regression coverage proves both the bypass rejection and the parent-delete cascade path.
+
+### 6. Full `u64` storage is not a promise that every extreme value can be appraised
+
+**Implementation-time finding — `CONFIRMED`**
+
+The pure structural policy accepts `u64` inputs but performs checked `u128` intermediate arithmetic and deliberately fails closed when an extreme representation exceeds those supported bounds. Shrinking persistence merely to match current arithmetic headroom would turn an implementation limit into an invented gameplay cap.
+
+**Final decision**
+
+Preserve the complete current `u64` persistence domain for Creation Roll components and +N. Future appraisal resolution must continue to propagate checked overflow failures. Do not infer a finite +N cap or Creation Roll precision limit from the current `u128` implementation bound.
+
+## Equipment structural state items intentionally still unresolved
+
+This slice does not invent or activate:
+
+- Creation Roll distribution, quantization, or RNG-to-percentile mapping;
+- Forge/+N structural-state creation or mutation transactions;
+- an owner-scoped transaction-composable structural-state snapshot/resolver;
+- ItemInstance → `RecraftAppraisal` / `EnhancedCanonicalAppraisal` resolution;
+- enchant-definition → appraisal-class mapping;
+- live Repair/Forge/+N/SoulBind integration;
+- a repository `Cargo.lock`.
