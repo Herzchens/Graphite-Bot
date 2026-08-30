@@ -1,7 +1,7 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::fishing_droptable::FishingCatchBranch;
+use crate::fishing_droptable::{FishingCatchBranch, fishing_base_catch_branch_policy};
 pub(crate) use crate::fishing_limits::MAX_FISH_PER_CAST;
 
 pub const BAIT_RACK_MAX_LEVEL: u8 = 3;
@@ -75,6 +75,10 @@ impl FishingBaitRatio {
         self.denominator
     }
 }
+
+const TREASURE_BAIT_FISH_BRANCH_WEIGHT_FACTOR: FishingBaitRatio = ratio(1, 1);
+const TREASURE_BAIT_JUNK_BRANCH_WEIGHT_FACTOR: FishingBaitRatio = ratio(9, 10);
+const TREASURE_BAIT_TREASURE_BRANCH_WEIGHT_FACTOR: FishingBaitRatio = ratio(23, 20);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -172,6 +176,27 @@ pub enum SchoolBaitQuantityError {
     FishCountOutOfRange(u8),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct TreasureBaitBranchWeightPreview {
+    pub branch: FishingCatchBranch,
+    pub base_relative_weight: u16,
+    pub relative_weight_factor: FishingBaitRatio,
+    adjusted_relative_weight_numerator: u32,
+    adjusted_relative_weight_denominator: u16,
+}
+
+impl TreasureBaitBranchWeightPreview {
+    #[must_use]
+    pub const fn adjusted_relative_weight_numerator(self) -> u32 {
+        self.adjusted_relative_weight_numerator
+    }
+
+    #[must_use]
+    pub const fn adjusted_relative_weight_denominator(self) -> u16 {
+        self.adjusted_relative_weight_denominator
+    }
+}
+
 /// Resolves the frozen active bait-category capacity for a normal Fishing Rod.
 ///
 /// Normal fishing starts with three native active bait-category slots. Bait Rack is a Rod-only
@@ -258,8 +283,8 @@ pub const fn fishing_bait_policy(bait: FishingBait) -> FishingBaitPolicy {
             FishingBaitCategory::Treasure,
             100,
             FishingBaitEffect::Treasure {
-                treasure_branch_relative_weight_factor: ratio(23, 20),
-                junk_branch_relative_weight_factor: ratio(9, 10),
+                treasure_branch_relative_weight_factor: TREASURE_BAIT_TREASURE_BRANCH_WEIGHT_FACTOR,
+                junk_branch_relative_weight_factor: TREASURE_BAIT_JUNK_BRANCH_WEIGHT_FACTOR,
             },
         ),
         FishingBait::Sturdy => (
@@ -331,6 +356,39 @@ pub fn resolve_school_bait_quantity(
             final_fish_count: current_fish_count + SCHOOL_BAIT_EXTRA_FISH_COUNT,
         },
     })
+}
+
+/// Applies Treasure Bait to one row of the frozen zero-modifier catch-branch table exactly.
+///
+/// Treasure Bait changes relative selection weights **before normalization**: Treasure is multiplied
+/// by 1.15 (`23/20`), Junk by 0.90 (`9/10`), and Fish is unchanged (`1/1`). This preview keeps the
+/// transformed weight as an exact rational, so `7 × 23/20` remains `161/20` rather than being
+/// rounded to an integer or misread as a percentage-point change.
+///
+/// The input baseline comes from [`fishing_base_catch_branch_policy`]. This function intentionally
+/// represents Treasure Bait in isolation: it does not compose the Gold Rod Treasure modifier,
+/// shared Fishing caps, final branch normalization, RNG selection, bait consumption, or settlement.
+/// A later owner must compose all active modifier buckets according to the shared Fishing pipeline
+/// before normalizing once.
+#[must_use]
+pub const fn preview_treasure_bait_base_branch_weight(
+    branch: FishingCatchBranch,
+) -> TreasureBaitBranchWeightPreview {
+    let base_relative_weight = fishing_base_catch_branch_policy(branch).relative_weight;
+    let relative_weight_factor = match branch {
+        FishingCatchBranch::Fish => TREASURE_BAIT_FISH_BRANCH_WEIGHT_FACTOR,
+        FishingCatchBranch::Junk => TREASURE_BAIT_JUNK_BRANCH_WEIGHT_FACTOR,
+        FishingCatchBranch::Treasure => TREASURE_BAIT_TREASURE_BRANCH_WEIGHT_FACTOR,
+    };
+
+    TreasureBaitBranchWeightPreview {
+        branch,
+        base_relative_weight,
+        relative_weight_factor,
+        adjusted_relative_weight_numerator: base_relative_weight as u32
+            * relative_weight_factor.numerator as u32,
+        adjusted_relative_weight_denominator: relative_weight_factor.denominator,
+    }
 }
 
 const fn ratio(numerator: u16, denominator: u16) -> FishingBaitRatio {
@@ -602,5 +660,59 @@ mod tests {
         );
         assert_eq!(capped.final_fish_count(), MAX_FISH_PER_CAST);
         assert_eq!(capped.extra_fish_count(), 0);
+    }
+
+    #[test]
+    fn treasure_bait_base_branch_weights_remain_exact_before_normalization() {
+        let fish = preview_treasure_bait_base_branch_weight(FishingCatchBranch::Fish);
+        assert_eq!(fish.base_relative_weight, 176);
+        assert_eq!(
+            (
+                fish.relative_weight_factor.numerator(),
+                fish.relative_weight_factor.denominator()
+            ),
+            (1, 1)
+        );
+        assert_eq!(
+            (
+                fish.adjusted_relative_weight_numerator(),
+                fish.adjusted_relative_weight_denominator()
+            ),
+            (176, 1)
+        );
+
+        let junk = preview_treasure_bait_base_branch_weight(FishingCatchBranch::Junk);
+        assert_eq!(junk.base_relative_weight, 17);
+        assert_eq!(
+            (
+                junk.relative_weight_factor.numerator(),
+                junk.relative_weight_factor.denominator()
+            ),
+            (9, 10)
+        );
+        assert_eq!(
+            (
+                junk.adjusted_relative_weight_numerator(),
+                junk.adjusted_relative_weight_denominator()
+            ),
+            (153, 10)
+        );
+
+        let treasure = preview_treasure_bait_base_branch_weight(FishingCatchBranch::Treasure);
+        assert_eq!(treasure.base_relative_weight, 7);
+        assert_eq!(
+            (
+                treasure.relative_weight_factor.numerator(),
+                treasure.relative_weight_factor.denominator()
+            ),
+            (23, 20)
+        );
+        assert_eq!(
+            (
+                treasure.adjusted_relative_weight_numerator(),
+                treasure.adjusted_relative_weight_denominator()
+            ),
+            (161, 20)
+        );
     }
 }
