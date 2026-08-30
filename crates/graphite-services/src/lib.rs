@@ -3,6 +3,7 @@ mod enchant_catalog;
 mod enchant_conflict;
 mod equipment_appraisal;
 mod equipment_policy;
+mod fishing_aexp;
 mod fishing_area;
 mod fishing_bait;
 mod fishing_capability;
@@ -48,6 +49,11 @@ pub use equipment_appraisal::{
 pub use equipment_policy::{
     BaseEquipmentAppraisal, BaseEquipmentAppraisalSource, EquipmentAppraisalError,
     EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
+};
+pub use fishing_aexp::{
+    MANUAL_FISHING_JUNK_AEXP, MANUAL_FISHING_MULTI_TREASURE_AEXP_CAP,
+    MANUAL_FISHING_TREASURE_AEXP, ManualFishingAexpError, ManualFishingAexpOutcome,
+    manual_fishing_outcome_aexp, manual_fishing_treasure_cast_aexp,
 };
 pub use fishing_area::{
     FishingArea, FishingAreaFirstUnlockPolicy, FishingAreaFirstUnlockPreview,
