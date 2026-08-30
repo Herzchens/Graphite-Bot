@@ -1,7 +1,8 @@
 use graphite_services::{
     FishingRarity, MANUAL_FISHING_BASE_JUNK_AEXP, MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP,
-    MANUAL_FISHING_BASE_TREASURE_AEXP, ManualFishingAexpError, ManualFishingAexpOutcome,
-    manual_fishing_base_outcome_aexp, manual_fishing_base_treasure_cast_aexp,
+    MANUAL_FISHING_BASE_TREASURE_AEXP, MULTI_TREASURE_MAX_ITEMS, ManualFishingAexpError,
+    ManualFishingAexpOutcome, manual_fishing_base_outcome_aexp,
+    manual_fishing_base_treasure_cast_aexp,
 };
 
 #[test]
@@ -48,11 +49,15 @@ fn public_api_returns_no_base_aexp_for_failed_fish_outcomes() {
 
 #[test]
 fn public_api_caps_base_multi_treasure_and_rejects_noncanonical_counts() {
+    assert_eq!(MULTI_TREASURE_MAX_ITEMS, 3);
     assert_eq!(manual_fishing_base_treasure_cast_aexp(1), Ok(5));
     assert_eq!(manual_fishing_base_treasure_cast_aexp(2), Ok(10));
-    assert_eq!(manual_fishing_base_treasure_cast_aexp(3), Ok(10));
+    assert_eq!(
+        manual_fishing_base_treasure_cast_aexp(MULTI_TREASURE_MAX_ITEMS),
+        Ok(10)
+    );
 
-    for count in [0, 4, u8::MAX] {
+    for count in [0, MULTI_TREASURE_MAX_ITEMS + 1, u8::MAX] {
         assert_eq!(
             manual_fishing_base_treasure_cast_aexp(count),
             Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(count))
