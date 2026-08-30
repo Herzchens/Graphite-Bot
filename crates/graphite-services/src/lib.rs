@@ -144,7 +144,8 @@ pub use fishing_species::{
 };
 pub use fishing_variant::{
     CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,
-    fishing_variant_catalog, fishing_variant_policy,
+    QualityBaitVariantWeightPreview, fishing_variant_catalog, fishing_variant_policy,
+    preview_quality_bait_variant_weight,
 };
 pub use forge::{
     AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
