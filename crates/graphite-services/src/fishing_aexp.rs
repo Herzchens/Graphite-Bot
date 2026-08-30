@@ -56,10 +56,10 @@ pub const fn manual_fishing_base_outcome_aexp(outcome: ManualFishingAexpOutcome)
 ///
 /// The caller supplies the authoritative number of landed Treasure items after Multi Treasure has
 /// already resolved. Canonical Multi Treasure output is single, double, or triple Treasure, so any
-/// count outside `1..=3` fails closed instead of being silently hidden by the AEXP cap. This function
-/// does not own Multi Treasure RNG or enchant-level count distributions; it only applies
-/// `5 base AEXP × landed treasure count`, capped at 10 base AEXP per cast before global AEXP gain
-/// modifiers.
+/// count outside `1..=MULTI_TREASURE_MAX_ITEMS` fails closed instead of being silently hidden by the
+/// AEXP cap. This function does not own Multi Treasure RNG or enchant-level count distributions; it
+/// only applies `5 base AEXP × landed treasure count`, capped at 10 base AEXP per cast before global
+/// AEXP gain modifiers.
 pub fn manual_fishing_base_treasure_cast_aexp(
     landed_treasure_count: u8,
 ) -> Result<i64, ManualFishingAexpError> {
@@ -134,12 +134,15 @@ mod tests {
     fn treasure_cast_base_aexp_caps_at_ten() {
         assert_eq!(manual_fishing_base_treasure_cast_aexp(1), Ok(5));
         assert_eq!(manual_fishing_base_treasure_cast_aexp(2), Ok(10));
-        assert_eq!(manual_fishing_base_treasure_cast_aexp(3), Ok(10));
+        assert_eq!(
+            manual_fishing_base_treasure_cast_aexp(MULTI_TREASURE_MAX_ITEMS),
+            Ok(10)
+        );
     }
 
     #[test]
     fn noncanonical_treasure_counts_fail_closed() {
-        for count in [0, 4, u8::MAX] {
+        for count in [0, MULTI_TREASURE_MAX_ITEMS + 1, u8::MAX] {
             assert_eq!(
                 manual_fishing_base_treasure_cast_aexp(count),
                 Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(count))
