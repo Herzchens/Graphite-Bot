@@ -4,7 +4,7 @@ use crate::{fishing_area::FishingArea, fishing_bait::FishingRarity};
 
 pub const CANONICAL_FISH_SPECIES_COUNT: usize = 22;
 pub const CANONICAL_FISH_AREA_ROWS: usize = 31;
-pub const CANONICAL_AREA_POOL_WEIGHT_TOTAL: u16 = 100;
+const CURRENT_AREA_POOL_WEIGHT_SUM: u16 = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn area_pools_preserve_expected_cardinality_and_weight_totals() {
+    fn area_pools_preserve_expected_cardinality_and_current_weight_sums() {
         let expected_lengths = [4, 5, 5, 5, 6, 6];
         let mut total_rows = 0;
 
@@ -238,10 +238,13 @@ mod tests {
             let rows = fishing_area_species_pool(area);
             total_rows += rows.len();
             assert_eq!(rows.len(), expected_len);
-            assert!(rows.iter().all(|row| row.area == area && row.pool_weight > 0));
+            assert!(
+                rows.iter()
+                    .all(|row| row.area == area && row.pool_weight > 0)
+            );
             assert_eq!(
                 rows.iter().map(|row| row.pool_weight).sum::<u16>(),
-                CANONICAL_AREA_POOL_WEIGHT_TOTAL
+                CURRENT_AREA_POOL_WEIGHT_SUM
             );
         }
 
