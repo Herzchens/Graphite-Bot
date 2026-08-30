@@ -161,7 +161,75 @@ Trong vòng review này agent phải:
 
 Không được mark ready/merge một PR kích hoạt gate này cho tới khi **full-codebase review hoàn tất, mọi finding đã được triage, test matrix phù hợp đã có, self-review final diff sạch và CI final head xanh**.
 
-## 9. Xử lý vi phạm
+## 9. Pre-slice state, source authority và chống stale work
+
+Trước **mỗi implementation slice**, agent bắt buộc kiểm tra trạng thái thật hiện tại thay vì tin handoff cũ:
+
+- [ ] SHA hiện tại của `main`.
+- [ ] PR đang mở, branch liên quan và work gần đây đã merge/đóng/supersede.
+- [ ] CI gần nhất và CI nào thực sự chạy trên exact head cần dùng.
+- [ ] `docs/IMPLEMENTATION_STATUS.md` và `docs/PLAN_DEVIATIONS.md` hiện tại.
+- [ ] code/schema/test hiện tại ở integration points liên quan để tránh làm trùng hoặc dựa trên API đã thay đổi.
+
+Thứ tự authority khi có mâu thuẫn:
+
+1. correction/rule explicit mới hơn từ project owner;
+2. normative Master Specification mới nhất;
+3. implementation-time decisions đã được evidence hóa trong `PLAN_DEVIATIONS.md`;
+4. repository state, schema invariants và executable tests hiện tại;
+5. plan/spec/review artifact cũ hơn chỉ dùng để truy lịch sử/rationale.
+
+Tên file như `FINAL`, `REVISED`, `UPDATED` **không tự chứng minh** nó mới hơn về nội dung. Phải đối chiếu timestamp, nội dung và correction chain trước khi chọn source-of-truth.
+
+Nếu context/repo/spec hiện có tự giải được câu hỏi, **không hỏi user lặp lại thông tin chỉ để an toàn**. Chỉ hỏi khi ambiguity thực sự có thể làm thay đổi semantics mà không thể giải bằng source hiện có.
+
+## 10. Plan challenge, spec gaps và feature exposure
+
+Kế hoạch là **design hypothesis**, không phải mệnh lệnh để code mù quáng. Trước mỗi slice:
+
+- challenge assumption của plan với Master Spec + repo thật + test/evidence;
+- nếu assumption sai, đổi hướng và ghi rationale/evidence vào `docs/PLAN_DEVIATIONS.md`;
+- nếu thiếu semantics cần thiết, đánh dấu `UNRESOLVED`, fail closed hoặc chuyển sang prerequisite/slice khác đã freeze đủ;
+- **không tự bịa** probability, rounding, persistence representation, RNG mapping, lifecycle rule, cap, retry semantics hay economic behavior để "hoàn thành phase";
+- pure policy/preview/kernel đã tồn tại **không đồng nghĩa** feature runtime/live command được phép expose;
+- docs/status phải phân biệt rõ policy foundation với stateful/live capability và không claim nhiều hơn code thực tế.
+
+Mọi bug/finding `CONFIRMED` có thể regression-test được phải có regression test tương ứng trước khi merge.
+
+## 11. Stable-release dependency/toolchain gate
+
+Trước **mỗi implementation slice**, agent phải kiểm tra nguồn web/first-party hiện tại cho toolchain và các dependency trực tiếp có liên quan để biết stable release mới nhất tại thời điểm làm việc.
+
+- Chỉ dùng **stable release** trừ khi project owner explicit yêu cầu khác.
+- Không dùng beta/RC/nightly/prerelease chỉ vì version number mới hơn.
+- Không bump dependency/toolchain nếu slice không có evidence cho thấy thay đổi đó cần thiết hoặc có lợi; tránh unrelated version churn.
+- Nếu không cần bump, vẫn ghi rõ trong self-review/PR rằng stable-release audit đã được thực hiện và không có thay đổi được chứng minh là cần thiết.
+- Nếu dependency update có thể thay đổi API/behavior, phải review release notes/changelog và compatibility/integration surface trước khi sửa code.
+- Không hand-author lockfile hoặc generated dependency state khi môi trường không có authoritative tool tạo/validate nó.
+
+## 12. Exact-head verification, re-audit và tiếp tục tự động
+
+Pipeline chuẩn sau implementation là:
+
+`spec/evidence -> implementation -> tests/CI -> self-review + re-audit -> counterexamples/edge cases -> fix nếu cần -> regression tests -> full gates trên exact final SHA`.
+
+First green **không phải điểm dừng**. Re-audit phải chủ động kiểm tra ít nhất các lớp phù hợp với slice:
+
+- arbitrage / economic loops / modifier stacking;
+- replay, duplicate delivery, retry và idempotency;
+- transaction timing, lock order, rollback, partial commit và deadlock/race;
+- freeze/status transitions và mid-operation policy/state change;
+- rounding, overflow/underflow, zero/min/max/boundary values;
+- schema escape hatches và malformed persisted data;
+- reset/rebirth/period-boundary race;
+- Sybil/collusion/anti-abuse khi applicable;
+- docs/code/test drift và accidental feature exposure.
+
+**Exact-final-head rule:** bất kỳ amend, formatter change, generated-file change, conflict resolution hoặc self-review fix nào sau một CI run đều làm run cũ không còn là final verification. Phải chạy/đợi gate lại trên SHA cuối cùng.
+
+Khi tất cả gate bắt buộc đã đạt, self-review không còn blocker, history sạch và PR mergeable, agent có thể **merge mà không cần hỏi lại** rồi tiếp tục slice kế tiếp, trừ khi project owner đã explicit yêu cầu dừng/chờ approval ở điểm đó.
+
+## 13. Xử lý vi phạm
 
 Nếu agent phát hiện mình đã tạo nhiều commit vụn vặt hoặc đặt sai tên branch:
 
