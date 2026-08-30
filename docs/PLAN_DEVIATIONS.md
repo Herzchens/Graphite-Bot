@@ -616,3 +616,47 @@ Rust 1.98.0 remains the current stable toolchain baseline and the finite catalog
 **Final decision**
 
 Keep the slice dependency/schema-neutral. Do not add a numeric crate, migration, FishInstance persistence, command, or runtime state until the owning semantics are authoritative.
+
+## Fishing capability primitives slice
+
+Branch: `feat/fishing-capability-final-policy`
+
+### 1. Tier alone cannot prove an ordinary Fishing Rod
+
+**Initial implementation plan**
+
+Resolve ordinary Rod base line strength and durability from `EquipmentTier` alone, while documenting that Starter Basic Rod is separate.
+
+**Implementation-time finding — `CONFIRMED`**
+
+The active specification says Starter Basic Rod is a separate system-bound, unbreakable definition and must not use the ordinary Wood durability row. Repository evidence also shows the current Starter Basic ItemDefinition carries Wood-like metadata (`"tier":"WOOD"`, `"line_strength":6`, `"ordinary_durability":600`) together with `starter_unbreakable=true`.
+
+Therefore a tier-only `Wood` input cannot prove that the caller resolved an ordinary Wood Rod rather than the Starter Basic definition.
+
+**Final decision**
+
+`ordinary_fishing_rod_base_stats` requires an explicit already-resolved `is_ordinary_rod` classification in addition to `EquipmentTier` and fails closed when that classification is false.
+
+A future stateful Fishing owner must derive and revalidate this classification from authoritative versioned ItemDefinition/ItemInstance state before calling the pure policy. The pure Services slice does not invent a new persistence discriminator merely to satisfy this boundary.
+
+This mirrors the existing SoulBind policy rule that tier alone is insufficient when ordinary/special classification matters.
+
+### 2. Full line-break arithmetic remains unresolved
+
+**Check result — `UNRESOLVED`**
+
+The exact discrete prerequisites — Rod base stats, rarity tension multipliers, and exact FishTension — are implementable with checked integer/rational arithmetic. The later line-break probability still requires `(R - 1)^1.30`, for which the repository/specification does not freeze a deterministic fixed-point precision or approximation algorithm.
+
+**Final decision**
+
+Keep this slice limited to exact prerequisites. Do not use native floating point, `powf`, or an arbitrary numerical dependency/lookup table to activate line-break RNG.
+
+### 3. Stable toolchain/dependency baseline remains sufficient
+
+**Check result — `DISPROVED` for dependency churn in this slice**
+
+The policy uses existing `serde`/`thiserror` plus standard-library checked integer arithmetic. No new crate, migration, persistence layer, runtime, or command is required.
+
+**Final decision**
+
+Keep Rust 1.98.0 and the current direct dependency set. Do not mix localization/emoji infrastructure or unrelated dependency changes into this Fishing policy slice.
