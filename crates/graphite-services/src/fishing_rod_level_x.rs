@@ -1,7 +1,10 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::FishingRodEnchant;
+use crate::{
+    FishingRodEnchant,
+    fishing_droptable::{FishingCatchBranch, fishing_base_catch_branch_policy},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -35,12 +38,49 @@ pub struct FishingRodLevelXPolicy {
     pub effect: FishingRodLevelXEffect,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct TreasureLevelXBranchWeightPreview {
+    pub branch: FishingCatchBranch,
+    pub base_relative_weight: u16,
+    pub treasure_level_x_applied: bool,
+    relative_weight_multiplier_numerator: u16,
+    relative_weight_multiplier_denominator: u16,
+    adjusted_relative_weight_numerator: u32,
+    adjusted_relative_weight_denominator: u16,
+}
+
+impl TreasureLevelXBranchWeightPreview {
+    #[must_use]
+    pub const fn relative_weight_multiplier_numerator(self) -> u16 {
+        self.relative_weight_multiplier_numerator
+    }
+
+    #[must_use]
+    pub const fn relative_weight_multiplier_denominator(self) -> u16 {
+        self.relative_weight_multiplier_denominator
+    }
+
+    #[must_use]
+    pub const fn adjusted_relative_weight_numerator(self) -> u32 {
+        self.adjusted_relative_weight_numerator
+    }
+
+    #[must_use]
+    pub const fn adjusted_relative_weight_denominator(self) -> u16 {
+        self.adjusted_relative_weight_denominator
+    }
+}
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum FishingRodLevelXPolicyError {
     #[error(
         "Fishing Rod enchant {0:?} is not owned by the scalar Level X modifier policy; use its dedicated policy"
     )]
     DedicatedPolicy(FishingRodEnchant),
+    #[error("Treasure Level X scalar policy returned an unexpected non-Treasure effect")]
+    UnexpectedTreasurePolicy,
+    #[error("Treasure Level X unexpectedly affects internal Treasure result weights")]
+    TreasureAffectsInternalResultWeights,
 }
 
 /// Returns the exact final-Level-X scalar policy for Fishing Rod effects that do not yet have a
@@ -102,6 +142,72 @@ pub const fn fishing_rod_level_x_policy(
     };
 
     Ok(FishingRodLevelXPolicy { enchant, effect })
+}
+
+/// Applies the frozen Treasure-enchant Level X scalar to one canonical catch-branch row exactly.
+///
+/// The `+80%` value remains owned by [`fishing_rod_level_x_policy`]. This preview reads that scalar,
+/// reduces it to the exact `9/5` relative-weight multiplier, and applies it only to the Treasure
+/// branch. Fish and Junk remain unchanged. The canonical base weights continue to come from
+/// [`fishing_base_catch_branch_policy`].
+///
+/// This is a Treasure-X-only pre-normalization preview. It does not extrapolate Levels I-IX, compose
+/// Treasure Bait or Gold Rod, apply shared Fishing caps, normalize the branch table, perform RNG, or
+/// alter the internal within-Treasure result table. If the scalar owner later stops representing
+/// Treasure with these frozen composition semantics, this preview fails closed instead of panicking
+/// or silently changing the internal Treasure result table.
+pub fn preview_treasure_level_x_branch_weight(
+    branch: FishingCatchBranch,
+) -> Result<TreasureLevelXBranchWeightPreview, FishingRodLevelXPolicyError> {
+    let policy = fishing_rod_level_x_policy(FishingRodEnchant::Treasure)?;
+    let FishingRodLevelXEffect::Treasure {
+        treasure_branch_relative_weight_increase_percent,
+        affects_internal_treasure_result_weights,
+    } = policy.effect
+    else {
+        return Err(FishingRodLevelXPolicyError::UnexpectedTreasurePolicy);
+    };
+    if affects_internal_treasure_result_weights {
+        return Err(FishingRodLevelXPolicyError::TreasureAffectsInternalResultWeights);
+    }
+
+    let base_relative_weight = fishing_base_catch_branch_policy(branch).relative_weight;
+    let treasure_level_x_applied = branch == FishingCatchBranch::Treasure;
+    let (relative_weight_multiplier_numerator, relative_weight_multiplier_denominator) =
+        if treasure_level_x_applied {
+            relative_weight_multiplier_from_increase_percent(
+                treasure_branch_relative_weight_increase_percent,
+            )
+        } else {
+            (1, 1)
+        };
+
+    Ok(TreasureLevelXBranchWeightPreview {
+        branch,
+        base_relative_weight,
+        treasure_level_x_applied,
+        relative_weight_multiplier_numerator,
+        relative_weight_multiplier_denominator,
+        adjusted_relative_weight_numerator: u32::from(base_relative_weight)
+            * u32::from(relative_weight_multiplier_numerator),
+        adjusted_relative_weight_denominator: relative_weight_multiplier_denominator,
+    })
+}
+
+const fn relative_weight_multiplier_from_increase_percent(increase_percent: u8) -> (u16, u16) {
+    let numerator = 100_u16 + increase_percent as u16;
+    let denominator = 100_u16;
+    let divisor = gcd(numerator, denominator);
+    (numerator / divisor, denominator / divisor)
+}
+
+const fn gcd(mut left: u16, mut right: u16) -> u16 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
 }
 
 #[cfg(test)]
@@ -176,6 +282,36 @@ mod tests {
             assert_eq!(
                 fishing_rod_level_x_policy(enchant),
                 Err(FishingRodLevelXPolicyError::DedicatedPolicy(enchant))
+            );
+        }
+    }
+
+    #[test]
+    fn treasure_level_x_boosts_only_treasure_branch_before_normalization() {
+        let expected = [
+            (FishingCatchBranch::Fish, 176, false, (1, 1), (176, 1)),
+            (FishingCatchBranch::Junk, 17, false, (1, 1), (17, 1)),
+            (FishingCatchBranch::Treasure, 7, true, (9, 5), (63, 5)),
+        ];
+
+        for (branch, base, applied, factor, adjusted) in expected {
+            let preview = preview_treasure_level_x_branch_weight(branch).unwrap();
+            assert_eq!(preview.branch, branch);
+            assert_eq!(preview.base_relative_weight, base);
+            assert_eq!(preview.treasure_level_x_applied, applied);
+            assert_eq!(
+                (
+                    preview.relative_weight_multiplier_numerator(),
+                    preview.relative_weight_multiplier_denominator(),
+                ),
+                factor
+            );
+            assert_eq!(
+                (
+                    preview.adjusted_relative_weight_numerator(),
+                    preview.adjusted_relative_weight_denominator(),
+                ),
+                adjusted
             );
         }
     }

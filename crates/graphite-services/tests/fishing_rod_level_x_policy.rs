@@ -1,6 +1,7 @@
 use graphite_services::{
-    FishingRodEnchant, FishingRodLevelXEffect, FishingRodLevelXPolicy, FishingRodLevelXPolicyError,
-    fishing_rod_level_x_policy,
+    FishingCatchBranch, FishingRodEnchant, FishingRodLevelXEffect, FishingRodLevelXPolicy,
+    FishingRodLevelXPolicyError, fishing_rod_level_x_policy,
+    preview_treasure_level_x_branch_weight,
 };
 
 #[test]
@@ -65,6 +66,36 @@ fn public_api_does_not_duplicate_dedicated_fishing_rod_policy_owners() {
         assert_eq!(
             fishing_rod_level_x_policy(enchant),
             Err(FishingRodLevelXPolicyError::DedicatedPolicy(enchant))
+        );
+    }
+}
+
+#[test]
+fn public_api_treasure_level_x_transforms_only_treasure_branch_before_normalization() {
+    let expected = [
+        (FishingCatchBranch::Fish, 176, false, (1, 1), (176, 1)),
+        (FishingCatchBranch::Junk, 17, false, (1, 1), (17, 1)),
+        (FishingCatchBranch::Treasure, 7, true, (9, 5), (63, 5)),
+    ];
+
+    for (branch, base, applied, factor, adjusted) in expected {
+        let preview = preview_treasure_level_x_branch_weight(branch).unwrap();
+        assert_eq!(preview.branch, branch);
+        assert_eq!(preview.base_relative_weight, base);
+        assert_eq!(preview.treasure_level_x_applied, applied);
+        assert_eq!(
+            (
+                preview.relative_weight_multiplier_numerator(),
+                preview.relative_weight_multiplier_denominator(),
+            ),
+            factor
+        );
+        assert_eq!(
+            (
+                preview.adjusted_relative_weight_numerator(),
+                preview.adjusted_relative_weight_denominator(),
+            ),
+            adjusted
         );
     }
 }

@@ -137,7 +137,8 @@ pub use fishing_rod_durability::{
 };
 pub use fishing_rod_level_x::{
     FishingRodLevelXEffect, FishingRodLevelXPolicy, FishingRodLevelXPolicyError,
-    fishing_rod_level_x_policy,
+    TreasureLevelXBranchWeightPreview, fishing_rod_level_x_policy,
+    preview_treasure_level_x_branch_weight,
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
