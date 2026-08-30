@@ -3,7 +3,11 @@ use thiserror::Error;
 
 use crate::{
     equipment_policy::EquipmentTier,
+    fishing_area::FishingArea,
+    fishing_bait::FishingRarity,
     fishing_capability::{FishingCapabilityError, ordinary_fishing_rod_base_stats},
+    fishing_droptable::{FishingCatchBranch, fishing_base_catch_branch_policy},
+    fishing_species::{FishingSpecies, fishing_area_species_pool, fishing_species_policy},
 };
 
 pub const GOLD_ROD_ACTION_SPEED_RATING_PERCENT: u8 = 10;
@@ -28,6 +32,12 @@ impl FishingRelativeWeightMultiplier {
     }
 }
 
+const IDENTITY_RELATIVE_WEIGHT_MULTIPLIER: FishingRelativeWeightMultiplier =
+    FishingRelativeWeightMultiplier {
+        numerator: 1,
+        denominator: 1,
+    };
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GoldFishingRodModifierStage {
@@ -42,12 +52,63 @@ pub struct GoldFishingRodSideGradePolicy {
     pub modifier_stage: GoldFishingRodModifierStage,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct GoldFishingRodCatchBranchWeightPreview {
+    pub branch: FishingCatchBranch,
+    pub base_relative_weight: u16,
+    pub gold_modifier_applied: bool,
+    pub relative_weight_multiplier: FishingRelativeWeightMultiplier,
+    adjusted_relative_weight_numerator: u32,
+    adjusted_relative_weight_denominator: u16,
+}
+
+impl GoldFishingRodCatchBranchWeightPreview {
+    #[must_use]
+    pub const fn adjusted_relative_weight_numerator(self) -> u32 {
+        self.adjusted_relative_weight_numerator
+    }
+
+    #[must_use]
+    pub const fn adjusted_relative_weight_denominator(self) -> u16 {
+        self.adjusted_relative_weight_denominator
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct GoldFishingRodSpeciesWeightPreview {
+    pub area: FishingArea,
+    pub species: FishingSpecies,
+    pub rarity: FishingRarity,
+    pub base_pool_weight: u16,
+    pub gold_modifier_applied: bool,
+    pub relative_weight_multiplier: FishingRelativeWeightMultiplier,
+    adjusted_pool_weight_numerator: u32,
+    adjusted_pool_weight_denominator: u16,
+}
+
+impl GoldFishingRodSpeciesWeightPreview {
+    #[must_use]
+    pub const fn adjusted_pool_weight_numerator(self) -> u32 {
+        self.adjusted_pool_weight_numerator
+    }
+
+    #[must_use]
+    pub const fn adjusted_pool_weight_denominator(self) -> u16 {
+        self.adjusted_pool_weight_denominator
+    }
+}
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum GoldFishingRodPolicyError {
     #[error(transparent)]
     InvalidOrdinaryRod(#[from] FishingCapabilityError),
     #[error("ordinary Fishing Rod is not the Gold side-grade")]
     NotGoldFishingRod,
+    #[error("species {species:?} is not in Fishing area {area:?}")]
+    SpeciesNotInArea {
+        area: FishingArea,
+        species: FishingSpecies,
+    },
 }
 
 /// Resolves the fixed pre-cap modifiers of the ordinary Gold Fishing Rod side-grade.
@@ -83,6 +144,92 @@ pub fn gold_fishing_rod_side_grade_policy(
     })
 }
 
+/// Applies the ordinary Gold Fishing Rod's Treasure-branch side-grade to one canonical catch row.
+///
+/// Only the Treasure branch receives the Gold Rod's catalog-owned `23/20` relative-weight
+/// multiplier; Fish and Junk remain unchanged. The caller must prove this is an authoritative
+/// ordinary Gold Fishing Rod through the same boundary as [`gold_fishing_rod_side_grade_policy`].
+///
+/// This preview is Gold-Rod-only and intentionally remains before shared Fishing caps and final
+/// normalization. It does not compose Treasure Bait or any later modifier, perform RNG, consume Rod
+/// durability, or settle a catch.
+pub fn preview_gold_fishing_rod_catch_branch_weight(
+    tier: EquipmentTier,
+    is_ordinary_rod: bool,
+    branch: FishingCatchBranch,
+) -> Result<GoldFishingRodCatchBranchWeightPreview, GoldFishingRodPolicyError> {
+    let policy = gold_fishing_rod_side_grade_policy(tier, is_ordinary_rod)?;
+    let base_relative_weight = fishing_base_catch_branch_policy(branch).relative_weight;
+    let gold_modifier_applied = branch == FishingCatchBranch::Treasure;
+    let relative_weight_multiplier = if gold_modifier_applied {
+        policy.treasure_branch_relative_weight_multiplier
+    } else {
+        IDENTITY_RELATIVE_WEIGHT_MULTIPLIER
+    };
+
+    Ok(GoldFishingRodCatchBranchWeightPreview {
+        branch,
+        base_relative_weight,
+        gold_modifier_applied,
+        relative_weight_multiplier,
+        adjusted_relative_weight_numerator: u32::from(base_relative_weight)
+            * u32::from(relative_weight_multiplier.numerator()),
+        adjusted_relative_weight_denominator: relative_weight_multiplier.denominator(),
+    })
+}
+
+/// Applies the ordinary Gold Fishing Rod's rare-or-better side-grade to one canonical area row.
+///
+/// Rare, Epic, Legendary, and Mythic species receive the Gold Rod's catalog-owned `23/20`
+/// relative-weight multiplier; Common and Uncommon species remain unchanged. The base pool weight
+/// and rarity are re-derived from canonical Fishing owners so callers cannot fabricate an
+/// area/species weight pair. A species absent from the requested area fails closed.
+///
+/// This preview is Gold-Rod-only and intentionally remains before shared Fishing caps and final
+/// species-pool normalization. It does not compose Rare Bait, Luck, RNG selection, FishInstance
+/// creation, bait consumption, AEXP, or settlement.
+pub fn preview_gold_fishing_rod_species_weight(
+    tier: EquipmentTier,
+    is_ordinary_rod: bool,
+    area: FishingArea,
+    species: FishingSpecies,
+) -> Result<GoldFishingRodSpeciesWeightPreview, GoldFishingRodPolicyError> {
+    let policy = gold_fishing_rod_side_grade_policy(tier, is_ordinary_rod)?;
+    let base_row = fishing_area_species_pool(area)
+        .iter()
+        .find(|row| row.species == species)
+        .ok_or(GoldFishingRodPolicyError::SpeciesNotInArea { area, species })?;
+    let rarity = fishing_species_policy(species).rarity;
+    let gold_modifier_applied = is_rare_or_better(rarity);
+    let relative_weight_multiplier = if gold_modifier_applied {
+        policy.rare_or_better_species_relative_weight_multiplier
+    } else {
+        IDENTITY_RELATIVE_WEIGHT_MULTIPLIER
+    };
+
+    Ok(GoldFishingRodSpeciesWeightPreview {
+        area,
+        species,
+        rarity,
+        base_pool_weight: base_row.pool_weight,
+        gold_modifier_applied,
+        relative_weight_multiplier,
+        adjusted_pool_weight_numerator: u32::from(base_row.pool_weight)
+            * u32::from(relative_weight_multiplier.numerator()),
+        adjusted_pool_weight_denominator: relative_weight_multiplier.denominator(),
+    })
+}
+
+const fn is_rare_or_better(rarity: FishingRarity) -> bool {
+    matches!(
+        rarity,
+        FishingRarity::Rare
+            | FishingRarity::Epic
+            | FishingRarity::Legendary
+            | FishingRarity::Mythic
+    )
+}
+
 const fn relative_weight_multiplier_from_percent(
     relative_increase_percent: u8,
 ) -> FishingRelativeWeightMultiplier {
@@ -108,6 +255,15 @@ const fn gcd(mut left: u16, mut right: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const ALL_AREAS: [FishingArea; 6] = [
+        FishingArea::StarterPool,
+        FishingArea::River,
+        FishingArea::Lake,
+        FishingArea::Coast,
+        FishingArea::DeepSea,
+        FishingArea::Abyss,
+    ];
 
     #[test]
     fn gold_rod_policy_matches_all_frozen_side_grade_inputs() {
@@ -154,6 +310,121 @@ mod tests {
     fn non_ordinary_gold_like_definition_fails_closed() {
         assert_eq!(
             gold_fishing_rod_side_grade_policy(EquipmentTier::Gold, false),
+            Err(GoldFishingRodPolicyError::InvalidOrdinaryRod(
+                FishingCapabilityError::NotOrdinaryFishingRod
+            ))
+        );
+    }
+
+    #[test]
+    fn gold_rod_boosts_only_the_treasure_branch_before_normalization() {
+        let expected = [
+            (FishingCatchBranch::Fish, 176, false, (1, 1), (176, 1)),
+            (FishingCatchBranch::Junk, 17, false, (1, 1), (17, 1)),
+            (FishingCatchBranch::Treasure, 7, true, (23, 20), (161, 20)),
+        ];
+
+        for (branch, base, applied, factor, adjusted) in expected {
+            let preview =
+                preview_gold_fishing_rod_catch_branch_weight(EquipmentTier::Gold, true, branch)
+                    .unwrap();
+            assert_eq!(preview.branch, branch);
+            assert_eq!(preview.base_relative_weight, base);
+            assert_eq!(preview.gold_modifier_applied, applied);
+            assert_eq!(
+                (
+                    preview.relative_weight_multiplier.numerator(),
+                    preview.relative_weight_multiplier.denominator(),
+                ),
+                factor
+            );
+            assert_eq!(
+                (
+                    preview.adjusted_relative_weight_numerator(),
+                    preview.adjusted_relative_weight_denominator(),
+                ),
+                adjusted
+            );
+        }
+    }
+
+    #[test]
+    fn gold_rod_boosts_every_rare_or_better_canonical_species_row_only() {
+        let mut rows_seen = 0;
+
+        for area in ALL_AREAS {
+            for row in fishing_area_species_pool(area) {
+                rows_seen += 1;
+                let preview = preview_gold_fishing_rod_species_weight(
+                    EquipmentTier::Gold,
+                    true,
+                    area,
+                    row.species,
+                )
+                .unwrap();
+                let rarity = fishing_species_policy(row.species).rarity;
+                let eligible = is_rare_or_better(rarity);
+                let expected_factor = if eligible { (23, 20) } else { (1, 1) };
+
+                assert_eq!(preview.area, area);
+                assert_eq!(preview.species, row.species);
+                assert_eq!(preview.rarity, rarity);
+                assert_eq!(preview.base_pool_weight, row.pool_weight);
+                assert_eq!(preview.gold_modifier_applied, eligible);
+                assert_eq!(
+                    (
+                        preview.relative_weight_multiplier.numerator(),
+                        preview.relative_weight_multiplier.denominator(),
+                    ),
+                    expected_factor
+                );
+                assert_eq!(
+                    preview.adjusted_pool_weight_numerator(),
+                    u32::from(row.pool_weight) * u32::from(expected_factor.0)
+                );
+                assert_eq!(
+                    preview.adjusted_pool_weight_denominator(),
+                    expected_factor.1
+                );
+            }
+        }
+
+        assert_eq!(rows_seen, crate::CANONICAL_FISH_AREA_ROWS);
+    }
+
+    #[test]
+    fn gold_rod_species_preview_rejects_noncanonical_area_pairs() {
+        assert_eq!(
+            preview_gold_fishing_rod_species_weight(
+                EquipmentTier::Gold,
+                true,
+                FishingArea::StarterPool,
+                FishingSpecies::LeviathanFry,
+            ),
+            Err(GoldFishingRodPolicyError::SpeciesNotInArea {
+                area: FishingArea::StarterPool,
+                species: FishingSpecies::LeviathanFry,
+            })
+        );
+    }
+
+    #[test]
+    fn weight_previews_preserve_gold_rod_trust_boundary() {
+        assert_eq!(
+            preview_gold_fishing_rod_catch_branch_weight(
+                EquipmentTier::Diamond,
+                true,
+                FishingCatchBranch::Treasure,
+            ),
+            Err(GoldFishingRodPolicyError::NotGoldFishingRod)
+        );
+        assert_eq!(
+            preview_gold_fishing_rod_species_weight(
+                EquipmentTier::Gold,
+                false,
+                FishingArea::StarterPool,
+                FishingSpecies::Koi,
+            ),
             Err(GoldFishingRodPolicyError::InvalidOrdinaryRod(
                 FishingCapabilityError::NotOrdinaryFishingRod
             ))

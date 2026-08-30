@@ -112,8 +112,10 @@ pub use fishing_droptable::{
 pub use fishing_gold_rod::{
     FishingRelativeWeightMultiplier, GOLD_ROD_ACTION_SPEED_RATING_PERCENT,
     GOLD_ROD_RARE_OR_BETTER_RELATIVE_WEIGHT_PERCENT, GOLD_ROD_TREASURE_RELATIVE_WEIGHT_PERCENT,
-    GoldFishingRodModifierStage, GoldFishingRodPolicyError, GoldFishingRodSideGradePolicy,
-    gold_fishing_rod_side_grade_policy,
+    GoldFishingRodCatchBranchWeightPreview, GoldFishingRodModifierStage, GoldFishingRodPolicyError,
+    GoldFishingRodSideGradePolicy, GoldFishingRodSpeciesWeightPreview,
+    gold_fishing_rod_side_grade_policy, preview_gold_fishing_rod_catch_branch_weight,
+    preview_gold_fishing_rod_species_weight,
 };
 pub use fishing_limits::MAX_FISH_PER_CAST;
 pub use fishing_multi_treasure::{
