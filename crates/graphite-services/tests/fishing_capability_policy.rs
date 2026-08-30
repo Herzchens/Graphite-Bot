@@ -32,7 +32,7 @@ fn public_api_preserves_every_ordinary_rod_base_row() {
 }
 
 #[test]
-fn public_api_keeps_starter_basic_out_of_the_ordinary_rod_table() {
+fn public_api_rejects_non_rod_starter_leather_tier() {
     assert_eq!(
         ordinary_fishing_rod_base_stats(EquipmentTier::StarterLeather),
         Err(FishingCapabilityError::StarterLeatherIsNotOrdinaryRodTier)
