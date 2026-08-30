@@ -794,3 +794,47 @@ The direct-fishing Enchant Book pool remains a separate next slice and must use 
 **Check result — `DISPROVED` for wider infrastructure changes**
 
 This correction changes only finite policy data, regressions, and source-authority documentation. It adds no RNG, migration, persistence, dependency, command, or live settlement. Phase 7 remains Pending.
+
+## Direct-fishing Enchant Book pool policy slice
+
+Branch: `feat/fishing-book-pool-policy`
+
+### 1. Pool selection is frozen, but common/mid/rare member selection is not
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The current 2026-08-28 Master Specification freezes direct Book-pool weights `58 / 24 / 12 / 4 / 2` and lists the members of Shop/common, Mid loot and Rare. It does not assign relative weights among individual enchants within those three pools. Assuming equal member probability would create a balance rule absent from the specification.
+
+**Final decision**
+
+Expose exact pool weights and derive pool membership from the existing canonical acquisition catalog. Do not expose a Shop/common, Mid loot, or Rare per-enchant weight/selector. The only exact member split implemented is Mythic, whose Nuke / Annihilation / Phoenix weights are explicitly `45 / 30 / 25`.
+
+### 2. Raw pool-level profiles are not finished-book level validators
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The master freezes raw pool-level profiles but also contains narrower enchant-specific contracts. Bait Rack is explicitly Level I–III while the Shop/common raw profile includes IV–VI; Carving is explicitly `Carving I` while the Mid loot raw profile starts at II and extends through VII. The master does not define whether a narrower member is excluded before the level roll, clamped, filtered and renormalized, rerolled, or handled another way.
+
+**Final decision**
+
+Expose the exact level tables as `DirectFishingBookLevelProfile` raw policy only, with fail-closed support bounds. Do not provide an enchant→finished-level resolver or invent renormalization. Mending and Phoenix remain explicit one-level profiles, while Nuke/Annihilation share their explicitly frozen profile.
+
+### 3. Existing acquisition catalog remains the membership source of truth
+
+**Check result — `CONFIRMED`**
+
+`CanonicalEnchant` and `enchant_catalog_policy` already classify normal-Shop/Fishing, mid/high, rare, Fishing-only, Mythic, combine-only and Master-progression acquisition. Copying the long member lists into Fishing would create a second source of truth.
+
+**Final decision**
+
+`direct_fishing_book_pool_membership` maps the existing acquisition source into the five Fishing pools and explicitly excludes Shadow Walker and Master progression. Mending is handled explicitly as the current sole Fishing-only identity so a future new Fishing-only enchant cannot silently inherit Mending semantics.
+
+### 4. Multi Treasure quantity and live RNG remain outside this slice
+
+**Implementation-time finding — `UNRESOLVED`**
+
+The master freezes that Multi Treasure repeats treasure-result quantity after selection, but current source review does not freeze whether repeated Enchant Books independently reroll pool/member/level or duplicate one selected book result.
+
+**Final decision**
+
+Do not resolve repeated Book quantity, RNG draws, ItemDefinitions, inventory settlement or `/fish` runtime here. Phase 7 remains Pending.
