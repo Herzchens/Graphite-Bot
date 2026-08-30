@@ -71,9 +71,9 @@ pub fn gold_fishing_rod_side_grade_policy(
     }
 
     let relative_weight_multiplier =
-        relative_weight_multiplier(GOLD_ROD_RARE_OR_BETTER_RELATIVE_WEIGHT_PERCENT);
+        relative_weight_multiplier_from_percent(GOLD_ROD_RARE_OR_BETTER_RELATIVE_WEIGHT_PERCENT);
     let treasure_relative_weight_multiplier =
-        relative_weight_multiplier(GOLD_ROD_TREASURE_RELATIVE_WEIGHT_PERCENT);
+        relative_weight_multiplier_from_percent(GOLD_ROD_TREASURE_RELATIVE_WEIGHT_PERCENT);
 
     Ok(GoldFishingRodSideGradePolicy {
         action_speed_rating_percent: GOLD_ROD_ACTION_SPEED_RATING_PERCENT,
@@ -83,7 +83,7 @@ pub fn gold_fishing_rod_side_grade_policy(
     })
 }
 
-const fn relative_weight_multiplier(
+const fn relative_weight_multiplier_from_percent(
     relative_increase_percent: u8,
 ) -> FishingRelativeWeightMultiplier {
     let numerator = 100_u16 + relative_increase_percent as u16;
