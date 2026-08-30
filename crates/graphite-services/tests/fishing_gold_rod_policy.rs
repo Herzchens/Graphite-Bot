@@ -25,8 +25,12 @@ fn public_api_exposes_the_frozen_gold_rod_side_grade_values() {
     );
     assert_eq!(
         (
-            policy.treasure_branch_relative_weight_multiplier.numerator(),
-            policy.treasure_branch_relative_weight_multiplier.denominator(),
+            policy
+                .treasure_branch_relative_weight_multiplier
+                .numerator(),
+            policy
+                .treasure_branch_relative_weight_multiplier
+                .denominator(),
         ),
         (23, 20)
     );
@@ -40,7 +44,10 @@ fn public_api_exposes_the_frozen_gold_rod_side_grade_values() {
 fn public_api_does_not_convert_gold_speed_rating_into_a_duration_factor() {
     let policy = gold_fishing_rod_side_grade_policy(EquipmentTier::Gold, true).unwrap();
 
-    assert_eq!(policy.action_speed_rating_percent, GOLD_ROD_ACTION_SPEED_RATING_PERCENT);
+    assert_eq!(
+        policy.action_speed_rating_percent,
+        GOLD_ROD_ACTION_SPEED_RATING_PERCENT
+    );
 }
 
 #[test]
