@@ -96,7 +96,11 @@ pub use fishing_capability::{
     manual_fishing_capability_ratio, manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
 };
 pub use fishing_capability_routing::{
-    FishingCapabilityRoute, FishingCapabilityRoutingPolicy, fishing_capability_routing_policy,
+    FishingCapabilityResolutionError, FishingCapabilityRoute, FishingCapabilityRoutingPolicy,
+    FishingCapabilityTerminalOutcome, FishingOverCapCatchRollResolution,
+    FishingOverCapResolutionRequired, FishingResolvedOverCapSequence,
+    FishingRoutedFishCapabilityStage, fishing_capability_routing_policy,
+    resolve_fishing_over_cap_sequence, resolve_routed_fish_capability_stage,
 };
 pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,
