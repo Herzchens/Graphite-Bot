@@ -35,7 +35,7 @@ fn public_api_matches_every_frozen_single_result_base_aexp_value() {
 }
 
 #[test]
-fn public_api_creates_no_base_aexp_for_failed_fish_outcomes() {
+fn public_api_returns_no_base_aexp_for_failed_fish_outcomes() {
     assert_eq!(
         manual_fishing_base_outcome_aexp(ManualFishingAexpOutcome::FishEscaped),
         None
