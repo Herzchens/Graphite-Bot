@@ -14,6 +14,7 @@ mod fishing_limits;
 mod fishing_multi_treasure;
 mod fishing_multicatch;
 mod fishing_over_cap;
+mod fishing_rod_level_x;
 mod fishing_species;
 mod fishing_variant;
 mod forge;
@@ -109,6 +110,10 @@ pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
     OverCapCatchChanceBound, OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL,
     SHARP_HOOK_PERCENTAGE_POINTS_PER_LEVEL, preview_over_cap_catch_chance,
+};
+pub use fishing_rod_level_x::{
+    FishingRodLevelXEffect, FishingRodLevelXPolicy, FishingRodLevelXPolicyError,
+    fishing_rod_level_x_policy,
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
