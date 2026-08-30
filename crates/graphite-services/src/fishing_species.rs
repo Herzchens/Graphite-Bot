@@ -4,7 +4,6 @@ use crate::{fishing_area::FishingArea, fishing_bait::FishingRarity};
 
 pub const CANONICAL_FISH_SPECIES_COUNT: usize = 22;
 pub const CANONICAL_FISH_AREA_ROWS: usize = 31;
-const CURRENT_AREA_POOL_WEIGHT_SUM: u16 = 100;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -183,6 +182,7 @@ const fn area_row(
 mod tests {
     use super::*;
 
+    const CURRENT_AREA_POOL_WEIGHT_SUM: u16 = 100;
     const ALL_SPECIES: [FishingSpecies; CANONICAL_FISH_SPECIES_COUNT] = [
         FishingSpecies::Bluegill,
         FishingSpecies::Carp,
@@ -207,7 +207,6 @@ mod tests {
         FishingSpecies::Moonfish,
         FishingSpecies::LeviathanFry,
     ];
-
     const ALL_AREAS: [FishingArea; 6] = [
         FishingArea::StarterPool,
         FishingArea::River,
@@ -268,7 +267,6 @@ mod tests {
                 .iter()
                 .any(|row| row.species == FishingSpecies::Catfish)
         );
-
         assert!(
             fishing_area_species_pool(FishingArea::DeepSea)
                 .iter()
