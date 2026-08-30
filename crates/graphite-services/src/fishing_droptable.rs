@@ -20,7 +20,7 @@ pub enum FishingTreasureResult {
     MaterialBundle,
     CrateOrChest,
     EnchantBook,
-    OrbOrCatalyst,
+    OrbOrCatalystFragmentOrItem,
     RareBaitOrUtilityItem,
     RelicOrCollectible,
 }
@@ -78,7 +78,7 @@ pub const fn fishing_base_treasure_result_policy(
         FishingTreasureResult::MaterialBundle => 19,
         FishingTreasureResult::CrateOrChest => 13,
         FishingTreasureResult::EnchantBook => 5,
-        FishingTreasureResult::OrbOrCatalyst => 4,
+        FishingTreasureResult::OrbOrCatalystFragmentOrItem => 4,
         FishingTreasureResult::RareBaitOrUtilityItem => 5,
         FishingTreasureResult::RelicOrCollectible => 4,
     };
@@ -102,14 +102,16 @@ mod tests {
         FishingTreasureResult::MaterialBundle,
         FishingTreasureResult::CrateOrChest,
         FishingTreasureResult::EnchantBook,
-        FishingTreasureResult::OrbOrCatalyst,
+        FishingTreasureResult::OrbOrCatalystFragmentOrItem,
         FishingTreasureResult::RareBaitOrUtilityItem,
         FishingTreasureResult::RelicOrCollectible,
     ];
 
     #[test]
     fn catch_branch_weights_reproduce_exact_zero_modifier_chances() {
-        let weights = CATCH_BRANCHES.map(|branch| fishing_base_catch_branch_policy(branch).relative_weight);
+        let weights = CATCH_BRANCHES.map(|branch| {
+            fishing_base_catch_branch_policy(branch).relative_weight
+        });
         assert_eq!(weights, [176, 17, 7]);
 
         let total: u16 = weights.iter().sum();
@@ -122,8 +124,9 @@ mod tests {
 
     #[test]
     fn treasure_result_weights_reproduce_exact_internal_chances() {
-        let weights = TREASURE_RESULTS
-            .map(|result| fishing_base_treasure_result_policy(result).relative_weight);
+        let weights = TREASURE_RESULTS.map(|result| {
+            fishing_base_treasure_result_policy(result).relative_weight
+        });
         assert_eq!(weights, [19, 13, 5, 4, 5, 4]);
 
         let total: u16 = weights.iter().sum();
@@ -136,19 +139,19 @@ mod tests {
 
     #[test]
     fn nested_treasure_weights_reproduce_exact_overall_base_chances() {
-        let treasure_branch = fishing_base_catch_branch_policy(FishingCatchBranch::Treasure);
-        let branch_total: u32 = CATCH_BRANCHES
-            .map(|branch| u32::from(fishing_base_catch_branch_policy(branch).relative_weight))
-            .iter()
-            .sum();
-        let treasure_total: u32 = TREASURE_RESULTS
-            .map(|result| u32::from(fishing_base_treasure_result_policy(result).relative_weight))
-            .iter()
-            .sum();
+        let branch_weights = CATCH_BRANCHES.map(|branch| {
+            fishing_base_catch_branch_policy(branch).relative_weight
+        });
+        let treasure_weights = TREASURE_RESULTS.map(|result| {
+            fishing_base_treasure_result_policy(result).relative_weight
+        });
+        let branch_total: u32 = branch_weights.iter().map(|weight| u32::from(*weight)).sum();
+        let treasure_total: u32 = treasure_weights.iter().map(|weight| u32::from(*weight)).sum();
+        let treasure_branch_weight =
+            fishing_base_catch_branch_policy(FishingCatchBranch::Treasure).relative_weight;
 
-        let overall_basis_points = TREASURE_RESULTS.map(|result| {
-            let result_weight = fishing_base_treasure_result_policy(result).relative_weight;
-            u32::from(treasure_branch.relative_weight) * u32::from(result_weight) * 10_000
+        let overall_basis_points = treasure_weights.map(|result_weight| {
+            u32::from(treasure_branch_weight) * u32::from(result_weight) * 10_000
                 / (branch_total * treasure_total)
         });
         assert_eq!(overall_basis_points, [133, 91, 35, 28, 35, 28]);
