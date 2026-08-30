@@ -6,6 +6,7 @@ mod equipment_policy;
 mod fishing_area;
 mod fishing_bait;
 mod fishing_capability;
+mod fishing_gold_rod;
 mod fishing_over_cap;
 mod fishing_species;
 mod fishing_variant;
@@ -66,6 +67,12 @@ pub use fishing_capability::{
     ManualFishingLineStrength, NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT,
     STRENGTHEN_MAX_LEVEL, fishing_catch_load, fishing_rarity_tension_multiplier, fishing_tension,
     manual_fishing_capability_ratio, manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
+};
+pub use fishing_gold_rod::{
+    FishingRelativeWeightMultiplier, GOLD_ROD_ACTION_SPEED_RATING_PERCENT,
+    GOLD_ROD_RARE_OR_BETTER_RELATIVE_WEIGHT_PERCENT, GOLD_ROD_TREASURE_RELATIVE_WEIGHT_PERCENT,
+    GoldFishingRodModifierStage, GoldFishingRodPolicyError, GoldFishingRodSideGradePolicy,
+    gold_fishing_rod_side_grade_policy,
 };
 pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
