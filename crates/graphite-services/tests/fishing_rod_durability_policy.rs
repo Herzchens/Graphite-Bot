@@ -1,8 +1,21 @@
 use graphite_services::{
     FishingRodDurabilityConsequence, FishingRodDurabilityPolicyError, FishingRodDurabilityPreview,
     FishingRodDurabilityResolution, NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT,
-    preview_fishing_rod_durability,
+    fishing_unbreaking_level_x_policy, preview_fishing_rod_durability,
 };
+
+#[test]
+fn public_api_exposes_unbreaking_x_as_one_fifth_of_ordinary_events_only() {
+    let policy = fishing_unbreaking_level_x_policy().unwrap();
+    assert_eq!(
+        (
+            policy.ordinary_event_prevention_probability_numerator(),
+            policy.ordinary_event_prevention_probability_denominator(),
+        ),
+        (1, 5)
+    );
+    assert!(!policy.prevents_line_break);
+}
 
 #[test]
 fn public_api_applies_one_ordinary_event_per_completed_cast_not_per_fish() {
