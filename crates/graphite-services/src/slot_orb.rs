@@ -1,13 +1,7 @@
+pub use crate::enchant_placement::EnchantSlotFamily as SlotOrbFamily;
 use crate::percentage_fee::checked_ceil_percentage;
 use serde::Serialize;
 use thiserror::Error;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum SlotOrbFamily {
-    NormalClass,
-    SpecialUniversal,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -297,7 +291,27 @@ mod tests {
             );
             assert!(!policy.sparkling_affects_success);
             assert!(!policy.mosaic_affects_attempt);
+            assert!(policy.target_slot_number <= policy.family.maximum_slot_count());
+            assert_eq!(
+                policy.required_unlocked_slots_before_attempt,
+                policy.target_slot_number - 1
+            );
         }
+    }
+
+    #[test]
+    fn first_orb_unlock_starts_after_each_familys_native_capacity() {
+        let normal = slot_orb_policy(SlotOrbUnlock::Normal5);
+        assert_eq!(
+            normal.required_unlocked_slots_before_attempt,
+            normal.family.native_slot_count()
+        );
+
+        let special = slot_orb_policy(SlotOrbUnlock::Special4);
+        assert_eq!(
+            special.required_unlocked_slots_before_attempt,
+            special.family.native_slot_count()
+        );
     }
 
     #[test]
