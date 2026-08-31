@@ -56,8 +56,9 @@ pub use enchant_catalog::{
     NORMAL_SHOP_MAX_BOOK_LEVEL, enchant_catalog_policy,
 };
 pub use enchant_conflict::{
-    ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,
-    armor_enchants_conflict, fishing_rod_enchants_conflict, pickaxe_enchants_conflict,
+    ArmorEnchant, EnchantConflictDecision, EnchantConflictScope, FishingRodEnchant, PickaxeEnchant,
+    SwordEnchant, armor_enchants_conflict, canonical_enchant_conflict_scope,
+    canonical_enchants_conflict, fishing_rod_enchants_conflict, pickaxe_enchants_conflict,
     sword_enchants_conflict,
 };
 pub use enchant_placement::{
