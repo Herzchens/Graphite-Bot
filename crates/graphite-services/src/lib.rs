@@ -68,7 +68,9 @@ pub use equipment_policy::{
     EquipmentMaterial, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
 };
 pub use equipment_recraft_resolver::{
+    OrdinaryEquipmentEnhancedAppraisal, OrdinaryEquipmentEnhancedResolverError,
     OrdinaryEquipmentRecraftAppraisal, OrdinaryEquipmentRecraftResolverError,
+    ResolvedEmbeddedEnchantAppraisal, lock_owned_ordinary_equipment_enhanced_appraisal,
     lock_owned_ordinary_equipment_recraft_appraisal,
 };
 pub use fishing_aexp::{
