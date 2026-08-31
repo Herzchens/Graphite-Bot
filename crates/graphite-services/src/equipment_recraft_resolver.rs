@@ -4,11 +4,17 @@ use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::enchant_catalog::CANONICAL_ENCHANT_COUNT;
 use crate::equipment_appraisal::recraft_equipment_appraisal;
 use crate::{
-    BaseEquipmentAppraisal, CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
-    EquipmentAppraisalError, EquipmentSlot, EquipmentTier, base_equipment_appraisal,
+    BaseEquipmentAppraisal, CanonicalBookAppraisal, CanonicalEnchant,
+    CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
+    EmbeddedEnchantAppraisalInput, EnchantAppraisalError, EquipmentAppraisalError, EquipmentSlot,
+    EquipmentTier, base_equipment_appraisal, canonical_book_appraisal, embedded_enchant_value,
+    enchant_catalog_policy,
 };
+
+const EMBEDDED_ENCHANT_ROW_QUERY_LIMIT: i64 = CANONICAL_ENCHANT_COUNT as i64 + 1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct OrdinaryEquipmentRecraftAppraisal {
@@ -22,6 +28,21 @@ pub struct OrdinaryEquipmentRecraftAppraisal {
     pub creation_roll: CreationRoll,
     pub upgrade_level: u64,
     pub recraft_appraisal: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResolvedEmbeddedEnchantAppraisal {
+    pub enchant: CanonicalEnchant,
+    pub level: u8,
+    pub book_appraisal: CanonicalBookAppraisal,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrdinaryEquipmentEnhancedAppraisal {
+    pub recraft: OrdinaryEquipmentRecraftAppraisal,
+    pub embedded_enchants: Vec<ResolvedEmbeddedEnchantAppraisal>,
+    pub embedded_enchant_value: i64,
+    pub enhanced_canonical_appraisal: i64,
 }
 
 #[derive(Debug, Error)]
@@ -58,6 +79,36 @@ impl From<sqlx::Error> for OrdinaryEquipmentRecraftResolverError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum OrdinaryEquipmentEnhancedResolverError {
+    #[error(transparent)]
+    Recraft(#[from] OrdinaryEquipmentRecraftResolverError),
+    #[error("database error: {0}")]
+    Database(Box<sqlx::Error>),
+    #[error("persisted embedded enchant key is not canonical: {0}")]
+    UnknownEmbeddedEnchantKey(String),
+    #[error(
+        "persisted embedded enchant {enchant:?} has invalid resulting level {level}; maximum is {max_level}"
+    )]
+    InvalidEmbeddedEnchantLevel {
+        enchant: CanonicalEnchant,
+        level: i16,
+        max_level: u8,
+    },
+    #[error("embedded enchant row count exceeds the canonical catalog cardinality")]
+    TooManyEmbeddedEnchantRows,
+    #[error(transparent)]
+    EnchantAppraisal(#[from] EnchantAppraisalError),
+    #[error("enhanced canonical appraisal arithmetic exceeded supported integer bounds")]
+    ArithmeticOverflow,
+}
+
+impl From<sqlx::Error> for OrdinaryEquipmentEnhancedResolverError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::Database(Box::new(value))
+    }
+}
+
 /// Locks and resolves the canonical structural appraisal for one owned ordinary ItemInstance.
 ///
 /// The caller owns the surrounding transaction and must acquire any operation/player locks before
@@ -70,8 +121,8 @@ impl From<sqlx::Error> for OrdinaryEquipmentRecraftResolverError {
 /// the pinned immutable definition; neither Discord input nor the current ItemDefinition version is
 /// trusted. Special ItemDefinitions and their possible definition-specific base-appraisal override
 /// path remain outside this ordinary resolver. The result intentionally exposes only
-/// `RecraftAppraisal`. Embedded-enchant persistence is not authoritative yet, so this resolver does
-/// not claim or synthesize an `EnhancedCanonicalAppraisal`.
+/// `RecraftAppraisal`; callers that need embedded-enchant value should use
+/// [`lock_owned_ordinary_equipment_enhanced_appraisal`].
 pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
     tx: &mut Transaction<'_, Postgres>,
     player_id: Uuid,
@@ -120,6 +171,99 @@ pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
         creation_roll,
         upgrade_level: structural.upgrade_level,
         recraft_appraisal,
+    })
+}
+
+/// Locks and resolves embedded-enchant appraisal on top of the authoritative ordinary Recraft value.
+///
+/// Lock order is `item -> structural state -> embedded enchant rows`; operation/player locks, when
+/// required by a stateful owner, must already have been acquired by the caller. Embedded rows are
+/// locked in deterministic `enchant_key` order and the query is hard-bounded to the canonical
+/// catalog cardinality plus one sentinel row, so malformed persistence cannot turn this request-time
+/// resolver into an unbounded scan.
+///
+/// Persisted keys are mapped through [`CanonicalEnchant::from_persisted_key`] and each resulting
+/// level is checked against the frozen per-enchant ceiling before its appraisal class is derived from
+/// [`enchant_catalog_policy`]. Unknown keys and impossible fixed-level states fail closed. This
+/// function intentionally does not certify slot-family occupancy, equipment compatibility, or
+/// conflict legality; those are lifecycle invariants for the future Enchant mutation owner. It does
+/// not mutate ItemInstance, enchant, Money, AEXP, or slot state.
+pub async fn lock_owned_ordinary_equipment_enhanced_appraisal(
+    tx: &mut Transaction<'_, Postgres>,
+    player_id: Uuid,
+    item_id: Uuid,
+) -> Result<OrdinaryEquipmentEnhancedAppraisal, OrdinaryEquipmentEnhancedResolverError> {
+    let recraft = lock_owned_ordinary_equipment_recraft_appraisal(tx, player_id, item_id).await?;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT enchant_key, level
+          FROM item_instance_embedded_enchants
+         WHERE item_instance_id = $1
+         ORDER BY enchant_key
+         LIMIT $2
+         FOR UPDATE
+        "#,
+    )
+    .bind(item_id)
+    .bind(EMBEDDED_ENCHANT_ROW_QUERY_LIMIT)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    if rows.len() > CANONICAL_ENCHANT_COUNT {
+        return Err(OrdinaryEquipmentEnhancedResolverError::TooManyEmbeddedEnchantRows);
+    }
+
+    let mut resolved = Vec::with_capacity(rows.len());
+    let mut appraisal_inputs = Vec::with_capacity(rows.len());
+    for row in rows {
+        let persisted_key: String = row.try_get("enchant_key")?;
+        let stored_level: i16 = row.try_get("level")?;
+        let enchant = CanonicalEnchant::from_persisted_key(&persisted_key).ok_or_else(|| {
+            OrdinaryEquipmentEnhancedResolverError::UnknownEmbeddedEnchantKey(persisted_key.clone())
+        })?;
+        let max_level = enchant.max_resulting_level();
+        let level = u8::try_from(stored_level).map_err(|_| {
+            OrdinaryEquipmentEnhancedResolverError::InvalidEmbeddedEnchantLevel {
+                enchant,
+                level: stored_level,
+                max_level,
+            }
+        })?;
+        if level == 0 || level > max_level {
+            return Err(
+                OrdinaryEquipmentEnhancedResolverError::InvalidEmbeddedEnchantLevel {
+                    enchant,
+                    level: stored_level,
+                    max_level,
+                },
+            );
+        }
+
+        let appraisal_class = enchant_catalog_policy(enchant).appraisal_class;
+        let book_appraisal = canonical_book_appraisal(appraisal_class, level)?;
+        appraisal_inputs.push(EmbeddedEnchantAppraisalInput {
+            class: appraisal_class,
+            level,
+        });
+        resolved.push(ResolvedEmbeddedEnchantAppraisal {
+            enchant,
+            level,
+            book_appraisal,
+        });
+    }
+
+    let embedded_enchant_value = embedded_enchant_value(&appraisal_inputs)?;
+    let enhanced_canonical_appraisal = recraft
+        .recraft_appraisal
+        .checked_add(embedded_enchant_value)
+        .ok_or(OrdinaryEquipmentEnhancedResolverError::ArithmeticOverflow)?;
+
+    Ok(OrdinaryEquipmentEnhancedAppraisal {
+        recraft,
+        embedded_enchants: resolved,
+        embedded_enchant_value,
+        enhanced_canonical_appraisal,
     })
 }
 
