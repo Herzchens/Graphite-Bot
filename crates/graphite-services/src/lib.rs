@@ -2,6 +2,7 @@ mod action_speed;
 mod enchant_appraisal;
 mod enchant_catalog;
 mod enchant_conflict;
+mod enchant_placement;
 mod equipment_appraisal;
 mod equipment_policy;
 mod equipment_recraft_resolver;
@@ -58,6 +59,10 @@ pub use enchant_conflict::{
     ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,
     armor_enchants_conflict, fishing_rod_enchants_conflict, pickaxe_enchants_conflict,
     sword_enchants_conflict,
+};
+pub use enchant_placement::{
+    EnchantEquipmentMask, EnchantPlacementPolicy, EnchantSlotFamily, MAX_ENCHANT_SLOTS_PER_FAMILY,
+    NORMAL_CLASS_NATIVE_SLOTS, SPECIAL_UNIVERSAL_NATIVE_SLOTS, enchant_placement_policy,
 };
 pub use equipment_appraisal::{
     CanonicalEquipmentAppraisal, CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
