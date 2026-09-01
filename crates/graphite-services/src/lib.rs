@@ -1,4 +1,5 @@
 mod action_speed;
+mod enchant_apply;
 mod enchant_appraisal;
 mod enchant_catalog;
 mod enchant_conflict;
@@ -46,6 +47,10 @@ pub use action_speed::{
     MAX_SHARED_ACTION_SPEED_BONUS_DENOMINATOR, MAX_SHARED_ACTION_SPEED_BONUS_NUMERATOR,
     MIN_MINE_FISH_COOLDOWN_MILLIS, SharedActionSpeedBonusPolicy, cap_shared_action_speed_bonus,
     max_shared_action_speed_bonus,
+};
+pub use enchant_apply::{
+    EnchantApplyAction, EnchantApplyError, EnchantApplyPreview, EnchantSlotCapacity,
+    EnchantSlotOccupancy, ExistingAppliedEnchant, preview_standard_finished_book_application,
 };
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
