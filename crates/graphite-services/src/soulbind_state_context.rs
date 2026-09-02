@@ -8,7 +8,7 @@ use crate::{
     lock_owned_ordinary_equipment_enhanced_appraisal,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PersistedSoulBindState {
     NeverBound,
     Bound,
@@ -17,7 +17,7 @@ pub enum PersistedSoulBindState {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LockedOrdinarySoulBindContext {
     pub player_id: Uuid,
     pub rebirth_count: u64,
