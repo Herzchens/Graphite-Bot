@@ -24,6 +24,7 @@ pub struct OrdinaryEquipmentRecraftAppraisal {
     pub definition_version: i32,
     pub is_starter: bool,
     pub is_enchantable: bool,
+    pub is_upgradeable: bool,
     pub tier: EquipmentTier,
     pub slot: EquipmentSlot,
     pub base_appraisal: BaseEquipmentAppraisal,
@@ -119,15 +120,15 @@ impl From<sqlx::Error> for OrdinaryEquipmentEnhancedResolverError {
 /// calling this function. The item-domain resolver then acquires the canonical ItemInstance and
 /// structural-state row locks. This function performs only an unlocked read joining the exact
 /// immutable ItemDefinition version to that already-locked ItemInstance, so it can carry the parent
-/// enchantability flags forward without introducing another mutable-state lock or inverting
-/// Graphite's `operation -> player -> item -> structural state` order.
+/// starter/enchantable/upgradeable flags forward without introducing another mutable-state lock or
+/// inverting Graphite's `operation -> player -> item -> structural state` order.
 ///
 /// Only ordinary equipment is accepted. Tier and armor-slot metadata are derived fail-closed from
 /// the pinned immutable definition; neither Discord input nor the current ItemDefinition version is
-/// trusted. The result also carries the two slot capacities from the authoritative locked structural
-/// snapshot so downstream lifecycle owners do not issue ad-hoc capacity reads. Special
-/// ItemDefinitions and their possible definition-specific base-appraisal override path remain outside
-/// this ordinary resolver. Callers that need embedded-enchant value should use
+/// trusted. The result also carries the parent mutation-capability flags and the two slot capacities
+/// from the authoritative locked snapshot so downstream lifecycle owners do not issue ad-hoc reads.
+/// Special ItemDefinitions and their possible definition-specific base-appraisal override path remain
+/// outside this ordinary resolver. Callers that need embedded-enchant value should use
 /// [`lock_owned_ordinary_equipment_enhanced_appraisal`].
 pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
     tx: &mut Transaction<'_, Postgres>,
@@ -144,7 +145,8 @@ pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
         SELECT d.category,
                d.data,
                i.is_starter,
-               i.is_enchantable
+               i.is_enchantable,
+               i.is_upgradeable
           FROM item_definition_versions d
           JOIN item_instances i
             ON i.definition_key = d.key
@@ -167,6 +169,7 @@ pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
     let data: Value = definition.try_get("data")?;
     let is_starter: bool = definition.try_get("is_starter")?;
     let is_enchantable: bool = definition.try_get("is_enchantable")?;
+    let is_upgradeable: bool = definition.try_get("is_upgradeable")?;
     let tier = ordinary_equipment_tier(&data)?;
     let slot = ordinary_equipment_slot(&category, &data)?;
     validate_ordinary_tier_slot(tier, slot)?;
@@ -185,6 +188,7 @@ pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
         definition_version: structural.item.definition_version,
         is_starter,
         is_enchantable,
+        is_upgradeable,
         tier,
         slot,
         base_appraisal,

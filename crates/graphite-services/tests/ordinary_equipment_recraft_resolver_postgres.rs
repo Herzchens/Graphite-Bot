@@ -20,6 +20,11 @@ async fn ordinary_recraft_resolver_uses_pinned_definition_and_locked_structural_
     seed_two_version_definition(&store, &ordinary_key).await;
     let ordinary_item = seed_item(&store, owner_id, &ordinary_key, 1, &nonce, "ordinary").await;
     seed_structural_state(&store, ordinary_item, "1", "2", "3").await;
+    sqlx::query("UPDATE item_instances SET is_upgradeable = FALSE WHERE id = $1")
+        .bind(ordinary_item)
+        .execute(store.pool())
+        .await
+        .unwrap();
 
     let special_key = format!("test.recraft-resolver.special.{nonce}");
     seed_single_definition(
@@ -67,6 +72,9 @@ async fn ordinary_recraft_resolver_uses_pinned_definition_and_locked_structural_
     assert_eq!(appraisal.owner_player_id, owner_id);
     assert_eq!(appraisal.definition_key, ordinary_key);
     assert_eq!(appraisal.definition_version, 1);
+    assert!(!appraisal.is_starter);
+    assert!(appraisal.is_enchantable);
+    assert!(!appraisal.is_upgradeable);
     assert_eq!(appraisal.tier, EquipmentTier::Obsidian);
     assert_eq!(appraisal.slot, EquipmentSlot::Chestplate);
     assert_eq!(appraisal.base_appraisal.value, 1_181_300);
@@ -89,8 +97,26 @@ async fn ordinary_recraft_resolver_uses_pinned_definition_and_locked_structural_
     ));
     wrong_owner_tx.rollback().await.unwrap();
 
-    let mut lock_probe = store.pool().begin().await.unwrap();
-    let blocked = sqlx::query(
+    let mut item_lock_probe = store.pool().begin().await.unwrap();
+    let item_blocked = sqlx::query(
+        r#"
+        SELECT id
+          FROM item_instances
+         WHERE id = $1
+         FOR UPDATE NOWAIT
+        "#,
+    )
+    .bind(ordinary_item)
+    .fetch_one(&mut *item_lock_probe)
+    .await;
+    assert!(
+        item_blocked.is_err(),
+        "recraft resolver must retain the ItemInstance lock while capability flags are authoritative"
+    );
+    item_lock_probe.rollback().await.unwrap();
+
+    let mut structural_lock_probe = store.pool().begin().await.unwrap();
+    let structural_blocked = sqlx::query(
         r#"
         SELECT item_instance_id
           FROM item_instance_equipment_structural_state
@@ -99,13 +125,13 @@ async fn ordinary_recraft_resolver_uses_pinned_definition_and_locked_structural_
         "#,
     )
     .bind(ordinary_item)
-    .fetch_one(&mut *lock_probe)
+    .fetch_one(&mut *structural_lock_probe)
     .await;
     assert!(
-        blocked.is_err(),
+        structural_blocked.is_err(),
         "recraft resolver must retain the structural-state lock for the caller transaction"
     );
-    lock_probe.rollback().await.unwrap();
+    structural_lock_probe.rollback().await.unwrap();
     tx.rollback().await.unwrap();
 
     let mut special_tx = store.pool().begin().await.unwrap();
@@ -140,6 +166,11 @@ async fn ordinary_recraft_resolver_uses_pinned_definition_and_locked_structural_
     ));
     gold_armor_tx.rollback().await.unwrap();
 
+    sqlx::query("UPDATE item_instances SET is_upgradeable = TRUE WHERE id = $1")
+        .bind(ordinary_item)
+        .execute(store.pool())
+        .await
+        .unwrap();
     sqlx::query(
         r#"
         UPDATE item_instance_equipment_structural_state
@@ -158,6 +189,7 @@ async fn ordinary_recraft_resolver_uses_pinned_definition_and_locked_structural_
             .await
             .unwrap();
     assert_eq!(refreshed.definition_version, 1);
+    assert!(refreshed.is_upgradeable);
     assert_eq!(refreshed.tier, EquipmentTier::Obsidian);
     assert_eq!(refreshed.upgrade_level, 4);
     assert_eq!(refreshed.recraft_appraisal, 1_313_608);
