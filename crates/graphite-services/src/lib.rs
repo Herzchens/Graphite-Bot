@@ -1,5 +1,6 @@
 mod action_speed;
 mod enchant_apply;
+mod enchant_apply_resolver;
 mod enchant_appraisal;
 mod enchant_catalog;
 mod enchant_conflict;
@@ -51,6 +52,10 @@ pub use action_speed::{
 pub use enchant_apply::{
     EnchantApplyAction, EnchantApplyError, EnchantApplyPreview, EnchantSlotCapacity,
     EnchantSlotOccupancy, ExistingAppliedEnchant, preview_standard_finished_book_application,
+};
+pub use enchant_apply_resolver::{
+    OrdinaryEnchantApplyPreflightResolverError,
+    lock_preview_standard_finished_book_application_for_owned_ordinary_equipment,
 };
 pub use enchant_appraisal::{
     CanonicalBookAppraisal, EmbeddedEnchantAppraisalInput, EnchantAppraisalClass,
