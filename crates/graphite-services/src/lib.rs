@@ -34,6 +34,7 @@ mod ordinary_forge;
 mod percentage_fee;
 mod repair;
 mod reservation;
+mod shadow_walker_mutation;
 mod slot_orb;
 mod smelting;
 mod smelting_context;
@@ -220,6 +221,11 @@ pub use repair::{
 pub use reservation::{
     ReservationRole, ServiceJobReservationError, ServiceJobReservationReceipt,
     ServiceJobReservationRequest, StackReservationRequest, reserve_service_job_stacks,
+};
+pub use shadow_walker_mutation::{
+    SHADOW_WALKER_MUTATION_MAX_LEVEL, SHADOW_WALKER_MUTATION_MIN_LEVEL,
+    ShadowWalkerMutationBasePolicy, ShadowWalkerMutationFailurePolicy,
+    ShadowWalkerMutationPolicyError, shadow_walker_mutation_base_policy,
 };
 pub use slot_orb::{
     SlotOrbAttemptPreview, SlotOrbFailurePolicy, SlotOrbFamily, SlotOrbPolicy, SlotOrbPolicyError,
