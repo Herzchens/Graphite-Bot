@@ -1,0 +1,1 @@
+// SoulBind locked state context.
