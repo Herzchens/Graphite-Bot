@@ -22,11 +22,15 @@ pub struct OrdinaryEquipmentRecraftAppraisal {
     pub owner_player_id: Uuid,
     pub definition_key: String,
     pub definition_version: i32,
+    pub is_starter: bool,
+    pub is_enchantable: bool,
     pub tier: EquipmentTier,
     pub slot: EquipmentSlot,
     pub base_appraisal: BaseEquipmentAppraisal,
     pub creation_roll: CreationRoll,
     pub upgrade_level: u64,
+    pub normal_enchant_slot_capacity: u8,
+    pub special_enchant_slot_capacity: u8,
     pub recraft_appraisal: i64,
 }
 
@@ -113,15 +117,17 @@ impl From<sqlx::Error> for OrdinaryEquipmentEnhancedResolverError {
 ///
 /// The caller owns the surrounding transaction and must acquire any operation/player locks before
 /// calling this function. The item-domain resolver then acquires the canonical ItemInstance and
-/// structural-state row locks. This function performs only an unlocked read of the exact immutable
-/// ItemDefinition version pinned by that locked ItemInstance, so it does not introduce another
-/// mutable-state lock or invert Graphite's `operation -> player -> item -> structural state` order.
+/// structural-state row locks. This function performs only an unlocked read joining the exact
+/// immutable ItemDefinition version to that already-locked ItemInstance, so it can carry the parent
+/// enchantability flags forward without introducing another mutable-state lock or inverting
+/// Graphite's `operation -> player -> item -> structural state` order.
 ///
 /// Only ordinary equipment is accepted. Tier and armor-slot metadata are derived fail-closed from
 /// the pinned immutable definition; neither Discord input nor the current ItemDefinition version is
-/// trusted. Special ItemDefinitions and their possible definition-specific base-appraisal override
-/// path remain outside this ordinary resolver. The result intentionally exposes only
-/// `RecraftAppraisal`; callers that need embedded-enchant value should use
+/// trusted. The result also carries the two slot capacities from the authoritative locked structural
+/// snapshot so downstream lifecycle owners do not issue ad-hoc capacity reads. Special
+/// ItemDefinitions and their possible definition-specific base-appraisal override path remain outside
+/// this ordinary resolver. Callers that need embedded-enchant value should use
 /// [`lock_owned_ordinary_equipment_enhanced_appraisal`].
 pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
     tx: &mut Transaction<'_, Postgres>,
@@ -135,20 +141,32 @@ pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
 
     let definition = sqlx::query(
         r#"
-        SELECT category, data
-          FROM item_definition_versions
-         WHERE key = $1
-           AND version = $2
+        SELECT d.category,
+               d.data,
+               i.is_starter,
+               i.is_enchantable
+          FROM item_definition_versions d
+          JOIN item_instances i
+            ON i.definition_key = d.key
+           AND i.definition_version = d.version
+         WHERE d.key = $1
+           AND d.version = $2
+           AND i.id = $3
+           AND i.owner_player_id = $4
         "#,
     )
     .bind(&structural.item.definition_key)
     .bind(structural.item.definition_version)
+    .bind(item_id)
+    .bind(player_id)
     .fetch_optional(&mut **tx)
     .await?
     .ok_or(OrdinaryEquipmentRecraftResolverError::DefinitionIntegrityMismatch)?;
 
     let category: String = definition.try_get("category")?;
     let data: Value = definition.try_get("data")?;
+    let is_starter: bool = definition.try_get("is_starter")?;
+    let is_enchantable: bool = definition.try_get("is_enchantable")?;
     let tier = ordinary_equipment_tier(&data)?;
     let slot = ordinary_equipment_slot(&category, &data)?;
     validate_ordinary_tier_slot(tier, slot)?;
@@ -165,11 +183,15 @@ pub async fn lock_owned_ordinary_equipment_recraft_appraisal(
         owner_player_id: structural.item.owner_player_id,
         definition_key: structural.item.definition_key,
         definition_version: structural.item.definition_version,
+        is_starter,
+        is_enchantable,
         tier,
         slot,
         base_appraisal,
         creation_roll,
         upgrade_level: structural.upgrade_level,
+        normal_enchant_slot_capacity: structural.normal_enchant_slot_capacity,
+        special_enchant_slot_capacity: structural.special_enchant_slot_capacity,
         recraft_appraisal,
     })
 }
