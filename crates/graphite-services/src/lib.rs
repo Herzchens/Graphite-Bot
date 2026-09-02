@@ -69,8 +69,8 @@ pub use enchant_appraisal::{
     EnchantAppraisalError, canonical_book_appraisal, embedded_enchant_value,
 };
 pub use enchant_catalog::{
-    BAIT_RACK_MAX_BOOK_LEVEL, CanonicalEnchant, EnchantAcquisitionSource, EnchantCatalogPolicy,
-    NORMAL_SHOP_MAX_BOOK_LEVEL, enchant_catalog_policy,
+    BAIT_RACK_MAX_BOOK_LEVEL, EnchantAcquisitionSource, EnchantCatalogPolicy,
+    NORMAL_SHOP_MAX_BOOK_LEVEL, canonical_enchant_max_resulting_level, enchant_catalog_policy,
 };
 pub use enchant_combine_base::{
     ENCHANT_COMBINE_ABSOLUTE_SUCCESS_CAP_BPS, ENCHANT_COMBINE_CATALYST_MULTIPLIER_BPS,
@@ -80,10 +80,9 @@ pub use enchant_combine_base::{
     StandardEnchantCombineBasePolicy, standard_enchant_combine_base_policy,
 };
 pub use enchant_conflict::{
-    ArmorEnchant, EnchantConflictDecision, EnchantConflictScope, FishingRodEnchant, PickaxeEnchant,
-    SwordEnchant, armor_enchants_conflict, canonical_enchant_conflict_scope,
-    canonical_enchants_conflict, fishing_rod_enchants_conflict, pickaxe_enchants_conflict,
-    sword_enchants_conflict,
+    ArmorEnchant, EnchantConflictDecision, FishingRodEnchant, PickaxeEnchant, SwordEnchant,
+    armor_enchants_conflict, canonical_enchants_conflict, fishing_rod_enchants_conflict,
+    pickaxe_enchants_conflict, sword_enchants_conflict,
 };
 pub use enchant_placement::{
     EnchantEquipmentMask, EnchantPlacementPolicy, EnchantSlotFamily, MAX_ENCHANT_SLOTS_PER_FAMILY,
@@ -205,6 +204,7 @@ pub use forge::{
     ForgeSuccessChance, advanced_forge_promotion_policy, advanced_forge_stack_policy,
     project_promoted_durability,
 };
+pub use graphite_core::{CanonicalEnchant, EnchantConflictScope, canonical_enchant_conflict_scope};
 pub use grinding::{
     GRINDING_MAX_LEVEL, GRINDING_MAX_REDUCTION_BPS, GRINDING_REDUCTION_BPS_PER_LEVEL,
     GrindingPolicyError, GrindingRepairModifier, REPAIR_TIME_REDUCTION_BUCKET_CAP_BPS,

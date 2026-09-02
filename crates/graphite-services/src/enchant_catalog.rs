@@ -1,215 +1,24 @@
+use graphite_core::CanonicalEnchant;
 use serde::Serialize;
 
 use crate::EnchantAppraisalClass;
 
 pub const NORMAL_SHOP_MAX_BOOK_LEVEL: u8 = 5;
 pub const BAIT_RACK_MAX_BOOK_LEVEL: u8 = crate::fishing_bait::BAIT_RACK_MAX_LEVEL;
-pub const CANONICAL_ENCHANT_COUNT: usize = 54;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CanonicalEnchant {
-    Efficiency,
-    Fortune,
-    Smelt,
-    Lure,
-    LuckOfTheSea,
-    Luck,
-    Strengthen,
-    SharpHook,
-    BaitRack,
-    Sharpness,
-    Smite,
-    BaneOfArthropods,
-    SweepingEdge,
-    FireAspect,
-    Knockback,
-    Protection,
-    Thorn,
-    Cat,
-    Dog,
-    Dodge,
-    Unbreaking,
-    Stabilize,
-    Sparkling,
-    Grinding,
-    Mosaic,
-    PickaxeTreasure,
-    FishingRodTreasure,
-    MultiTreasure,
-    Multicatch,
-    Looting,
-    Devour,
-    Bleeding,
-    Freezing,
-    Angel,
-    Evil,
-    DayWalker,
-    NightWalker,
-    Reinforce,
-    Empowering,
-    Carving,
-    Trench,
-    Execution,
-    BloodFrenzy,
-    ArmorPiercing,
-    Piercing,
-    Guardian,
-    NineLife,
-    SoulGrind,
-    Mending,
-    Nuke,
-    Annihilation,
-    Phoenix,
-    ShadowWalker,
-    Master,
-}
-
-impl CanonicalEnchant {
-    /// Stable PostgreSQL identity used by `item_instance_embedded_enchants.enchant_key`.
-    ///
-    /// This mapping is deliberately explicit rather than inferred from display text or serde so a
-    /// future rename cannot silently reinterpret already-persisted ItemInstance state.
-    #[must_use]
-    pub const fn persisted_key(self) -> &'static str {
-        use CanonicalEnchant as E;
-        match self {
-            E::Efficiency => "EFFICIENCY",
-            E::Fortune => "FORTUNE",
-            E::Smelt => "SMELT",
-            E::Lure => "LURE",
-            E::LuckOfTheSea => "LUCK_OF_THE_SEA",
-            E::Luck => "LUCK",
-            E::Strengthen => "STRENGTHEN",
-            E::SharpHook => "SHARP_HOOK",
-            E::BaitRack => "BAIT_RACK",
-            E::Sharpness => "SHARPNESS",
-            E::Smite => "SMITE",
-            E::BaneOfArthropods => "BANE_OF_ARTHROPODS",
-            E::SweepingEdge => "SWEEPING_EDGE",
-            E::FireAspect => "FIRE_ASPECT",
-            E::Knockback => "KNOCKBACK",
-            E::Protection => "PROTECTION",
-            E::Thorn => "THORN",
-            E::Cat => "CAT",
-            E::Dog => "DOG",
-            E::Dodge => "DODGE",
-            E::Unbreaking => "UNBREAKING",
-            E::Stabilize => "STABILIZE",
-            E::Sparkling => "SPARKLING",
-            E::Grinding => "GRINDING",
-            E::Mosaic => "MOSAIC",
-            E::PickaxeTreasure => "PICKAXE_TREASURE",
-            E::FishingRodTreasure => "FISHING_ROD_TREASURE",
-            E::MultiTreasure => "MULTI_TREASURE",
-            E::Multicatch => "MULTICATCH",
-            E::Looting => "LOOTING",
-            E::Devour => "DEVOUR",
-            E::Bleeding => "BLEEDING",
-            E::Freezing => "FREEZING",
-            E::Angel => "ANGEL",
-            E::Evil => "EVIL",
-            E::DayWalker => "DAY_WALKER",
-            E::NightWalker => "NIGHT_WALKER",
-            E::Reinforce => "REINFORCE",
-            E::Empowering => "EMPOWERING",
-            E::Carving => "CARVING",
-            E::Trench => "TRENCH",
-            E::Execution => "EXECUTION",
-            E::BloodFrenzy => "BLOOD_FRENZY",
-            E::ArmorPiercing => "ARMOR_PIERCING",
-            E::Piercing => "PIERCING",
-            E::Guardian => "GUARDIAN",
-            E::NineLife => "NINE_LIFE",
-            E::SoulGrind => "SOUL_GRIND",
-            E::Mending => "MENDING",
-            E::Nuke => "NUKE",
-            E::Annihilation => "ANNIHILATION",
-            E::Phoenix => "PHOENIX",
-            E::ShadowWalker => "SHADOW_WALKER",
-            E::Master => "MASTER",
-        }
-    }
-
-    /// Resolves only exact canonical persistence identities. Unknown, differently-cased, padded,
-    /// or legacy-looking strings fail closed instead of being normalized into a different enchant.
-    #[must_use]
-    pub fn from_persisted_key(key: &str) -> Option<Self> {
-        use CanonicalEnchant as E;
-        Some(match key {
-            "EFFICIENCY" => E::Efficiency,
-            "FORTUNE" => E::Fortune,
-            "SMELT" => E::Smelt,
-            "LURE" => E::Lure,
-            "LUCK_OF_THE_SEA" => E::LuckOfTheSea,
-            "LUCK" => E::Luck,
-            "STRENGTHEN" => E::Strengthen,
-            "SHARP_HOOK" => E::SharpHook,
-            "BAIT_RACK" => E::BaitRack,
-            "SHARPNESS" => E::Sharpness,
-            "SMITE" => E::Smite,
-            "BANE_OF_ARTHROPODS" => E::BaneOfArthropods,
-            "SWEEPING_EDGE" => E::SweepingEdge,
-            "FIRE_ASPECT" => E::FireAspect,
-            "KNOCKBACK" => E::Knockback,
-            "PROTECTION" => E::Protection,
-            "THORN" => E::Thorn,
-            "CAT" => E::Cat,
-            "DOG" => E::Dog,
-            "DODGE" => E::Dodge,
-            "UNBREAKING" => E::Unbreaking,
-            "STABILIZE" => E::Stabilize,
-            "SPARKLING" => E::Sparkling,
-            "GRINDING" => E::Grinding,
-            "MOSAIC" => E::Mosaic,
-            "PICKAXE_TREASURE" => E::PickaxeTreasure,
-            "FISHING_ROD_TREASURE" => E::FishingRodTreasure,
-            "MULTI_TREASURE" => E::MultiTreasure,
-            "MULTICATCH" => E::Multicatch,
-            "LOOTING" => E::Looting,
-            "DEVOUR" => E::Devour,
-            "BLEEDING" => E::Bleeding,
-            "FREEZING" => E::Freezing,
-            "ANGEL" => E::Angel,
-            "EVIL" => E::Evil,
-            "DAY_WALKER" => E::DayWalker,
-            "NIGHT_WALKER" => E::NightWalker,
-            "REINFORCE" => E::Reinforce,
-            "EMPOWERING" => E::Empowering,
-            "CARVING" => E::Carving,
-            "TRENCH" => E::Trench,
-            "EXECUTION" => E::Execution,
-            "BLOOD_FRENZY" => E::BloodFrenzy,
-            "ARMOR_PIERCING" => E::ArmorPiercing,
-            "PIERCING" => E::Piercing,
-            "GUARDIAN" => E::Guardian,
-            "NINE_LIFE" => E::NineLife,
-            "SOUL_GRIND" => E::SoulGrind,
-            "MENDING" => E::Mending,
-            "NUKE" => E::Nuke,
-            "ANNIHILATION" => E::Annihilation,
-            "PHOENIX" => E::Phoenix,
-            "SHADOW_WALKER" => E::ShadowWalker,
-            "MASTER" => E::Master,
-            _ => return None,
-        })
-    }
-
-    /// Maximum valid resulting level for the canonical embedded state.
-    ///
-    /// Most enchant families use the common Level X ceiling. The frozen exceptions are Mending I,
-    /// Bait Rack III, Nine Life IX, Phoenix I, Carving I, and Master II. Acquisition ceilings such
-    /// as the normal Shop's Level V cap are intentionally not gameplay-state ceilings.
-    #[must_use]
-    pub const fn max_resulting_level(self) -> u8 {
-        use CanonicalEnchant as E;
-        match self {
-            E::Mending | E::Phoenix | E::Carving => 1,
-            E::Master => 2,
-            E::BaitRack => BAIT_RACK_MAX_BOOK_LEVEL,
-            E::NineLife => 9,
-            _ => 10,
-        }
+/// Maximum valid resulting level for canonical embedded state.
+///
+/// Resulting-level policy deliberately remains in Services: Bait Rack III reuses the fishing-bait
+/// effect module's `BAIT_RACK_MAX_LEVEL` authority instead of duplicating that gameplay ceiling in
+/// the lower-layer canonical identity vocabulary.
+#[must_use]
+pub const fn canonical_enchant_max_resulting_level(enchant: CanonicalEnchant) -> u8 {
+    use CanonicalEnchant as E;
+    match enchant {
+        E::Mending | E::Phoenix | E::Carving => 1,
+        E::Master => 2,
+        E::BaitRack => BAIT_RACK_MAX_BOOK_LEVEL,
+        E::NineLife => 9,
+        _ => 10,
     }
 }
 
@@ -346,7 +155,7 @@ pub const fn enchant_catalog_policy(enchant: CanonicalEnchant) -> EnchantCatalog
 mod tests {
     use super::*;
 
-    const ALL_ENCHANTS: [CanonicalEnchant; CANONICAL_ENCHANT_COUNT] = [
+    const ALL_ENCHANTS: [CanonicalEnchant; graphite_core::CANONICAL_ENCHANT_COUNT] = [
         CanonicalEnchant::Efficiency,
         CanonicalEnchant::Fortune,
         CanonicalEnchant::Smelt,
@@ -555,13 +364,37 @@ mod tests {
 
     #[test]
     fn resulting_level_ceiling_preserves_frozen_fixed_level_exceptions() {
-        assert_eq!(CanonicalEnchant::Mending.max_resulting_level(), 1);
-        assert_eq!(CanonicalEnchant::Phoenix.max_resulting_level(), 1);
-        assert_eq!(CanonicalEnchant::Carving.max_resulting_level(), 1);
-        assert_eq!(CanonicalEnchant::Master.max_resulting_level(), 2);
-        assert_eq!(CanonicalEnchant::BaitRack.max_resulting_level(), 3);
-        assert_eq!(CanonicalEnchant::NineLife.max_resulting_level(), 9);
-        assert_eq!(CanonicalEnchant::ShadowWalker.max_resulting_level(), 10);
-        assert_eq!(CanonicalEnchant::Efficiency.max_resulting_level(), 10);
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::Mending),
+            1
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::Phoenix),
+            1
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::Carving),
+            1
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::Master),
+            2
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::BaitRack),
+            3
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::NineLife),
+            9
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::ShadowWalker),
+            10
+        );
+        assert_eq!(
+            canonical_enchant_max_resulting_level(CanonicalEnchant::Efficiency),
+            10
+        );
     }
 }

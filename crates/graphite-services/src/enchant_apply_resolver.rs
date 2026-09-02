@@ -2,7 +2,6 @@ use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::enchant_catalog::CANONICAL_ENCHANT_COUNT;
 use crate::{
     CanonicalEnchant, EnchantApplyAction, EnchantApplyError, EnchantApplyPreview,
     EnchantConflictScope, EnchantSlotCapacity, EquipmentSlot, ExistingAppliedEnchant,
@@ -10,6 +9,7 @@ use crate::{
     enchant_placement_policy, lock_owned_ordinary_equipment_enhanced_appraisal,
     preview_standard_finished_book_application,
 };
+use graphite_core::CANONICAL_ENCHANT_COUNT;
 
 const MAX_EQUIPPED_ARMOR_ITEMS: usize = 4;
 const MAX_LOCKED_ENCHANT_ROWS: usize = CANONICAL_ENCHANT_COUNT * (MAX_EQUIPPED_ARMOR_ITEMS + 1);
@@ -351,7 +351,7 @@ pub async fn lock_validate_equipped_armor_enchant_loadout_for_owned_target(
             }
         })?;
         let stored_level: i16 = row.try_get("level")?;
-        let maximum = enchant.max_resulting_level();
+        let maximum = crate::canonical_enchant_max_resulting_level(enchant);
         let level = u8::try_from(stored_level).map_err(|_| {
             EquippedArmorEnchantLoadoutError::InvalidEmbeddedEnchantLevel {
                 item_instance_id,

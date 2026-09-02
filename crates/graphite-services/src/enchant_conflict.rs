@@ -1,6 +1,5 @@
+use graphite_core::{CanonicalEnchant, canonical_enchant_conflict_scope};
 use serde::Serialize;
-
-use crate::enchant_catalog::CanonicalEnchant;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -170,69 +169,6 @@ impl EnchantConflictDecision {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum EnchantConflictScope {
-    SameItem,
-    EquippedArmorLoadout,
-}
-
-/// Returns the frozen conflict scope for two canonical enchant identities.
-///
-/// `SameItem` covers all ordinary Pickaxe/Sword conflicts plus the Armor Cat/Dog, Angel/Evil and
-/// Thorn/Reinforce pairs. The specification explicitly widens only the Guardian/Nine Life/Phoenix
-/// survival-core family to the equipped Armor loadout, so that family returns
-/// `EquippedArmorLoadout`. Day Walker, Night Walker and Shadow Walker remain compatible. No conflict
-/// is invented for Fishing Rod or Special/universal enchants.
-///
-/// This function classifies a pair only. A future Enchant mutation owner must separately validate
-/// equipment applicability, physical slot capacity/occupancy, authoritative equipped-loadout state,
-/// and the target ItemInstance under its owning transaction.
-#[must_use]
-pub const fn canonical_enchant_conflict_scope(
-    left: CanonicalEnchant,
-    right: CanonicalEnchant,
-) -> Option<EnchantConflictScope> {
-    use CanonicalEnchant as E;
-
-    if left as u8 == right as u8 {
-        return None;
-    }
-
-    if same_distinct_canonical_family(left, right, E::Guardian, E::NineLife, E::Phoenix) {
-        return Some(EnchantConflictScope::EquippedArmorLoadout);
-    }
-
-    if matches!(
-        (left, right),
-        (E::Trench, E::Nuke)
-            | (E::Nuke, E::Trench)
-            | (E::Cat, E::Dog)
-            | (E::Dog, E::Cat)
-            | (E::Angel, E::Evil)
-            | (E::Evil, E::Angel)
-            | (E::Thorn, E::Reinforce)
-            | (E::Reinforce, E::Thorn)
-            | (E::SweepingEdge, E::Piercing)
-            | (E::Piercing, E::SweepingEdge)
-            | (E::SweepingEdge, E::ArmorPiercing)
-            | (E::ArmorPiercing, E::SweepingEdge)
-    ) || same_distinct_canonical_family(left, right, E::Sharpness, E::Smite, E::BaneOfArthropods)
-        || same_distinct_canonical_family(left, right, E::FireAspect, E::Freezing, E::Bleeding)
-        || same_distinct_canonical_family(
-            left,
-            right,
-            E::Annihilation,
-            E::BloodFrenzy,
-            E::Execution,
-        )
-    {
-        Some(EnchantConflictScope::SameItem)
-    } else {
-        None
-    }
-}
-
 /// Returns the canonical pair decision without discarding the scope API for callers that need it.
 #[must_use]
 pub const fn canonical_enchants_conflict(
@@ -243,30 +179,6 @@ pub const fn canonical_enchants_conflict(
         Some(_) => EnchantConflictDecision::Forbidden,
         None => EnchantConflictDecision::Compatible,
     }
-}
-
-const fn same_distinct_canonical_family(
-    left: CanonicalEnchant,
-    right: CanonicalEnchant,
-    first: CanonicalEnchant,
-    second: CanonicalEnchant,
-    third: CanonicalEnchant,
-) -> bool {
-    if left as u8 == right as u8 {
-        return false;
-    }
-
-    canonical_is_one_of_three(left, first, second, third)
-        && canonical_is_one_of_three(right, first, second, third)
-}
-
-const fn canonical_is_one_of_three(
-    value: CanonicalEnchant,
-    first: CanonicalEnchant,
-    second: CanonicalEnchant,
-    third: CanonicalEnchant,
-) -> bool {
-    value as u8 == first as u8 || value as u8 == second as u8 || value as u8 == third as u8
 }
 
 /// Returns the frozen same-Pickaxe conflict decision.
@@ -324,6 +236,8 @@ pub const fn armor_enchants_conflict(
 
 #[cfg(test)]
 mod tests {
+    use graphite_core::EnchantConflictScope;
+
     use super::*;
 
     const PICKAXE_ENCHANTS: [PickaxeEnchant; 8] = [
