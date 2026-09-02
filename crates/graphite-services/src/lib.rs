@@ -6,6 +6,7 @@ mod enchant_catalog;
 mod enchant_combine_base;
 mod enchant_conflict;
 mod enchant_placement;
+mod enchant_remove_recovery;
 mod equipment_appraisal;
 mod equipment_policy;
 mod equipment_recraft_resolver;
@@ -83,6 +84,11 @@ pub use enchant_conflict::{
 pub use enchant_placement::{
     EnchantEquipmentMask, EnchantPlacementPolicy, EnchantSlotFamily, MAX_ENCHANT_SLOTS_PER_FAMILY,
     NORMAL_CLASS_NATIVE_SLOTS, SPECIAL_UNIVERSAL_NATIVE_SLOTS, enchant_placement_policy,
+};
+pub use enchant_remove_recovery::{
+    BlankEnchantBookDisposition, EnchantRecoveryTerminalOutcome, EnchantRemovalMode,
+    EnchantRemovalPolicyError, EnchantRemovalTerminalPolicy, RecoveredEnchantBook,
+    removal_terminal_policy_after_removability_check,
 };
 pub use equipment_appraisal::{
     CanonicalEquipmentAppraisal, CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
