@@ -62,7 +62,7 @@ pub struct SlotOrbPolicy {
     pub family: SlotOrbFamily,
     pub target_slot_number: u8,
     pub required_unlocked_slots_before_attempt: u8,
-    pub minimum_upgrade_level: u32,
+    pub minimum_upgrade_level: u64,
     pub success: SlotOrbSuccessChance,
     pub orb_base_price: i64,
     pub application_fee_percent: u8,
@@ -149,7 +149,7 @@ pub const fn slot_orb_policy(unlock: SlotOrbUnlock) -> SlotOrbPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct SlotOrbAttemptPreview {
     pub policy: SlotOrbPolicy,
-    pub current_upgrade_level: u32,
+    pub current_upgrade_level: u64,
     pub current_enhanced_appraisal: i64,
     pub application_fee: i64,
 }
@@ -159,7 +159,7 @@ pub enum SlotOrbPolicyError {
     #[error(
         "Slot Orb unlock requires equipment upgrade level +{required} or higher; current level is +{current}"
     )]
-    UpgradeLevelTooLow { required: u32, current: u32 },
+    UpgradeLevelTooLow { required: u64, current: u64 },
     #[error("current enhanced canonical appraisal cannot be negative")]
     NegativeEnhancedAppraisal,
     #[error("Slot Orb fee arithmetic exceeded supported integer bounds")]
@@ -168,13 +168,18 @@ pub enum SlotOrbPolicyError {
 
 /// Previews the frozen Slot Orb attempt policy from already-resolved equipment appraisal state.
 ///
+/// The upgrade-level domain intentionally matches Graphite's canonical `u64` structural-state
+/// representation. +N is conceptually unlimited even though Slot Orb eligibility thresholds are all
+/// finite, so this policy must not narrow or truncate an authoritative high +N merely to evaluate a
+/// small threshold.
+///
 /// +N makes an unlock eligible but never grants the slot for free. The future owning stateful
 /// service must still verify that the target slot is currently locked, all predecessor slots in the
 /// same family are unlocked, the correct Orb item is owned, and the account/item is mutable before
 /// consuming anything. This pure preview does not draw RNG or mutate equipment/assets.
 pub fn preview_slot_orb_attempt(
     unlock: SlotOrbUnlock,
-    current_upgrade_level: u32,
+    current_upgrade_level: u64,
     current_enhanced_appraisal: i64,
 ) -> Result<SlotOrbAttemptPreview, SlotOrbPolicyError> {
     let policy = slot_orb_policy(unlock);
@@ -336,6 +341,13 @@ mod tests {
                 preview_slot_orb_attempt(unlock, policy.minimum_upgrade_level + 100, 1_000).is_ok()
             );
         }
+    }
+
+    #[test]
+    fn authoritative_u64_upgrade_levels_are_not_narrowed() {
+        let high = u64::from(u32::MAX) + 1;
+        let preview = preview_slot_orb_attempt(SlotOrbUnlock::Special6, high, 1_000).unwrap();
+        assert_eq!(preview.current_upgrade_level, high);
     }
 
     #[test]
