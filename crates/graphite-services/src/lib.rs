@@ -44,6 +44,7 @@ mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 mod soulbind;
+mod soulbind_state_context;
 mod upgrade_appraisal;
 mod upgrade_cost;
 mod upgrade_outcome;
@@ -275,6 +276,10 @@ pub use soulbind::{
     SoulBindBindingPreview, SoulBindPolicyError, SoulBindTierComponent, SoulBindTopUpPreview,
     SoulBindUnbindPreview, preview_soulbind_binding, preview_soulbind_top_up,
     preview_soulbind_unbind, soulbind_binding_package,
+};
+pub use soulbind_state_context::{
+    LockedOrdinarySoulBindContext, OrdinarySoulBindContextError, PersistedSoulBindState,
+    lock_owned_ordinary_soulbind_context_for_mutation,
 };
 pub use upgrade_appraisal::{
     ExactUpgradeFactor, UpgradeAppraisalError, UpgradeAppraisalFactors, UpgradeScaledBaseAppraisal,
