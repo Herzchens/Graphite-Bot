@@ -44,6 +44,26 @@ async fn authoritative_preflight_uses_persisted_enchants_and_slot_capacity() {
     assert_eq!(upgrade.occupancy_after.normal_class, 4);
     tx.rollback().await.unwrap();
 
+    let mut equal_tx = store.pool().begin().await.unwrap();
+    assert!(matches!(
+        lock_preview_standard_finished_book_application_for_owned_ordinary_equipment(
+            &mut equal_tx,
+            owner_id,
+            item_id,
+            CanonicalEnchant::Protection,
+            2,
+        )
+        .await,
+        Err(OrdinaryEnchantApplyPreflightResolverError::Apply(
+            EnchantApplyError::LowerOrEqualReplacement {
+                enchant: CanonicalEnchant::Protection,
+                existing_level: 2,
+                incoming_level: 2,
+            }
+        ))
+    ));
+    equal_tx.rollback().await.unwrap();
+
     let mut full_tx = store.pool().begin().await.unwrap();
     assert!(matches!(
         lock_preview_standard_finished_book_application_for_owned_ordinary_equipment(
