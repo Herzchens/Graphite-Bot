@@ -7,6 +7,7 @@ mod enchant_combine_base;
 mod enchant_conflict;
 mod enchant_placement;
 mod enchant_remove_recovery;
+mod enchant_remove_resolver;
 mod equipment_appraisal;
 mod equipment_policy;
 mod equipment_recraft_resolver;
@@ -92,6 +93,10 @@ pub use enchant_remove_recovery::{
     BlankEnchantBookDisposition, EnchantRecoveryTerminalOutcome, EnchantRemovalMode,
     EnchantRemovalPolicyError, EnchantRemovalTerminalPolicy, RecoveredEnchantBook,
     removal_terminal_policy_after_removability_check,
+};
+pub use enchant_remove_resolver::{
+    EnchantRemovalStateWriterError, RemovedEmbeddedEnchant,
+    write_exact_enchant_removal_after_removability_check,
 };
 pub use equipment_appraisal::{
     CanonicalEquipmentAppraisal, CanonicalEquipmentAppraisalError, CreationRoll, CreationRollError,
