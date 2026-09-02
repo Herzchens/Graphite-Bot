@@ -240,8 +240,9 @@ pub use slot_orb::{
     SlotOrbSuccessChance, SlotOrbUnlock, preview_slot_orb_attempt, slot_orb_policy,
 };
 pub use slot_orb_resolver::{
-    OrdinarySlotOrbPreflightResolverError, SlotOrbCapacityStateError,
-    lock_preview_slot_orb_attempt_for_owned_ordinary_equipment,
+    OrdinarySlotOrbPreflightResolverError, OrdinarySlotOrbStateWriterError,
+    SlotOrbCapacityStateError, lock_preview_slot_orb_attempt_for_owned_ordinary_equipment,
+    write_successful_slot_orb_unlock_to_owned_ordinary_equipment,
 };
 pub use smelting::{
     ORDINARY_SMELT_SECONDS_PER_UNIT, SmeltFuelKind, SmeltPreview, SmeltStopSettlement,

@@ -321,7 +321,7 @@ fn validate_enchant_level(enchant: CanonicalEnchant, level: u8) -> Result<(), En
     }
 }
 
-fn validate_existing_state(
+pub(crate) fn validate_existing_state(
     equipment_slot: EquipmentSlot,
     capacity: EnchantSlotCapacity,
     existing: &[ExistingAppliedEnchant],
