@@ -37,6 +37,7 @@ mod repair;
 mod reservation;
 mod shadow_walker_mutation;
 mod slot_orb;
+mod slot_orb_resolver;
 mod smelting;
 mod smelting_context;
 mod smelting_runtime;
@@ -237,6 +238,10 @@ pub use shadow_walker_mutation::{
 pub use slot_orb::{
     SlotOrbAttemptPreview, SlotOrbFailurePolicy, SlotOrbFamily, SlotOrbPolicy, SlotOrbPolicyError,
     SlotOrbSuccessChance, SlotOrbUnlock, preview_slot_orb_attempt, slot_orb_policy,
+};
+pub use slot_orb_resolver::{
+    OrdinarySlotOrbPreflightResolverError, SlotOrbCapacityStateError,
+    lock_preview_slot_orb_attempt_for_owned_ordinary_equipment,
 };
 pub use smelting::{
     ORDINARY_SMELT_SECONDS_PER_UNIT, SmeltFuelKind, SmeltPreview, SmeltStopSettlement,
