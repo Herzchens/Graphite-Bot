@@ -38,6 +38,8 @@ async fn structural_state_resolver_is_owner_scoped_exact_and_locks_mutable_state
     assert_eq!(snapshot.creation_roll_numerator, 1);
     assert_eq!(snapshot.creation_roll_denominator, u64::MAX);
     assert_eq!(snapshot.upgrade_level, u64::MAX);
+    assert_eq!(snapshot.normal_enchant_slot_capacity, 4);
+    assert_eq!(snapshot.special_enchant_slot_capacity, 3);
 
     let mut wrong_owner_tx = store.pool().begin().await.unwrap();
     assert!(matches!(
@@ -92,7 +94,9 @@ async fn structural_state_resolver_is_owner_scoped_exact_and_locks_mutable_state
     sqlx::query(
         r#"
         UPDATE item_instance_equipment_structural_state
-           SET upgrade_level = 7
+           SET upgrade_level = 7,
+               normal_enchant_slot_capacity = 6,
+               special_enchant_slot_capacity = 5
          WHERE item_instance_id = $1
         "#,
     )
@@ -107,6 +111,8 @@ async fn structural_state_resolver_is_owner_scoped_exact_and_locks_mutable_state
             .await
             .unwrap();
     assert_eq!(refreshed.upgrade_level, 7);
+    assert_eq!(refreshed.normal_enchant_slot_capacity, 6);
+    assert_eq!(refreshed.special_enchant_slot_capacity, 5);
     refreshed_tx.rollback().await.unwrap();
 
     let mut special_tx = store.pool().begin().await.unwrap();
@@ -118,6 +124,8 @@ async fn structural_state_resolver_is_owner_scoped_exact_and_locks_mutable_state
     assert_eq!(special.creation_roll_numerator, 1);
     assert_eq!(special.creation_roll_denominator, 2);
     assert_eq!(special.upgrade_level, 3);
+    assert_eq!(special.normal_enchant_slot_capacity, 4);
+    assert_eq!(special.special_enchant_slot_capacity, 3);
     special_tx.rollback().await.unwrap();
 }
 
