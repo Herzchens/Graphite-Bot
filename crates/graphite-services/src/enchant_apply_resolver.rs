@@ -121,10 +121,6 @@ pub enum OrdinaryEnchantApplyStateWriterError {
     Preflight(#[from] OrdinaryEnchantApplyPreflightResolverError),
     #[error(transparent)]
     Loadout(#[from] EquippedArmorEnchantLoadoutError),
-    #[error(
-        "the resulting armor enchant state is loadout-scoped but the target is not currently equipped; mutation remains blocked until equip-time loadout validation exists"
-    )]
-    EquippedArmorLoadoutValidationRequired,
     #[error("database error: {0}")]
     Database(Box<sqlx::Error>),
     #[error(
@@ -474,10 +470,10 @@ const fn armor_slot_from_persisted(slot: &str) -> Option<EquipmentSlot> {
 /// safe against current sibling armor while preserving the canonical player-before-item lock order.
 /// Existing loadout conflicts fail closed before mutation.
 ///
-/// Loadout-scoped mutation of an unequipped target remains blocked. The current equip path does not
-/// yet revalidate cross-item enchant conflicts, so allowing such a write would create a later route to
-/// equip an invalid survival-core combination. That restriction is conservative and should be removed
-/// only when equip-time validation is composed into the same authoritative rule.
+/// For a loadout-scoped incoming enchant, an equipped target is validated against current sibling
+/// armor before mutation. An unequipped target may retain dormant survival-core state because the
+/// authoritative Equip path revalidates the complete prospective armor loadout before changing
+/// membership. Existing active-loadout conflicts still fail closed here before any write.
 ///
 /// The return value is only the embedded-state action this primitive actually performed. It does not
 /// return [`EnchantApplyPreview`], whose finished-book-consumption metadata belongs to a future owning
@@ -507,12 +503,9 @@ pub async fn write_standard_finished_book_application_to_owned_ordinary_equipmen
     )
     .await?;
 
-    if preview.resulting_item_requires_equipped_armor_loadout_conflict_validation {
-        if loadout.equipped_slot_for_item(item_id).is_none() {
-            return Err(
-                OrdinaryEnchantApplyStateWriterError::EquippedArmorLoadoutValidationRequired,
-            );
-        }
+    if preview.resulting_item_requires_equipped_armor_loadout_conflict_validation
+        && loadout.equipped_slot_for_item(item_id).is_some()
+    {
         validate_incoming_against_equipped_armor_loadout(&loadout, item_id, incoming_enchant)?;
     }
 
