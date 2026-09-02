@@ -58,8 +58,10 @@ pub use enchant_apply::{
     EnchantSlotOccupancy, ExistingAppliedEnchant, preview_standard_finished_book_application,
 };
 pub use enchant_apply_resolver::{
+    EquippedArmorEnchantLoadout, EquippedArmorEnchantLoadoutError, EquippedArmorEnchantState,
     OrdinaryEnchantApplyPreflightResolverError, OrdinaryEnchantApplyStateWriterError,
     lock_preview_standard_finished_book_application_for_owned_ordinary_equipment,
+    lock_validate_equipped_armor_enchant_loadout_for_owned_target,
     write_standard_finished_book_application_to_owned_ordinary_equipment,
 };
 pub use enchant_appraisal::{
