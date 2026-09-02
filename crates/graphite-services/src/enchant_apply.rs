@@ -309,7 +309,7 @@ fn validate_unlocked_slot_count(
 }
 
 fn validate_enchant_level(enchant: CanonicalEnchant, level: u8) -> Result<(), EnchantApplyError> {
-    let maximum = enchant.max_resulting_level();
+    let maximum = crate::canonical_enchant_max_resulting_level(enchant);
     if level == 0 || level > maximum {
         Err(EnchantApplyError::InvalidEnchantLevel {
             enchant,

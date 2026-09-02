@@ -89,7 +89,7 @@ pub fn removal_terminal_policy_after_removability_check(
     level: u8,
     mode: EnchantRemovalMode,
 ) -> Result<EnchantRemovalTerminalPolicy, EnchantRemovalPolicyError> {
-    let max_level = enchant.max_resulting_level();
+    let max_level = crate::canonical_enchant_max_resulting_level(enchant);
     if level == 0 || level > max_level {
         return Err(EnchantRemovalPolicyError::InvalidResultingLevel {
             enchant,

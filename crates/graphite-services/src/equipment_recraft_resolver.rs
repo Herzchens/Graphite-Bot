@@ -4,7 +4,6 @@ use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::enchant_catalog::CANONICAL_ENCHANT_COUNT;
 use crate::equipment_appraisal::recraft_equipment_appraisal;
 use crate::{
     BaseEquipmentAppraisal, CanonicalBookAppraisal, CanonicalEnchant,
@@ -13,6 +12,7 @@ use crate::{
     EquipmentTier, base_equipment_appraisal, canonical_book_appraisal, embedded_enchant_value,
     enchant_catalog_policy,
 };
+use graphite_core::CANONICAL_ENCHANT_COUNT;
 
 const EMBEDDED_ENCHANT_ROW_QUERY_LIMIT: i64 = CANONICAL_ENCHANT_COUNT as i64 + 1;
 
@@ -244,7 +244,7 @@ pub async fn lock_owned_ordinary_equipment_enhanced_appraisal(
         let enchant = CanonicalEnchant::from_persisted_key(&persisted_key).ok_or_else(|| {
             OrdinaryEquipmentEnhancedResolverError::UnknownEmbeddedEnchantKey(persisted_key.clone())
         })?;
-        let max_level = enchant.max_resulting_level();
+        let max_level = crate::canonical_enchant_max_resulting_level(enchant);
         let level = u8::try_from(stored_level).map_err(|_| {
             OrdinaryEquipmentEnhancedResolverError::InvalidEmbeddedEnchantLevel {
                 enchant,
