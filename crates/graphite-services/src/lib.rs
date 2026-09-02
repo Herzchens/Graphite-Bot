@@ -47,6 +47,7 @@ mod soulbind;
 mod upgrade_appraisal;
 mod upgrade_cost;
 mod upgrade_outcome;
+mod upgrade_state_writer;
 
 pub use action_speed::{
     ActionSpeedBonus, ActionSpeedPolicyError, BASE_REPEATABLE_MANUAL_REWARD_ACTION_COOLDOWN_MILLIS,
@@ -287,4 +288,8 @@ pub use upgrade_outcome::{
     UpgradeBaseOutcomePolicy, UpgradeOutcomePolicyError, UpgradeProbability,
     UpgradeSparklingPreview, UpgradeStabilizePreview, preview_sparkling_upgrade_success,
     preview_stabilize_downgrade_prevention, upgrade_base_outcome_policy,
+};
+pub use upgrade_state_writer::{
+    AppliedUpgradeLevelTransition, ResolvedUpgradeLevelTransition, UpgradeLevelStateWriterError,
+    write_resolved_upgrade_level_transition_to_owned_ordinary_equipment,
 };
