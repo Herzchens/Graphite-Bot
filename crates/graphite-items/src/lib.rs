@@ -70,6 +70,8 @@ pub struct OwnedItemEquipmentStructuralState {
     pub creation_roll_numerator: u64,
     pub creation_roll_denominator: u64,
     pub upgrade_level: u64,
+    pub normal_enchant_slot_capacity: u8,
+    pub special_enchant_slot_capacity: u8,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -893,7 +895,9 @@ pub async fn lock_owned_item_ordinary_equipment_classification(
 ///
 /// The nested item snapshot reuses the exact immutable pinned-definition classification boundary.
 /// Missing structural state fails closed instead of being interpreted as Creation Roll zero or +0.
-/// This resolver neither creates/mutates structural state nor computes Recraft/Enhanced appraisal.
+/// The same locked row also exposes the currently-unlocked Normal/class and Special/universal
+/// enchant slot capacities. This resolver neither creates/mutates structural state nor computes
+/// Recraft/Enhanced appraisal.
 pub async fn lock_owned_item_equipment_structural_state(
     tx: &mut Transaction<'_, Postgres>,
     player_id: Uuid,
@@ -905,7 +909,9 @@ pub async fn lock_owned_item_equipment_structural_state(
         r#"
         SELECT trim_scale(creation_roll_numerator)::TEXT AS creation_roll_numerator,
                trim_scale(creation_roll_denominator)::TEXT AS creation_roll_denominator,
-               trim_scale(upgrade_level)::TEXT AS upgrade_level
+               trim_scale(upgrade_level)::TEXT AS upgrade_level,
+               normal_enchant_slot_capacity,
+               special_enchant_slot_capacity
           FROM item_instance_equipment_structural_state
          WHERE item_instance_id = $1
          FOR UPDATE
@@ -919,12 +925,18 @@ pub async fn lock_owned_item_equipment_structural_state(
     let numerator: String = row.try_get("creation_roll_numerator")?;
     let denominator: String = row.try_get("creation_roll_denominator")?;
     let upgrade_level: String = row.try_get("upgrade_level")?;
+    let normal_enchant_slot_capacity: i16 = row.try_get("normal_enchant_slot_capacity")?;
+    let special_enchant_slot_capacity: i16 = row.try_get("special_enchant_slot_capacity")?;
 
     Ok(OwnedItemEquipmentStructuralState {
         item: classification,
         creation_roll_numerator: parse_structural_u64(&numerator)?,
         creation_roll_denominator: parse_structural_u64(&denominator)?,
         upgrade_level: parse_structural_u64(&upgrade_level)?,
+        normal_enchant_slot_capacity: u8::try_from(normal_enchant_slot_capacity)
+            .map_err(|_| ItemError::InvalidEquipmentStructuralState)?,
+        special_enchant_slot_capacity: u8::try_from(special_enchant_slot_capacity)
+            .map_err(|_| ItemError::InvalidEquipmentStructuralState)?,
     })
 }
 
