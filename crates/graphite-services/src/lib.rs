@@ -3,6 +3,7 @@ mod enchant_apply;
 mod enchant_apply_resolver;
 mod enchant_appraisal;
 mod enchant_catalog;
+mod enchant_combine_base;
 mod enchant_conflict;
 mod enchant_placement;
 mod equipment_appraisal;
@@ -64,6 +65,13 @@ pub use enchant_appraisal::{
 pub use enchant_catalog::{
     BAIT_RACK_MAX_BOOK_LEVEL, CanonicalEnchant, EnchantAcquisitionSource, EnchantCatalogPolicy,
     NORMAL_SHOP_MAX_BOOK_LEVEL, enchant_catalog_policy,
+};
+pub use enchant_combine_base::{
+    ENCHANT_COMBINE_ABSOLUTE_SUCCESS_CAP_BPS, ENCHANT_COMBINE_CATALYST_MULTIPLIER_BPS,
+    ENCHANT_COMBINE_EXTRA_AEXP_UI_CAP_MULTIPLIER, ENCHANT_COMBINE_MAX_TARGET_LEVEL,
+    ENCHANT_COMBINE_MIN_TARGET_LEVEL, ENCHANT_COMBINE_MULTIPLIER_CAP_BPS,
+    EnchantCombineBasePolicyError, EnchantCombineFailureConsumption,
+    StandardEnchantCombineBasePolicy, standard_enchant_combine_base_policy,
 };
 pub use enchant_conflict::{
     ArmorEnchant, EnchantConflictDecision, EnchantConflictScope, FishingRodEnchant, PickaxeEnchant,
