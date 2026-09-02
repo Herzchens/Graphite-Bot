@@ -1,3 +1,4 @@
+mod equip_enchant_guard;
 mod transactional_stack;
 
 pub use transactional_stack::{
@@ -179,6 +180,19 @@ pub enum ItemError {
     InvalidEquipmentStructuralState,
     #[error("equipment state is internally inconsistent")]
     EquipmentIntegrityMismatch,
+    #[error("equipped armor enchant snapshot exceeded the bounded canonical row domain")]
+    EquippedArmorEnchantRowsExceeded,
+    #[error("equipped armor ItemInstance {item_instance_id} contains unknown enchant key {key}")]
+    UnknownEmbeddedEnchantKey { item_instance_id: Uuid, key: String },
+    #[error(
+        "equipping armor would create conflicting loadout enchants {left:?} on {left_item_instance_id} and {right:?} on {right_item_instance_id}"
+    )]
+    EquippedArmorEnchantConflict {
+        left_item_instance_id: Uuid,
+        left: graphite_core::CanonicalEnchant,
+        right_item_instance_id: Uuid,
+        right: graphite_core::CanonicalEnchant,
+    },
 }
 
 impl From<sqlx::Error> for ItemError {
@@ -573,6 +587,14 @@ impl ItemService {
         .await?
         .map(|row| row.try_get("item_instance_id"))
         .transpose()?;
+
+        equip_enchant_guard::lock_validate_prospective_equipped_armor_enchant_conflicts(
+            &mut tx,
+            player.player_id,
+            item_id,
+            &slot,
+        )
+        .await?;
 
         if let Some(displaced_id) = displaced {
             sqlx::query("UPDATE item_instances SET location = 'TOOL_LOCKER' WHERE id = $1")
