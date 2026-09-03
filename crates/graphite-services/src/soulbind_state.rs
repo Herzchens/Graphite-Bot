@@ -20,6 +20,8 @@ pub enum PersistedSoulBindState {
 pub struct OrdinaryEquipmentSoulBindStateSnapshot {
     pub equipment: OrdinaryEquipmentEnhancedAppraisal,
     pub state: PersistedSoulBindState,
+    pub is_favorite: bool,
+    pub is_protected: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -58,18 +60,21 @@ impl From<sqlx::Error> for OrdinaryEquipmentSoulBindStateError {
     }
 }
 
-/// Locks authoritative owned ordinary-equipment appraisal and its optional SoulBind child state.
+/// Locks authoritative owned ordinary-equipment appraisal, typed item control flags, and its optional
+/// SoulBind child state.
 ///
 /// Lock order is `item -> structural state -> embedded enchant rows -> SoulBind child`. The parent
-/// ItemInstance is locked before the optional child lookup. Migration 0019 requires every SoulBind
-/// child INSERT/UPDATE to acquire that same parent lock first, so an absent child row observed here
-/// is serialized and authoritative rather than an insert race.
+/// ItemInstance is locked before the typed Favorite/Protected read and optional child lookup.
+/// Migration 0019 requires every SoulBind child INSERT/UPDATE to acquire that same parent lock first,
+/// so an absent child row observed here is serialized and authoritative rather than an insert race.
+/// The control flags are read from the typed ItemInstance columns introduced by migration 0020;
+/// similarly named keys in generic `state JSONB` are not an authority.
 ///
 /// This resolver accepts only the canonical SoulBind equipment tiers by reusing
 /// [`soulbind_binding_package`] instead of defining a second tier allowlist. It deliberately does not
-/// prove account Rebirth, SoulBind Rune/material ownership, Money/AEXP affordability,
-/// Protected/Favorite state, or any command authorization. Those belong to the future owning
-/// SoulBind lifecycle.
+/// prove account Rebirth, SoulBind Rune/material ownership, Money/AEXP affordability, decide whether
+/// Favorite/Protected satisfy an operation-specific precondition, or perform command authorization.
+/// Those belong to the future owning SoulBind lifecycle.
 pub async fn lock_owned_ordinary_equipment_soulbind_state(
     tx: &mut Transaction<'_, Postgres>,
     player_id: Uuid,
@@ -78,6 +83,22 @@ pub async fn lock_owned_ordinary_equipment_soulbind_state(
     let equipment =
         lock_owned_ordinary_equipment_enhanced_appraisal(tx, player_id, item_id).await?;
     soulbind_binding_package(equipment.recraft.tier)?;
+
+    let control_row = sqlx::query(
+        r#"
+        SELECT is_favorite, is_protected
+          FROM item_instances
+         WHERE id = $1
+           AND owner_player_id = $2
+        "#,
+    )
+    .bind(item_id)
+    .bind(player_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(OrdinaryEquipmentSoulBindStateError::LockedStateMismatch)?;
+    let is_favorite: bool = control_row.try_get("is_favorite")?;
+    let is_protected: bool = control_row.try_get("is_protected")?;
 
     let row = sqlx::query(
         r#"
@@ -106,7 +127,12 @@ pub async fn lock_owned_ordinary_equipment_soulbind_state(
         }
     };
 
-    Ok(OrdinaryEquipmentSoulBindStateSnapshot { equipment, state })
+    Ok(OrdinaryEquipmentSoulBindStateSnapshot {
+        equipment,
+        state,
+        is_favorite,
+        is_protected,
+    })
 }
 
 /// Writes only the persisted consequence of an already-authorized SoulBind binding.
