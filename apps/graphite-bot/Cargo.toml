@@ -12,6 +12,7 @@ dotenvy.workspace = true
 graphite-core = { path = "../../crates/graphite-core" }
 graphite-economy = { path = "../../crates/graphite-economy" }
 graphite-items = { path = "../../crates/graphite-items" }
+graphite-services = { path = "../../crates/graphite-services" }
 graphite-store = { path = "../../crates/graphite-store" }
 hex.workspace = true
 serenity.workspace = true
