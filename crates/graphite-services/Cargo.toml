@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 chrono.workspace = true
 graphite-core = { path = "../graphite-core" }
+graphite-economy = { path = "../graphite-economy" }
 graphite-items = { path = "../graphite-items" }
 serde.workspace = true
 serde_json.workspace = true
