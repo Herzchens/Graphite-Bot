@@ -44,6 +44,7 @@ mod smelting_context;
 mod smelting_runtime;
 mod smelting_terminal;
 mod soulbind;
+mod soulbind_bind_preflight;
 mod soulbind_state;
 mod soulbind_unbind_preflight;
 mod upgrade_appraisal;
@@ -277,6 +278,10 @@ pub use soulbind::{
     SoulBindBindingPreview, SoulBindPolicyError, SoulBindTierComponent, SoulBindTopUpPreview,
     SoulBindUnbindPreview, preview_soulbind_binding, preview_soulbind_top_up,
     preview_soulbind_unbind, soulbind_binding_package,
+};
+pub use soulbind_bind_preflight::{
+    OrdinarySoulBindBindPreflight, OrdinarySoulBindBindPreflightError,
+    lock_preview_soulbind_bind_for_owned_ordinary_equipment,
 };
 pub use soulbind_state::{
     AppliedSoulBindStateTransition, OrdinaryEquipmentSoulBindStateError,
