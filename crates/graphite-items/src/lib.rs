@@ -1,9 +1,14 @@
 mod equip_enchant_guard;
 mod transactional_stack;
+mod transactional_stack_consumption;
 
 pub use transactional_stack::{
     StackDeliveryMutationError, StackDeliveryMutationReceipt, StackDeliveryMutationRequest,
     apply_stack_delivery_mutation,
+};
+pub use transactional_stack_consumption::{
+    StackConsumptionMutationError, StackConsumptionMutationReceipt,
+    StackConsumptionMutationRequest, apply_stack_consumption_mutation,
 };
 
 use graphite_core::{OperationId, RootSeed};
