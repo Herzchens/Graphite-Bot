@@ -26,6 +26,13 @@ impl ActivityXpMutationKind {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LockedActivityXpSettlementContext {
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub activity_xp_points: i64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ActivityXpMutationRequest {
     pub operation_id: Uuid,
@@ -96,6 +103,38 @@ struct ActivityMutationPayload {
     provenance: Value,
 }
 
+/// Acquires the canonical progression locks before a caller resolves a later Activity EXP mutation
+/// whose final amount is not known until item/service state has also been locked.
+///
+/// Lock order is `operation -> player -> progression`. The returned value is only a snapshot;
+/// PostgreSQL retains the row locks on the supplied transaction until commit/rollback. A caller may
+/// therefore enter later item/service locks and finally call [`apply_activity_xp_mutation`] in the
+/// same transaction without creating an `item -> progression` lock-order inversion.
+///
+/// The owning operation must still be `PENDING`. This prelock deliberately does not inspect
+/// `progression_events`: composite operations may already own unrelated progression sub-mutations,
+/// and stable `mutation_key` replay/conflict semantics remain exclusively owned by
+/// [`apply_activity_xp_mutation`]. A higher-level committed-operation replay must be resolved before
+/// entering this new-settlement path.
+pub async fn lock_activity_xp_settlement_context(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+    player_id: Uuid,
+) -> Result<LockedActivityXpSettlementContext, ActivityXpError> {
+    let (operation_player_id, operation_state) = lock_activity_operation(tx, operation_id).await?;
+    ensure_operation_player(operation_player_id, player_id)?;
+    if operation_state != "PENDING" {
+        return Err(ActivityXpError::OperationTerminal(operation_state));
+    }
+
+    let activity_xp_points = lock_active_activity_xp_balance(tx, player_id).await?;
+    Ok(LockedActivityXpSettlementContext {
+        operation_id,
+        player_id,
+        activity_xp_points,
+    })
+}
+
 /// Atomically settles one already-effective integer Activity EXP mutation inside an
 /// owning gameplay/service transaction.
 ///
@@ -107,26 +146,20 @@ struct ActivityMutationPayload {
 ///
 /// The caller must resolve/own `request.operation_id` first. Lock order is
 /// operation -> player -> progression, matching Graphite's normal mutation order.
-/// The stable `mutation_key` makes a logical sub-mutation idempotent inside a
-/// composite operation, so a retry can return the same receipt without applying
-/// the delta twice. Outbox settlement remains the responsibility of the owning
-/// operation.
+/// If mutable item/service state must be locked before the final Activity EXP amount is known, the
+/// caller should invoke [`lock_activity_xp_settlement_context`] before those later locks and keep the
+/// same transaction open. The stable `mutation_key` makes a logical sub-mutation idempotent inside a
+/// composite operation, so a retry can return the same receipt without applying the delta twice.
+/// Outbox settlement remains the responsibility of the owning operation.
 pub async fn apply_activity_xp_mutation(
     tx: &mut Transaction<'_, Postgres>,
     request: &ActivityXpMutationRequest,
 ) -> Result<ActivityXpMutationReceipt, ActivityXpError> {
     validate_input(request)?;
 
-    let operation = sqlx::query("SELECT player_id, state FROM operations WHERE id = $1 FOR UPDATE")
-        .bind(request.operation_id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .ok_or(ActivityXpError::OperationNotFound)?;
-    let operation_player_id: Option<Uuid> = operation.try_get("player_id")?;
-    if operation_player_id.is_some_and(|stored| stored != request.player_id) {
-        return Err(ActivityXpError::OperationPlayerMismatch);
-    }
-    let operation_state: String = operation.try_get("state")?;
+    let (operation_player_id, operation_state) =
+        lock_activity_operation(tx, request.operation_id).await?;
+    ensure_operation_player(operation_player_id, request.player_id)?;
 
     if let Some(row) = sqlx::query(
         r#"
@@ -149,26 +182,7 @@ pub async fn apply_activity_xp_mutation(
         return Err(ActivityXpError::OperationTerminal(operation_state));
     }
 
-    let row = sqlx::query(
-        r#"
-        SELECT p.status, g.activity_xp_points
-          FROM players p
-          JOIN player_progression g ON g.player_id = p.id
-         WHERE p.id = $1
-           AND p.status <> 'DELETED'
-         FOR UPDATE OF p, g
-        "#,
-    )
-    .bind(request.player_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(ActivityXpError::PlayerNotFound)?;
-    let status: String = row.try_get("status")?;
-    if status != "ACTIVE" {
-        return Err(ActivityXpError::AccountFrozen(status));
-    }
-
-    let points_before: i64 = row.try_get("activity_xp_points")?;
+    let points_before = lock_active_activity_xp_balance(tx, request.player_id).await?;
     let before = activity_progress(points_before)?;
     let points_after = activity_points_after(points_before, request.kind, request.amount)?;
     let after = activity_progress(points_after)?;
@@ -237,6 +251,53 @@ fn validate_input(request: &ActivityXpMutationRequest) -> Result<(), ActivityXpE
         return Err(ActivityXpError::InvalidProvenance);
     }
     Ok(())
+}
+
+async fn lock_activity_operation(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+) -> Result<(Option<Uuid>, String), ActivityXpError> {
+    let operation = sqlx::query("SELECT player_id, state FROM operations WHERE id = $1 FOR UPDATE")
+        .bind(operation_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or(ActivityXpError::OperationNotFound)?;
+    Ok((operation.try_get("player_id")?, operation.try_get("state")?))
+}
+
+fn ensure_operation_player(
+    operation_player_id: Option<Uuid>,
+    player_id: Uuid,
+) -> Result<(), ActivityXpError> {
+    if operation_player_id.is_some_and(|stored| stored != player_id) {
+        return Err(ActivityXpError::OperationPlayerMismatch);
+    }
+    Ok(())
+}
+
+async fn lock_active_activity_xp_balance(
+    tx: &mut Transaction<'_, Postgres>,
+    player_id: Uuid,
+) -> Result<i64, ActivityXpError> {
+    let row = sqlx::query(
+        r#"
+        SELECT p.status, g.activity_xp_points
+          FROM players p
+          JOIN player_progression g ON g.player_id = p.id
+         WHERE p.id = $1
+           AND p.status <> 'DELETED'
+         FOR UPDATE OF p, g
+        "#,
+    )
+    .bind(player_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(ActivityXpError::PlayerNotFound)?;
+    let status: String = row.try_get("status")?;
+    if status != "ACTIVE" {
+        return Err(ActivityXpError::AccountFrozen(status));
+    }
+    Ok(row.try_get("activity_xp_points")?)
 }
 
 fn activity_points_after(
