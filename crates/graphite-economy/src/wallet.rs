@@ -8,6 +8,13 @@ use uuid::Uuid;
 const WALLET_SPEND_POLICY_VERSION: i32 = 1;
 const WALLET_SPEND_LEDGER_KIND: &str = "WALLET_SPEND";
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LockedWalletSpendContext {
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub wallet: i64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletSpendRequest {
     pub operation_id: Uuid,
@@ -72,13 +79,49 @@ struct WalletSpendLedgerProvenance {
     receipt: WalletSpendReceipt,
 }
 
+/// Acquires the canonical locks needed before a caller resolves a later Wallet-denominated
+/// service cost whose amount is not known until item/service state has been locked.
+///
+/// Lock order is `operation -> player/balance`. The returned value is a snapshot, not the lock
+/// owner: PostgreSQL retains the row locks on the supplied transaction until commit/rollback.
+/// Callers may then acquire item/service locks and finally invoke [`apply_wallet_spend`] in the
+/// same transaction without creating an `item -> balance` lock-order inversion.
+///
+/// This boundary is for a *new* monetary mutation only. The owning operation must still be
+/// `PENDING` and must not already own a ledger transaction. Replay of a completed Wallet spend is
+/// handled by [`apply_wallet_spend`] itself; a higher-level committed operation should be replayed
+/// by its operation owner before re-entering a new-settlement path.
+pub async fn lock_new_wallet_spend_context(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+    player_id: Uuid,
+) -> Result<LockedWalletSpendContext, WalletSpendError> {
+    let (operation_player_id, operation_state) = lock_wallet_operation(tx, operation_id).await?;
+    ensure_operation_player(operation_player_id, player_id)?;
+    if operation_state != "PENDING" {
+        return Err(WalletSpendError::OperationTerminal(operation_state));
+    }
+    if lock_existing_ledger(tx, operation_id).await?.is_some() {
+        return Err(WalletSpendError::MutationConflict);
+    }
+
+    let wallet = lock_active_wallet_balance(tx, player_id).await?;
+    Ok(LockedWalletSpendContext {
+        operation_id,
+        player_id,
+        wallet,
+    })
+}
+
 /// Atomically settles one already-resolved Wallet-only Money sink inside an owning
 /// gameplay/service transaction.
 ///
 /// The caller must resolve and own `request.operation_id` first. Lock order is
 /// `operation -> player/balance`; later item/service locks may follow in the same
-/// transaction. The operation remains `PENDING` and outbox settlement remains the
-/// responsibility of the owning lifecycle.
+/// transaction. When a caller must resolve the spend amount from mutable item/service state, it
+/// should call [`lock_new_wallet_spend_context`] first so balance ownership precedes those later
+/// locks. The operation remains `PENDING` and outbox settlement remains the responsibility of the
+/// owning lifecycle.
 ///
 /// This primitive deliberately never auto-pulls from Bank. Graphite only permits a
 /// Bank pull when the owning action explicitly authorizes it, and that pull must use
@@ -98,29 +141,11 @@ pub async fn apply_wallet_spend(
 ) -> Result<WalletSpendReceipt, WalletSpendError> {
     validate_request(request)?;
 
-    let operation = sqlx::query("SELECT player_id, state FROM operations WHERE id = $1 FOR UPDATE")
-        .bind(request.operation_id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .ok_or(WalletSpendError::OperationNotFound)?;
-    let operation_player_id: Option<Uuid> = operation.try_get("player_id")?;
-    if operation_player_id.is_some_and(|stored| stored != request.player_id) {
-        return Err(WalletSpendError::OperationPlayerMismatch);
-    }
-    let operation_state: String = operation.try_get("state")?;
+    let (operation_player_id, operation_state) =
+        lock_wallet_operation(tx, request.operation_id).await?;
+    ensure_operation_player(operation_player_id, request.player_id)?;
 
-    if let Some(row) = sqlx::query(
-        r#"
-        SELECT id, kind, provenance
-          FROM ledger_transactions
-         WHERE operation_id = $1
-         FOR UPDATE
-        "#,
-    )
-    .bind(request.operation_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    {
+    if let Some(row) = lock_existing_ledger(tx, request.operation_id).await? {
         return replay_wallet_spend(tx, row, request).await;
     }
 
@@ -128,26 +153,7 @@ pub async fn apply_wallet_spend(
         return Err(WalletSpendError::OperationTerminal(operation_state));
     }
 
-    let player = sqlx::query(
-        r#"
-        SELECT p.status, b.wallet
-          FROM players p
-          JOIN player_balances b ON b.player_id = p.id
-         WHERE p.id = $1
-           AND p.status <> 'DELETED'
-         FOR UPDATE OF p, b
-        "#,
-    )
-    .bind(request.player_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(WalletSpendError::PlayerNotFound)?;
-    let status: String = player.try_get("status")?;
-    if status != "ACTIVE" {
-        return Err(WalletSpendError::AccountFrozen(status));
-    }
-
-    let wallet_before: i64 = player.try_get("wallet")?;
+    let wallet_before = lock_active_wallet_balance(tx, request.player_id).await?;
     if wallet_before < request.amount {
         return Err(WalletSpendError::InsufficientWallet {
             available: wallet_before,
@@ -234,6 +240,70 @@ fn validate_request(request: &WalletSpendRequest) -> Result<(), WalletSpendError
         return Err(WalletSpendError::InvalidProvenance);
     }
     Ok(())
+}
+
+async fn lock_wallet_operation(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+) -> Result<(Option<Uuid>, String), WalletSpendError> {
+    let operation = sqlx::query("SELECT player_id, state FROM operations WHERE id = $1 FOR UPDATE")
+        .bind(operation_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or(WalletSpendError::OperationNotFound)?;
+    Ok((operation.try_get("player_id")?, operation.try_get("state")?))
+}
+
+fn ensure_operation_player(
+    operation_player_id: Option<Uuid>,
+    player_id: Uuid,
+) -> Result<(), WalletSpendError> {
+    if operation_player_id.is_some_and(|stored| stored != player_id) {
+        return Err(WalletSpendError::OperationPlayerMismatch);
+    }
+    Ok(())
+}
+
+async fn lock_existing_ledger(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+) -> Result<Option<sqlx::postgres::PgRow>, WalletSpendError> {
+    Ok(sqlx::query(
+        r#"
+        SELECT id, kind, provenance
+          FROM ledger_transactions
+         WHERE operation_id = $1
+         FOR UPDATE
+        "#,
+    )
+    .bind(operation_id)
+    .fetch_optional(&mut **tx)
+    .await?)
+}
+
+async fn lock_active_wallet_balance(
+    tx: &mut Transaction<'_, Postgres>,
+    player_id: Uuid,
+) -> Result<i64, WalletSpendError> {
+    let player = sqlx::query(
+        r#"
+        SELECT p.status, b.wallet
+          FROM players p
+          JOIN player_balances b ON b.player_id = p.id
+         WHERE p.id = $1
+           AND p.status <> 'DELETED'
+         FOR UPDATE OF p, b
+        "#,
+    )
+    .bind(player_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(WalletSpendError::PlayerNotFound)?;
+    let status: String = player.try_get("status")?;
+    if status != "ACTIVE" {
+        return Err(WalletSpendError::AccountFrozen(status));
+    }
+    Ok(player.try_get("wallet")?)
 }
 
 async fn replay_wallet_spend(
