@@ -11,9 +11,12 @@ use anyhow::{Context as _, Result, bail};
 use graphite_core::{CommandId, IdentityFingerprint, parse_text_command};
 use graphite_economy::{
     BANK_BONUS_PRINCIPAL_TRANCHE, BANK_MIN_WITHDRAWAL, BankError, BankInterestError,
-    BankInterestService, BankService,
+    BankInterestService, BankService, WalletSpendError,
 };
 use graphite_items::{ItemError, ItemService, ItemView};
+use graphite_services::{
+    OrdinarySoulBindUnbindPreflightError, SoulBindUnbindLifecycleError, SoulBindUnbindService,
+};
 use graphite_store::{PgStore, StoreError, TosDocument};
 use serenity::{
     Client,
@@ -41,6 +44,7 @@ struct App {
     bank: BankService,
     bank_interest: BankInterestService,
     items: ItemService,
+    soulbind_unbind: SoulBindUnbindService,
     identity_hmac_key: Arc<Vec<u8>>,
 }
 
@@ -95,7 +99,7 @@ impl App {
     async fn execute(&self, request: CommandRequest) -> Reply {
         match request.id {
             CommandId::Help => Reply::private(
-                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions, /itembag, /catchbag, /locker, /equipment, /equip, /unequip, /item. Text prefixes: g, graphite, or a bot mention. Storage reads and equipment moves are live; discard/Trash Recovery and unfinished gameplay systems remain unavailable.",
+                "Active commands: /help, /tos, /register, /profile, /balance, /bank, /transactions, /itembag, /catchbag, /locker, /equipment, /equip, /unequip, /item, /unbind. Text prefixes: g, graphite, or a bot mention. Storage reads, equipment moves, and SoulBind removal are live; discard/Trash Recovery and unfinished gameplay systems remain unavailable.",
             ),
             CommandId::Tos => self.tos_reply().await,
             CommandId::Register => {
@@ -140,6 +144,14 @@ impl App {
             CommandId::Item => {
                 self.item_reply(request.discord_user_id, request.payload)
                     .await
+            }
+            CommandId::Unbind => {
+                self.unbind_reply(
+                    request.discord_user_id,
+                    request.external_request_key,
+                    request.payload,
+                )
+                .await
             }
         }
     }
@@ -523,6 +535,32 @@ impl App {
         }
     }
 
+    async fn unbind_reply(
+        &self,
+        discord_user_id: u64,
+        external_request_key: String,
+        payload: CommandPayload,
+    ) -> Reply {
+        let CommandPayload::ItemId(Some(item_id)) = payload else {
+            return Reply::private("Provide a valid item UUID. Example: `g unbind <uuid>`.");
+        };
+        match self
+            .soulbind_unbind
+            .unbind(discord_user_id, item_id, &external_request_key)
+            .await
+        {
+            Ok(receipt) => Reply::private(format!(
+                "SoulBind removed from `{}`. Fee: {} Money. Wallet: {}. Rebind available at {}. Operation `{}`.",
+                item_id,
+                receipt.money_fee,
+                receipt.wallet_after,
+                receipt.rebind_not_before,
+                receipt.operation_id
+            )),
+            Err(error) => soulbind_unbind_error_reply(error),
+        }
+    }
+
     async fn refresh_bank_interest(&self, discord_user_id: u64) -> std::result::Result<(), Reply> {
         match self.bank_interest.accrue_interest(discord_user_id).await {
             Ok(_) | Err(BankInterestError::PlayerNotFound) => Ok(()),
@@ -592,6 +630,39 @@ fn item_error_reply(error: ItemError) -> Reply {
         Reply::private("Unable to complete that item/storage request right now.")
     } else {
         Reply::private(format!("Item/storage request rejected: {error}"))
+    }
+}
+
+fn soulbind_unbind_error_reply(error: SoulBindUnbindLifecycleError) -> Reply {
+    match &error {
+        SoulBindUnbindLifecycleError::PlayerNotFound => {
+            Reply::private("No Graphite account exists yet. Use /register after reading /tos.")
+        }
+        SoulBindUnbindLifecycleError::Settlement(
+            OrdinarySoulBindUnbindPreflightError::NotSoulBound,
+        ) => Reply::private("That item is not currently SoulBound."),
+        SoulBindUnbindLifecycleError::Settlement(
+            OrdinarySoulBindUnbindPreflightError::ControlFlagsSet { .. },
+        ) => Reply::private(
+            "Clear both Favorite and Protected on that item before removing SoulBind.",
+        ),
+        SoulBindUnbindLifecycleError::Settlement(OrdinarySoulBindUnbindPreflightError::Wallet(
+            WalletSpendError::InsufficientWallet {
+                available,
+                requested,
+            },
+        )) => Reply::private(format!(
+            "SoulBind removal requires {requested} Money in Wallet; only {available} is available. Bank is not auto-pulled for this fee.",
+        )),
+        SoulBindUnbindLifecycleError::Settlement(OrdinarySoulBindUnbindPreflightError::Wallet(
+            WalletSpendError::AccountFrozen(status),
+        )) => Reply::private(format!(
+            "SoulBind removal is unavailable while the account status is {status}.",
+        )),
+        _ => {
+            error!(%error, "Graphite SoulBind unbind persistence/integrity failure");
+            Reply::private("Unable to complete that SoulBind unbind request right now.")
+        }
     }
 }
 
@@ -703,7 +774,7 @@ fn slash_payload(id: CommandId, options: &[serenity::all::CommandDataOption]) ->
             };
             CommandPayload::Bank(request)
         }
-        CommandId::Equip | CommandId::Unequip | CommandId::Item => {
+        CommandId::Equip | CommandId::Unequip | CommandId::Item | CommandId::Unbind => {
             let item_id = options.iter().find_map(|option| {
                 if option.name == "item_id"
                     && let CommandDataOptionValue::String(value) = &option.value
@@ -736,7 +807,7 @@ fn text_payload(id: CommandId, args: &str) -> CommandPayload {
             }
         }
         CommandId::Bank => CommandPayload::Bank(parse_text_bank_request(args)),
-        CommandId::Equip | CommandId::Unequip | CommandId::Item => {
+        CommandId::Equip | CommandId::Unequip | CommandId::Item | CommandId::Unbind => {
             CommandPayload::ItemId(parse_single_uuid(args))
         }
         _ => CommandPayload::None,
@@ -832,6 +903,10 @@ async fn register_commands(ctx: &Context, dev_guild_id: Option<u64>) -> Result<(
         item_id_command("equip", "Equip an item instance from Tool Locker"),
         item_id_command("unequip", "Move an equipped item instance to Tool Locker"),
         item_id_command("item", "Inspect one owned item instance"),
+        item_id_command(
+            "unbind",
+            "Remove ordinary SoulBind from an owned item instance",
+        ),
     ];
 
     if let Some(guild_id) = dev_guild_id {
@@ -975,6 +1050,7 @@ async fn main() -> Result<()> {
         bank: BankService::new(store.clone()),
         bank_interest,
         items: ItemService::new(store.clone()),
+        soulbind_unbind: SoulBindUnbindService::new(store.pool().clone()),
         store,
         identity_hmac_key: Arc::new(settings.identity_hmac_key),
     });

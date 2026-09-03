@@ -14,6 +14,7 @@ pub enum CommandId {
     Equip,
     Unequip,
     Item,
+    Unbind,
 }
 
 impl CommandId {
@@ -62,6 +63,8 @@ impl CommandId {
             Some(Self::Unequip)
         } else if token.eq_ignore_ascii_case("item") {
             Some(Self::Item)
+        } else if token.eq_ignore_ascii_case("unbind") || token.eq_ignore_ascii_case("ub") {
+            Some(Self::Unbind)
         } else {
             None
         }
@@ -148,6 +151,8 @@ mod tests {
             ("gcb", CommandId::CatchBag),
             ("g tools", CommandId::Locker),
             ("ggear", CommandId::Equipment),
+            ("gunbind", CommandId::Unbind),
+            ("g ub", CommandId::Unbind),
         ];
 
         for (input, expected) in cases {
@@ -188,5 +193,10 @@ mod tests {
             parse_text_command("g equip 018f0f86-1234-7abc-8def-1234567890ab", 42, None).unwrap();
         assert_eq!(equip.id, CommandId::Equip);
         assert_eq!(equip.args, "018f0f86-1234-7abc-8def-1234567890ab");
+
+        let unbind =
+            parse_text_command("g unbind 018f0f86-1234-7abc-8def-1234567890ab", 42, None).unwrap();
+        assert_eq!(unbind.id, CommandId::Unbind);
+        assert_eq!(unbind.args, "018f0f86-1234-7abc-8def-1234567890ab");
     }
 }
