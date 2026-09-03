@@ -1,166 +1,216 @@
 # Implementation status
 
-This file tracks implementation against the build-order recommendation in the Graphite master specification.
+This file is an evidence-based snapshot of what the repository currently implements. It is **not** gameplay/design authority. When this file conflicts with a newer explicit owner correction, the newest normative Master Spec, `docs/PLAN_DEVIATIONS.md`, or executable repository/schema/test evidence, follow the authority order in `AGENTS.md`.
 
-| Phase | Scope | Status |
+Status sync baseline: runtime/code state on `main` at `5743ce19236dd68be36b40cf07262142ab257b7d` (`feat(bot): expose SoulBind unbind command`). This documentation-only sync does not change runtime semantics.
+
+## Build-order status
+
+| Phase | Scope | Current repository status |
 | --- | --- | --- |
-| 1 | Identity / ToS / global player / PostgreSQL foundations | Implemented foundation |
-| 2 | Ledger / operations / idempotency / outbox | Bank deposit/withdraw and automatic interest-accrual slices implemented with immutable ledger settlement, FIFO lots, canonical withdrawal fees, fixed-point interest remainder, idempotency, and outbox; other economy mutations pending |
-| 3 | Item definitions / instances / storage / equipment | Version-pinned item definitions with immutable ordinary-equipment classification, owner-scoped transaction-composable ItemInstance→pinned-definition classification resolution, typed normalized equipment structural-state persistence for Creation Roll/+N, typed embedded-enchant identity/resulting-level persistence, Item Bag stack storage, CatchBag weight accounting, pending delivery, transaction-composable keyed exact-version stack delivery, Tool Locker, equipment reads, inspect, equip, and unequip implemented; storage-capacity purchases, Trash Recovery/discard, and later lifecycle services pending |
-| 4 | Fixed NPC price/content registry | Frozen versioned resource lattice, NPC-buy/appraisal separation, Shop availability/stock classes, processed-metal formula regression, canonical alloy recipes, v2 ordinary-smelting mappings, and v3 advanced-Forge stack mappings implemented; live Shop/NPC transactions remain pending their service slice |
-| 5 | Account / Activity progression | Canonical Account XP curve/cap and fixed level Money settlement, one authoritative spendable Activity EXP pool with derived Minecraft-style level math, transaction-composable keyed Activity EXP grant/spend/loss settlement, fixed-point Rebirth utility formulas, and idempotent Rebirth reset are implemented in the progression domain; Discord command wiring and live chat/gameplay/Quest source adapters remain pending |
-| 6 | Repair / Forge / Smelt / Enchant / +N / SoulBind | Shared equipment base-appraisal, embedded-enchant appraisal, exact +N appraisal factor plus Creation Roll/Recraft/final Enhanced appraisal composition, typed normalized Creation Roll/+N structural persistence, typed embedded-enchant identity/resulting-level persistence, exact persisted enchant-key/catalog mapping with per-enchant resulting-level validation, owner-scoped ordinary ItemInstance→RecraftAppraisal and ItemInstance→EnhancedCanonicalAppraisal resolution, pure +N outcome, ordinary fresh-Forge/advanced Forge/Slot Orb/SoulBind policy previews, pure Repair economic preview/cancel-refund policy, Smelting policy/preview, persistent per-job reservation ownership, immutable tickless runtime snapshots, pure freeze-aware terminal consequence planning, and a transaction-composable pending-safe stack-delivery primitive implemented; live structural/enchant writers and +N/Enchant/SoulBind/Forge/Repair lifecycles, slot-capacity/conflict mutation enforcement, authoritative Hard Freeze overlap tracking, production resource definitions/bridge, recipe/output identity, atomic terminal Smelting settlement, live Confirm/commands, and remaining service systems are pending |
-| 7 | Fishing | Pending |
-| 8 | Mining / depletion | Pending |
-| 9 | Combat / monsters / death protection | Pending |
-| 10 | Quest / stats / achievements / profile | Profile foundation only; remainder pending |
-| 11 | Market / Trade / Pay | Pending |
-| 12 | Clan | Pending |
-| 13 | Automation | Pending |
-| 14 | Events / modifier registry | Pending |
-| 15 | Anti-cheat / CAPTCHA / operator case tools | Pending |
-| 16 | Dedicated design-gated systems | Must remain unavailable until individually approved |
+| 1 | Identity / ToS / global player / PostgreSQL foundations | Implemented foundation. Global player identity, explicit versioned ToS consent, deletion-cooldown fingerprinting, migrations, and PostgreSQL-backed startup are present. |
+| 2 | Ledger / operations / idempotency / outbox | Implemented core foundation. Operations, request hashes, RNG roots, immutable balanced Money ledger settlement, transactional outbox, Bank deposit/withdraw, Bank interest, and transaction-composable Wallet spend exist. Additional future economy domains still need their owning lifecycles. |
+| 3 | Item definitions / instances / storage / equipment | Strong implemented foundation. Immutable pinned ItemDefinition versions, explicit ordinary-equipment classification, ItemInstance ownership, Item Bag/CatchBag/Tool Locker/equipment, pending delivery, structural Creation Roll/+N state, enchant slot capacities, embedded enchants, typed Favorite/Protected flags, and persisted SoulBind state are present. Equip/unequip are live and equip validates the currently implemented equipped-armor enchant conflict family. |
+| 4 | Fixed NPC price/content registry | Implemented policy/content foundation through registry v3, including ordinary smelting and advanced Forge stack mappings. Live Shop/NPC liquidation and generic Forge transaction commands are not yet implemented. |
+| 5 | Account / Activity progression | Implemented progression foundation. Account XP curve/rewards, authoritative spendable Activity EXP, transaction-composable AEXP grant/spend/loss and settlement prelock, Rebirth persistence/reset, and fixed-point utility formulas exist. General live progression/chat/gameplay source adapters and progression commands remain pending. |
+| 6 | Repair / Forge / Smelt / Enchant / +N / SoulBind | **In progress, substantially implemented.** Authoritative appraisal/state foundations and multiple transaction-composable writers now exist. SoulBind **unbind** has a complete atomic/idempotent/auditable lifecycle and is exposed through Discord as `/unbind` / `ub`. Full SoulBind binding, live Enchant/Slot Orb/+N/Forge/Repair/Smelt lifecycles, and their commands remain incomplete for the blockers listed below. |
+| 7 | Fishing | Policy foundation begun: species/area/variant/drop tables, bait behavior/consumption plan, capability/over-cap routing, multicatch/multi-treasure, durability/Unbreaking-X, Gold rod, book pool, AEXP and related pure policy pieces exist. No authoritative persistent fishing operation/lifecycle or live `/fish` command yet. |
+| 8 | Mining / depletion | Pending stateful implementation. |
+| 9 | Combat / monsters / death protection | Pending stateful implementation. |
+| 10 | Quest / stats / achievements / profile | Basic profile surface exists; the broader Quest/stats/achievements system remains pending. |
+| 11 | Market / Trade / Pay | Pending. |
+| 12 | Clan | Pending. |
+| 13 | Automation | Pending. |
+| 14 | Events / modifier registry | Pending. |
+| 15 | Anti-cheat / CAPTCHA / operator case tools | Pending. |
+| 16 | Dedicated design-gated systems | Not active implementation work until their design gate is cleared. Casino and Warden are currently Deferred by explicit owner correction; Deferred systems do not block non-deferred implementation work. |
 
-## Deliberately unavailable
+## Live Discord surface
 
-The current executable does not register slash commands for unfinished gameplay systems. `/discard` remains unavailable because the authoritative source names Trash Recovery but does not define enough recovery/expiry behavior for this implementation slice to invent a live lifecycle. Storage-capacity purchases remain pending even though the baseline capacity curves are represented. The content registry does not activate `/shop`, NPC liquidation, stock mutation, or `/forge`: it freezes canonical policy data first, while exact transaction/service behavior is implemented in its later owning slice. `/enchant`, live +N attempts, Slot Orb application, and SoulBind binding/unbinding remain unavailable even though finite pure policy pieces are represented. Resource catalog entries are not prematurely activated as stack ItemDefinitions because the specification requires definition-specific stack caps but does not freeze numeric caps for these new resource definitions.
+The executable currently registers:
 
-Phase 6 now has pure equipment appraisal policy for the frozen base table, embedded-enchant contribution, +N appraisal factor, Creation Roll, and final structural/enhanced composition, plus owner-scoped ordinary stateful resolution through the full enhanced value. Ordinary equipment resolves the frozen `BaseEquipmentAppraisal = round100(TierAnchor × SlotFactor)` table with exact non-negative integer/rational arithmetic and round-half-up semantics. A supplied definition-specific `base_appraisal` override takes exact precedence and is not rounded again. Embedded enchants are valued from their canonical identity-derived acquisition/value class plus resulting Level I–X using the frozen `60,000 × AcquisitionWeight × LevelMultiplier` table, then combined with `round_half_up(0.70 × ΣBookAppraisal)`. +N factor policy evaluates the frozen `MainMult(N) = 1 + 0.03238N + 0.000952N²` and `UpgradeFactor(N) = 1 + 0.55 × (MainMult(N) - 1)` as exact checked rationals and can scale an already-resolved base appraisal without intermediate rounding. Pure `CreationRoll` is a validated normalized exact rational `q∈[0,1]`. ItemInstances can persist that structural value in a dedicated one-to-one row as reduced integer `NUMERIC` numerator/denominator plus mutable integer +N, preserving the complete current `u64` input domain without selecting a fixed decimal precision, RNG distribution, or quantization rule. Embedded enchants have a separate typed child table storing one raw enchant identity plus resulting Level I–X per ItemInstance/enchant key; identity is immutable while level mutation/decay and explicit removal remain representable. The persistence layer deliberately does not cache appraisal class, acquisition source, slot family/index, conflicts, or appraisal values. The canonical catalog now owns an exact stable PostgreSQL key mapping for every current enchant identity plus the frozen narrower resulting-level ceilings for Mending I, Bait Rack III, Nine Life IX, Phoenix I, Carving I, and Master II; unknown keys, differently normalized keys, zero levels, and impossible persisted levels fail closed. The composition kernel evaluates exact `BaseEquipmentAppraisal × RollFactor(q) × UpgradeFactor(N)`, applies one structural round-half-up to produce `RecraftAppraisal`, then checked-adds the already-integer `EmbeddedEnchantValue`; because integer translation commutes with half-up rounding, this is algebraically identical to the frozen final `round_half_up(structural + EmbeddedEnchantValue)` formula. Fraction products reduce and cross-cancel before multiplication to avoid unnecessary overflow. Shadow Walker is represented by the mid-high class at its resulting level; SoulBind is deliberately excluded because it is not an enchant and contributes zero to its own appraisal. The shared equipment vocabulary is reused by Repair, while the existing `RepairTier`/`RepairSlot`/`RepairMaterial` names remain source-compatible aliases. Services exposes owner-scoped transaction-composable ordinary ItemInstance→`RecraftAppraisal` and ItemInstance→`EnhancedCanonicalAppraisal` resolvers. They reuse the item-domain ItemInstance/structural row locks, derive tier/slot from the exact pinned immutable ItemDefinition version, apply the ordinary standard appraisal table, then lock embedded-enchant rows in deterministic key order and derive each appraisal class from the canonical persisted identity before resolving the final enhanced value. The resolver fails closed on malformed metadata, unknown enchant identities, impossible per-enchant levels, or current-v1-invalid Gold armor, and retains all child locks for the caller transaction. Special ItemDefinition `base_appraisal` overrides remain outside this ordinary resolver. The owning Enchant Apply/Combine/Remove lifecycle, slot occupancy/conflict mutation enforcement, and live enchant state writer are still pending; an authoritative appraisal reader does not make `/enchant` live. Creation Roll generation remains blocked because the distribution/RNG mapping is not frozen. The full +N attempt-cost path also remains pending because `UpgradeAEXP(N) = round10(20 × N^1.55)` does not yet have a frozen deterministic fractional-power evaluation algorithm. Starter Leather has no frozen TierAnchor in the canonical table, so a standard-table appraisal fails closed unless the owning ItemDefinition supplies an explicit override.
+- `/help`
+- `/tos`
+- `/register`
+- `/profile`
+- `/balance`
+- `/bank`
+- `/transactions`
+- `/itembag`
+- `/catchbag`
+- `/locker`
+- `/equipment`
+- `/equip`
+- `/unequip`
+- `/item`
+- `/unbind`
 
-Phase 6 now also has a pure +N outcome policy kernel, but no upgrade attempt mutation or command is registered. The twenty frozen target rows (+1 through +20) are exact reduced rationals for success and the separate conditional `downgrade if failure` probability. Generic failure never destroys equipment, and a triggered downgrade removes exactly one +N level. Sparkling contributes +5% relative success per effective level up to +50% relative; Stabilize contributes 7% downgrade-prevention per effective level up to 70% and loses one of its own levels only when that prevention actually triggers. Protection Orb resolution is ordered before Stabilize, but the active source does not freeze the Orb's numeric prevention effect, so the kernel deliberately does not compose a final post-Orb downgrade chance. Conceptual +N remains unlimited: targets above +20 return an explicit undefined-table error from this probability policy rather than inheriting +20, extrapolating a curve, or creating a gameplay cap. Live +N still requires an authoritative structural-state mutation owner, deterministic RNG ownership, material/Money/AEXP settlement, modifier state mutation, and the unresolved deterministic `N^1.55` AEXP-cost evaluation.
+Text commands use the existing `g`, `graphite`, or bot-mention prefixes. SoulBind removal also accepts the canonical text token `unbind` and alias `ub`.
 
-Phase 6 now has a pure ordinary fresh-Forge policy, but no fresh Forge mutation path or `/forge` command is registered. Wood through Obsidian use the frozen `PrimaryUnits(slot)` table and primary material mapping; Pickaxe, Sword, and Fishing Rod add one Wood Log auxiliary, while armor has none. Gold is valid only for Pickaxe/Sword/Fishing Rod because current-v1 has no Gold armor. The preview resolves the standard ordinary base appraisal itself and calculates the frozen `max(1,000, round1000(0.08 × BaseEquipmentAppraisal))` Money fee with checked integer half-up arithmetic plus the tier AEXP/time schedule. Success is guaranteed, output is a new Tool-Locker ItemInstance at +0, and a new positive Creation Roll is required. The policy deliberately does not generate that roll because its RNG distribution/precision is not frozen, and ordinary recipe-specific post-Confirm cancellation remains explicitly `Unspecified`. No inputs, Money, or AEXP are reserved or consumed by the preview.
+A feature/policy helper existing in a crate does **not** make its gameplay command live. In particular, `/bind`, `/enchant`, live +N attempts, Slot Orb application, `/forge`, `/repair`, `/smelt`, `/fish`, `/mine`, combat, Market/Trade/Pay, Clan, and Automation are not registered as completed gameplay lifecycles.
 
-Phase 6 now has a pure Slot Orb policy kernel, but no Slot Orb mutation path or `/enchant` command is registered. Normal/class slots have four native slots with #5 eligible at +5 and #6 at +10; Special/universal slots have three native slots with #4 at +7, #5 at +12, and #6 at +15. The five success chances are stored as exact reduced rational fractions, while the player-paid application fee is computed with checked integer ceiling from an already-resolved current `EnhancedCanonicalAppraisal`. The policy records distinct Normal/Special families, Orb base prices, target/predecessor slot metadata, fixed failure semantics, and the fact that Sparkling/Mosaic do not affect Slot Orbs. +N only unlocks eligibility and never grants the slot for free. The authoritative ordinary full-Enhanced appraisal read primitive now exists; the future owning transaction must still lock/revalidate authoritative slot state and Orb ownership, prove the target is the next locked slot, draw deterministic RNG, consume the Orb/application fee, and settle a successful slot unlock atomically and idempotently.
+## Phase 6: current authoritative implementation
 
-Phase 6 now also has a pure SoulBind policy kernel, but no live binding state or command is registered. Only ordinary Netherite/Graphite equipment is eligible and the account requires Rebirth ≥1. Immutable ItemDefinition versions carry an explicit `is_ordinary_equipment` discriminator, and `graphite-items` exposes an owner-scoped transaction-composable resolver that locks the ItemInstance and resolves that flag from the exact immutable version pinned by the instance. Services can continue from that locked boundary through ordinary structural `RecraftAppraisal`, lock the persisted embedded-enchant rows, resolve exact canonical enchant identity/resulting-level semantics, and derive authoritative ordinary `EnhancedCanonicalAppraisal`. This removes the ordinary full-appraisal read blocker, but does not implement SoulBind mutation. A future SoulBind owner must preserve operation → player → item → structural-state → embedded-enchant lock order and must not trust Discord input, a read model, or cached classification/appraisal state. The frozen package is one SoulBind Rune + 20 Onyx + 8 Platinum Ingots + 2 Netherite Billets + 250,000 Money + 25,000 AEXP for Netherite, or one Rune + 32 Onyx + 12 Platinum Ingots + 2 Graphite Layers + 500,000 Money + 50,000 AEXP for Graphite. Percentage charging reuses the canonical `graphite_core::Money::ceil_basis_points` arithmetic through a crate-private whole-percent adapter, so Slot Orb and SoulBind do not maintain separate rounding formulas. Initial protection charge is `ceil(60% × current EnhancedCanonicalAppraisal)`. For one positive appraisal mutation, the top-up is `ceil(60% × new appraisal) - ceil(60% × previous appraisal)`; these cumulative-liability differences telescope over monotonic increases and preserve the explicit `bind-early + top-ups == bind-late` invariant without independently rounding each raw delta. Equal or decreasing appraisal produces no top-up and no refund. The pure policy deliberately does not invent historical-high-watermark behavior for a later decrease/rebound sequence that the active specification does not freeze. Unbind charges `ceil(20% × current EnhancedCanonicalAppraisal)`, refunds no binding resources, requires Protected/Favorite to be cleared, and freezes the seven-day item rebind cooldown. This policy does not define a SoulBind Rune ItemDefinition/stack cap, persisted SoulBound state, atomic asset/Money/AEXP settlement, unbind transaction, true-death survival/Tool-Locker mutation, or live structural/enchant mutation bridge.
+### Equipment classification, structural state, and appraisal
 
-Phase 6 now also has an advanced Forge policy foundation, but `/forge` remains unregistered. Content policy v3 preserves the full v2 catalog/price/recipe lattice and adds exactly four immutable stack-output mappings: Netherite Billet, Graphitic Precursor, Graphite Layer, and Graphite Billet. Money/AEXP costs, durations, exact success fractions, failure behavior, and post-Confirm cancellation semantics remain in the Services layer instead of recipe JSON. Graphite Layer is represented as exact `2/5` success without choosing an RNG-to-percent mapping. Obsidian→Netherite and Netherite→Graphite are modeled as same-ItemInstance promotion policies preserving the structural identity contract, and durability uses checked `floor(old_current × new_max / old_max)` projection so zero/Broken durability remains zero. This foundation does not reserve or mutate stack/equipment/Money/AEXP state, draw RNG, snapshot a live Forge operation, create or settle Forge jobs, validate enchant/slot compatibility, bridge content keys to production ItemDefinitions, or integrate the already-defined SoulBind positive-appraisal top-up with authoritative previous/new appraisal and atomic settlement for a bound Netherite→Graphite promotion.
+The repository now has the state required to resolve ordinary equipment authoritatively inside a caller-owned PostgreSQL transaction:
 
-Phase 6 also has a pure Repair economic policy kernel, but `/repair` remains unregistered. Given an already-resolved structural `RecraftAppraisal`, a canonical tier/slot, and current/max durability, the kernel computes the frozen full-repair Money fee, ordinary material identity/quantity, and Gold Activity EXP sink using checked integer/rational arithmetic. It separately computes the frozen cancellation refund of `floor(80%)` for already-eligible material units while refunding zero Money/AEXP. The repository now provides the authoritative ordinary ItemInstance→Recraft resolver needed by a future Repair owner, but no live transaction is wired to reserve or mutate equipment/materials/Money/AEXP, create or settle Repair jobs, apply Grinding/Mosaic, or define Repair time. Starter Leather Armor is known to use Leather and is repairable by design, but the active canonical Repair-ratio table does not define a Leather `TierRepairRatio`; the kernel therefore returns an explicit undefined-ratio error instead of borrowing another tier's Money ratio.
+- immutable ItemDefinition versions carry explicit `is_ordinary_equipment` classification;
+- ItemInstances pin an exact immutable definition version;
+- owner-scoped resolution locks the ItemInstance and derives classification from that pinned version;
+- normalized structural state persists an exact reduced Creation Roll rational and mutable +N level;
+- Normal/class and Special/universal enchant slot capacities are persisted per ItemInstance;
+- embedded enchants persist canonical identity plus resulting level in typed child rows;
+- ordinary Recraft and Enhanced Canonical Appraisal resolvers lock their child state deterministically and fail closed on malformed/impossible persistence.
 
-Phase 6 has a read-only Smelting policy kernel, versioned ordinary-smelting recipe mappings, persistent service-job identity, per-job stack reservation provenance, an immutable tickless runtime snapshot, a pure terminal consequence planner, and a transaction-composable exact-version Item Bag delivery primitive, but `/smelt` and Confirm remain unregistered. Preview never consumes assets. The reservation primitive is caller-transaction-composable and safe for already-existing versioned stack definitions; it does not itself commit the owning operation/outbox. The runtime freezes effective unit duration plus modifier provenance and derives progress from timestamps without periodic progress writes. The public progress projection subtracts authoritative Hard Freeze overlap supplied by the future owning freeze/job state machine; Soft Freeze contributes no pause time. The terminal planner can derive completed work, returnable unprocessed raw, never-opened whole fuel, lost residual heat/partial-unit work, and eligible Activity EXP, but it remains deliberately non-mutating: it does not transition the service job, mint recipe output, return Item Stacks, grant Activity EXP, or commit an operation. The stack-delivery transaction kernel can settle an already-resolved exact definition version under a stable per-operation mutation key and converts capacity overflow into keyed pending delivery without silently dropping assets; it deliberately does not choose recipe output identity or own the final operation/outbox transition. Production Smelting remains blocked until resource catalog rows have authoritative stack ItemDefinitions/stack caps, content↔ItemDefinition and recipe/output identity are frozen for the job, authoritative Hard Freeze overlap tracking exists, the owning atomic terminal settlement transaction is implemented, and the higher-level atomic Confirm flow is complete. The retired aggregate `JOB_RESERVATION` Item Stack location is rejected at the database layer; job ownership lives in `service_job_stack_reservations`. The preview kernel also does not invent a mixed-fuel selection rule or an unfinished modifier-speed formula.
+Canonical appraisal arithmetic remains exact/integer/rational where required: standard base appraisal, Creation Roll, +N appraisal factor, embedded-enchant contribution, Recraft appraisal, and Enhanced appraisal do not use floating-point gameplay authority.
 
-The Phase 5 progression domain is authoritative for Account XP/Activity EXP/Rebirth state, and its Activity EXP transaction kernel is available to later gameplay/service owners, but `/activity`, `/level`, `/rebirth`, eligible-chat XP, and future Mine/Fish/monster/Quest progression source adapters remain unregistered until their Discord/risk/gameplay integration slices are implemented. In particular, chat XP is not activated before its duplicate/spam/automation qualification path exists, and the generic Activity EXP kernel does not invent or double-apply source-specific modifier policy. `/party` and `/casino` remain unavailable, and no implementation status should be interpreted as permission to activate systems the specification marks as requiring another design pass.
+Creation Roll **generation** is still not implemented because the authoritative RNG distribution/quantization mapping is not frozen. Persisting and reading an exact roll does not authorize inventing its generation distribution.
 
-## Foundation invariants already enforced
+### Enchant state
 
-- Player and operation identifiers are UUIDv7.
-- A Discord user maps to at most one active global player record.
-- ToS versions are immutable once a version number exists; a newer configured version can become current without rewriting history.
-- Registration requires an explicit `accept=true` plus the exact current ToS version.
-- Duplicate external Discord deliveries reuse the same operation result instead of repeating registration, starter issuance, Bank deposit/withdraw, equipment moves, stack delivery, Account XP settlement, or Rebirth.
-- Operation request hashes detect accidental idempotency-key reuse with different input.
-- RNG root material is persisted on every operation row before future random-domain derivation is needed.
-- System-authored operations can have no Discord actor while retaining a player target, typed operation kind, policy version, request hash, and immutable ledger provenance.
-- Starter tools are account-bound and represented as unbreakable/non-repairable; starter Leather armor remains breakable/repairable.
-- Wallet, Bank, and liability values cannot be negative at the database layer.
-- Ledger history is immutable; a deferred trigger rejects unbalanced posting sets.
-- Bank deposits create holding-age lots; withdrawals consume principal FIFO.
-- Bank withdrawal fee calculation uses the canonical holding-age, pre-withdrawal balance, and rolling-24-hour marginal surcharge bands with deterministic integer ceiling.
-- Bank mutation state, materialized balances, ledger postings, lot state, withdrawal audit rows, and outbox events commit atomically.
-- Bank interest uses the canonical 0.004%/day base rate plus the Rebirth bonus only on the first 10,000,000 Money, approaching 0.006%/day on that tranche.
-- Fractional Bank-interest entitlement is retained in deterministic integer fixed-point state rather than being discarded by daily flooring; credited interest compounds back into authoritative Bank lots.
-- Soft-frozen accounts continue Bank-interest accrual while hard-frozen accounts advance the accrual clock without receiving paused-period interest.
-- Bank-interest settlement is serialized with Bank state, creates immutable `BANK_INTEREST` ledger provenance only when whole Money is minted, and emits its outbox event in the same PostgreSQL transaction.
-- The executable refreshes due interest before user-visible Bank/balance/ledger reads and before Bank mutations, while a bounded background worker catches up inactive accounts.
-- Item definitions have immutable historical versions; each version carries an immutable `is_ordinary_equipment` classification, and stateful item instances pin the exact definition version used to interpret them. Existing definitions fail closed to non-ordinary unless a version explicitly opts in.
-- `is_ordinary_equipment = TRUE` is database-constrained to non-stackable `PICKAXE`, `SWORD`, `FISHING_ROD`, or `ARMOR` versions. Equippability alone is insufficient: `TOTEM` remains outside the ordinary tier-equipment family.
-- Stateful ordinary-equipment classification resolution is owner-scoped and transaction-composable: it locks the ItemInstance, resolves the explicit flag from the exact immutable definition version pinned by that instance, and returns a snapshot that is authoritative only for the caller transaction. Mutation owners must preserve operation → player → item lock order and must not cache the classification for later transactions.
-- Stack commodities are stored separately from unique ItemInstances and compute Item Bag occupancy from definition-specific stack caps.
-- Item Bag starts at 36 slots and CatchBag starts at 1,000 kg; capacity math uses checked integer arithmetic.
-- Capacity-safe stack delivery never silently drops valid assets: a delivery that does not fit becomes an authoritative pending asset delivery instead of mutating the bag.
-- Composite stack delivery can participate directly in an owning PostgreSQL transaction. It pins an exact immutable ItemDefinition version, uses a stable per-operation mutation key, returns the same receipt on matching replay, rejects conflicting reuse, and leaves final operation/outbox ownership to the caller.
-- A single composite operation may own multiple stack deliveries, including multiple capacity-overflow rows, because pending delivery identity is keyed by `(operation_id, mutation_key)` rather than one row per operation. Legacy operation-owned Item delivery retains the default `primary` key.
-- Concurrent Item Bag deliveries serialize on authoritative player/storage state before capacity projection, so competing operations cannot both consume the same final slot; the loser becomes pending rather than overfilling or dropping assets.
-- Tool Locker is modeled as a death-safe first-class item location; equipped items are separate first-class locations backed by equipment slots.
-- Deferred database consistency triggers require every `EQUIPPED` ItemInstance to have exactly one owner-matching, type-compatible equipment slot and forbid non-equipped items from remaining slot-referenced.
-- Equip/unequip operations lock authoritative player/item rows, are idempotent, emit immutable asset events, and commit their outbox event atomically.
-- Exact storage reads remain private in the Discord adapter while the equipped loadout can be public.
-- Content/price policy rows are versioned and immutable; activating a later policy moves a separate pointer instead of rewriting historical values.
-- Registry policy v2 copies the complete v1 content/price/alloy state instead of rewriting historical rows, then adds fourteen one-input ordinary-smelting recipes for Tin, Copper, Zinc, Aluminum, Iron, Lead, Silver, Nickel, Gold, Cobalt, Titanium, Tungsten, Netherite Scrap, and Platinum.
-- Registry policy v3 copies the complete v2 catalog/price/recipe state unchanged, then adds exactly four advanced Forge stack mappings for Netherite Billet, Graphitic Precursor, Graphite Layer, and Graphite Billet; economic/runtime Forge policy is intentionally not duplicated into recipe metadata.
-- The frozen registry stores `npc_buy_price` separately from canonical appraisal so appraisal-only Forge/alloy outputs cannot become NPC liquidation paths.
-- Every row that is available in the normal Shop has an explicit stock-policy class; items the specification forbids from the normal Shop have no Shop sell price.
-- Registry constraints reject a direct fixed NPC-buy/Shop-sell price pair where NPC buy is not strictly below Shop sell, preventing the simplest risk-free NPC arbitrage loop at the data layer.
-- Processed-metal appraisal regression uses checked integer arithmetic for `round((raw + Coal/8) × 1.005)` and matches the frozen Tin/Copper/Zinc/Aluminum/Iron/Lead/Silver/Nickel/Gold/Cobalt/Titanium/Tungsten/Netherite/Platinum values.
-- Bronze, Brass, Invar, and Electrum recipes are frozen as versioned content recipes; their convenience Shop prices are weekly-limited while NPC liquidation remains disabled.
-- Fresh ordinary Forge is restricted to Wood/Stone/Copper/Gold/Iron/Diamond/Obsidian; Gold supports only Pickaxe/Sword/Fishing Rod, while Netherite/Graphite remain promotion-only tiers.
-- Fresh ordinary Forge primary units are Pickaxe 3, Sword 2, Fishing Rod 2, Helmet 5, Chestplate 8, Leggings 7, Boots 4; Pickaxe/Sword/Rod add one Wood Log auxiliary and armor adds none.
-- Fresh ordinary Forge Money is `max(1,000, round1000(0.08 × BaseEquipmentAppraisal))` using the standard target appraisal before Creation Roll/+N/enchant, with checked exact half-up arithmetic. Tier AEXP/time is Wood 0/2m, Stone 50/3m, Copper 100/5m, Gold 300/8m, Iron 250/8m, Diamond 700/15m, Obsidian 1,800/30m.
-- Fresh ordinary Forge succeeds guaranteed and specifies a new Tool-Locker ItemInstance at +0 with a new positive Creation Roll; the pure policy deliberately does not invent the unfrozen roll distribution/precision or a universal cancellation rule.
-- Advanced Forge stack policy freezes Netherite Billet at 5,000 Money + 1,000 AEXP / 15 minutes / 100%, Graphitic Precursor at 15,000 + 1,000 / 10 minutes / 100%, Graphite Layer at 5,000 + 500 / 30 minutes / exact 2/5 success, and Graphite Billet at 500,000 + 25,000 / 2 hours / 100%.
-- Graphite stack processing is uncancellable after Confirm. Graphite Layer failure consumes committed input/cost, has no pity, and is not altered/refunded by Sparkling, Stabilize, Protection Orb, Enchant Catalyst, or Mosaic.
-- Obsidian→Netherite promotion requires one Netherite Billet + 150,000 Money + 5,000 AEXP, lasts 60 minutes, succeeds 100%, and preserves the same ItemInstance structural identity. Netherite→Graphite requires one Graphite Billet + 1,800,000 Money + 50,000 AEXP, lasts 4 hours, succeeds 100%, and is uncancellable after Confirm.
-- Same-ItemInstance advanced promotion preserves durability percentage with checked floor arithmetic `floor(old_current × new_max / old_max)`; a zero/Broken durability item stays at zero. The policy layer does not claim to mutate the separate Broken state flag.
-- Equipment tier/slot/material policy has one shared canonical vocabulary. Repair keeps public compatibility aliases rather than maintaining a second divergent enum set.
-- Ordinary equipment base appraisal uses the frozen TierAnchor values (Wood 3,600; Stone 8,000; Copper 27,000; Gold 110,000; Iron 77,500; Diamond 270,000; Obsidian 875,000; Netherite 2,380,000; Graphite 8,050,000) and slot factors (Pickaxe/Sword/Fishing Rod 1.00; Helmet 0.80; Chestplate 1.35; Leggings 1.15; Boots 0.70).
-- `BaseEquipmentAppraisal = round100(TierAnchor × SlotFactor)` is evaluated with checked non-negative rational arithmetic and exact half-up rounding; standard-table results are multiples of 100.
-- An explicit definition-specific `base_appraisal` override has exact precedence and is not re-rounded. Negative overrides are rejected; zero remains a valid non-negative explicit policy value.
-- Starter Leather has no canonical TierAnchor, so standard-table appraisal rejects it unless an authoritative ItemDefinition override is supplied; the policy kernel does not guess an anchor.
-- Canonical enchant book appraisal uses exactly `60,000 × AcquisitionWeight × LevelMultiplier` with the frozen eight acquisition/value classes and Level I–X multiplier table; no player Market price enters the calculation.
-- Embedded enchant contribution is `round_half_up(0.70 × ΣBookAppraisal)` using checked non-negative integer/rational arithmetic. An empty embedded set contributes zero.
-- Shadow Walker is valued as Fishing/Chest mid-high at its resulting level. SoulBind is not represented as an enchant appraisal class and therefore cannot recursively add value to itself.
-- Enchant appraisal levels outside I–X fail closed because the canonical appraisal multiplier table does not define them; the persisted canonical resolver additionally enforces narrower frozen resulting-level ceilings such as Mending I, Bait Rack III, Nine Life IX, Phoenix I, Carving I, and Master II.
-- Canonical persisted enchant identities use explicit stable keys rather than display text or inferred normalization. Exact keys round-trip through the catalog; unknown, padded, differently-cased, or otherwise non-canonical persisted identities fail closed.
-- +N power uses the exact fixed rational form `MainMult(N) = (250000 + 8095N + 238N²) / 250000`, matching the frozen decimal formula without floating-point approximation.
-- +N appraisal uses the exact fixed rational form `UpgradeFactor(N) = (5000000 + 89045N + 2618N²) / 5000000`, which is algebraically identical to `1 + 0.55 × (MainMult(N) - 1)`.
-- Applying `UpgradeFactor` to base appraisal returns an exact unrounded rational. Intermediate rounding is forbidden because Creation Roll must still multiply that term before the composition kernel performs the structural round-half-up.
-- Creation Roll is a validated normalized exact rational in `[0,1]`. Its ItemInstance structural row stores a reduced exact integer numerator/denominator using PostgreSQL `NUMERIC`, rejects fractional/out-of-range/non-reduced values, and does not impose a fixed decimal precision or generation quantization.
-- Structural Creation Roll is immutable after row creation. Direct row deletion is rejected while the parent ItemInstance exists so delete/reinsert cannot replace the roll, while true parent deletion still cascades cleanup. A structural-state item cannot be repinned to a non-equipment definition category.
-- The structural row stores mutable +N over the complete current `u64` input domain. This persistence domain is not a promise that every extreme `u64` can be appraised: checked pure `u128` appraisal math may still fail closed on unsupported overflow, and no finite gameplay cap is invented from that implementation bound.
-- `RecraftAppraisal` is computed from exact `BaseEquipmentAppraisal × RollFactor(q) × UpgradeFactor(N)` and rounded half-up exactly once after all structural factors are applied.
-- Owner-scoped ordinary Recraft resolution is transaction-composable: it locks the exact ItemInstance and structural row, resolves standard-table tier/slot inputs from the exact immutable definition version pinned by that item, rejects non-ordinary/malformed/current-v1-invalid combinations, and returns an appraisal authoritative only while the caller transaction remains open. Special ItemDefinition override pricing is outside this ordinary resolver.
-- Owner-scoped ordinary Enhanced resolution extends that same caller transaction by locking embedded-enchant rows in deterministic `enchant_key` order, mapping exact persisted keys to canonical identities, validating the frozen per-enchant resulting-level ceiling, deriving canonical appraisal classes, and resolving `EmbeddedEnchantValue` plus final `EnhancedCanonicalAppraisal`. Unknown or impossible persisted state fails closed, and the child-row locks remain held until the caller transaction ends.
-- `EnhancedCanonicalAppraisal = RecraftAppraisal + EmbeddedEnchantValue`; because the embedded value is already an integer, this is exactly equivalent to the specification's final `round_half_up(structural + EmbeddedEnchantValue)` expression and preserves `RecraftAppraisal <= EnhancedCanonicalAppraisal` for non-negative embedded value.
-- Appraisal fraction products are reduced and cross-cancelled before checked multiplication; final half-up rounding uses quotient/remainder comparison rather than an overflow-prone numerator offset.
-- +N factor arithmetic has no invented finite gameplay cap; checked `u128` bounds fail closed on unsupported extreme levels or scaling overflow instead of wrapping. Structural +N persistence exists, but no live +N attempt writer, RNG, downgrade settlement, or cost settlement is activated.
-- Frozen +N outcome rows cover target +1 through +20 exactly. Success and conditional downgrade-on-failure are stored as reduced rational probabilities; generic failure never destroys equipment and a triggered downgrade removes exactly one level.
-- Sparkling adds +5% relative +N success per effective level, capped at +50% relative; Stabilize adds 7% downgrade-prevention per effective level, capped at 70%, and loses one enchant level only when it actually prevents a downgrade.
-- Protection Orb resolves before Stabilize, but no numeric Orb prevention chance is invented while the active specification leaves that magnitude undefined. Therefore the pure kernel does not claim a final post-Orb downgrade probability.
-- The +N probability table ending at +20 is not a gameplay cap. Targets above +20 fail closed in the outcome-policy API until authoritative success/downgrade rows or a continuation rule are frozen.
-- Full +N attempt-cost settlement remains pending the deterministic evaluation policy for `round10(20 × N^1.55)`; this factor/outcome foundation does not approximate that fractional power or activate live attempts.
-- Slot Orb unlock policy keeps Normal/class and Special/universal families independent: Normal has four native slots and unlocks #5 at +5 then #6 at +10; Special has three native slots and unlocks #4 at +7, #5 at +12, then #6 at +15. +N grants eligibility only, never a free slot.
-- Slot Orb success is frozen as exact rational chances: Normal #5 = 7/10, Normal #6 = 7/20, Special #4 = 3/5, Special #5 = 3/10, Special #6 = 3/25. Normal and Special Orb base prices remain 100,000 and 300,000 Money respectively.
-- Slot Orb player-paid application fees use integer ceiling over current already-resolved enhanced appraisal: 2%, 4%, 3%, 6%, and 10% for Normal #5/#6 and Special #4/#5/#6 respectively. Negative appraisal input fails closed.
-- Slot Orb failure consumes the Orb and application fee while leaving the item and slot state unchanged; Sparkling and Mosaic do not affect Slot Orb attempts.
-- Player-paid fixed-percentage fee rounding is centralized in `graphite_core::Money::ceil_basis_points`; Services only adapts whole percentages to basis points and maps domain-specific errors.
-- SoulBind eligibility is restricted to ordinary Netherite/Graphite equipment at Rebirth ≥1; immutable definition versions persist the discriminator, and the item domain now provides the owner-scoped pinned-version resolver needed by a future live state owner.
-- SoulBind initial protection liability is `ceil(60% × current enhanced appraisal)`. For a positive appraisal mutation, top-up is `ceil(60% × new appraisal) - ceil(60% × previous appraisal)`, so monotonic increase paths telescope exactly to the bind-late charge despite integer rounding.
-- SoulBind equal/decreasing appraisal mutations produce no top-up and no refund. Historical-high-watermark behavior for later decrease/rebound sequences is deliberately not invented by this pure policy because the active specification does not freeze it.
-- SoulBind unbind fee is `ceil(20% × current enhanced appraisal)`, refunds no binding resources, requires Protected/Favorite to be cleared, and imposes a seven-day item rebind cooldown.
-- SoulBind policy is non-mutating: Rune ItemDefinition/stack cap, SoulBound persistence, atomic asset/Money/AEXP settlement, unbind transaction, and true-death survival/Tool-Locker mutation remain future state-owner responsibilities.
-- Repair preview requires positive missing durability and an already-resolved positive structural `RecraftAppraisal`; it does not use Market price or embedded enchant appraisal as a substitute.
-- Repair Money uses the frozen tier ratios (Wood 10%, Stone 11%, Copper 13%, Gold 25%, Iron 14%, Diamond 16%, Obsidian 18%, Netherite 20%, Graphite 23%) and exact non-floating-point `round100(max(100, RecraftAppraisal × TierRepairRatio × missing/max))` arithmetic.
-- Repair ordinary material quantity is `ceil(BaseRepairUnits(slot) × missing/max)` with the frozen 2/4/3/2 slot-unit schedule; Gold alone adds `ceil(250 × BaseRepairUnits × missing/max)` Activity EXP.
-- Repair cancellation refunds exactly `floor(80%)` of the material units the owning service marks eligible after modifiers and refunds zero Money/AEXP. The pure kernel does not claim to return the ItemInstance or settle the cancellation transaction itself.
-- Starter Leather Armor's primary repair material is represented as Leather, but no Leather Money ratio is guessed while the canonical `TierRepairRatio` table omits it.
-- Smelting preview uses exact integer half-smelt heat units: one ordinary smelt consumes 2 units, Coal supplies 16, and Wood Log supplies 3. No floating-point fuel arithmetic is used.
-- Smelting preview reserves conceptually only the minimum whole items of the selected fuel needed for the accepted work, exposes partial processing when available selected fuel is insufficient, and remains read-only until a later Confirm path revalidates authoritative inventory.
-- Ordinary Smelting base duration is checked `20 seconds × accepted units`; overflow is rejected instead of wrapping.
-- Stop/cancel fuel projection returns only whole fuel items that were never opened and discards residual heat from already-opened fuel, matching the job-local heat rule.
-- Smelting AEXP projection and incremental settlement math use exactly one point per eight completed actual units with a job-local remainder; Smelt-enchant bypass output awards zero processing AEXP.
-- Service jobs use UUIDv7 identifiers, are bound immutably to one operation/player/service kind/policy version, and retain their identity/provenance for audit.
-- Stack reservations are owned per service job and role rather than by an aggregate Item Stack location. Reservation creation locks operation → player → sorted Item Bag definitions, aggregates multi-role demand for the same definition before deduction, and performs deduction + job creation + immutable reservation provenance + asset event inside the caller-owned transaction.
-- Matching PENDING/COMMITTED reservation replay returns the same job without deducting assets a second time; mismatched reuse is rejected.
-- Initial per-job reservation provenance is immutable; service-job identity cannot be rewritten/deleted and the foundation permits only RUNNING → COMPLETED/CANCELLED/FAILED terminal transitions.
-- The legacy `item_stacks.location = 'JOB_RESERVATION'` path is rejected for both INSERT and UPDATE, preventing parallel jobs from collapsing ownership into the old `(player, definition, version, location)` key.
-- Smelting runtime snapshots are one-to-one with service jobs and immutable after attachment. They retain requested/accepted units, fuel kind/count, effective per-unit microsecond duration, modifier provenance, actual attachment time, and completion deadline.
-- Runtime attachment reuses the canonical Smelting heat math to require exact minimal whole-fuel coverage and revalidates exactly one INPUT plus one FUEL reservation matching the accepted job quantities.
-- New runtime mutation acquires locks in deterministic operation → player → service-job order, requires the owning operation to remain PENDING and the account to remain ACTIVE, while matching runtime replay remains available after COMMITTED/freeze.
-- Runtime start uses PostgreSQL `clock_timestamp()` so time spent waiting earlier in the transaction is not backdated into Smelting progress; progress is floor-based, bounded by accepted units, and needs no per-second database ticker.
-- The ordinary runtime microsecond constant derives from the canonical 20-second Smelting policy constant rather than duplicating a second balance literal.
-- Public Smelting progress projection excludes explicitly supplied authoritative Hard Freeze overlap from active processing time while preserving real wall-clock observation; the raw unpaused projector is no longer exported as the cross-crate API.
-- Terminal Smelting consequence planning rejects COMPLETE before freeze-adjusted completion, preserves completed processing, returns unprocessed accepted raw and never-opened whole fuel, discards partial-unit work and residual heat when the job ends, and derives eligible Activity EXP only from completed actual processing.
-- Smelting terminal planning is deliberately pure: it does not transition the service job, mint recipe output, return reserved assets, grant Activity EXP, or commit operation/outbox provenance. Those effects remain the responsibility of a later single atomic settlement owner.
-- Account XP is non-spendable within a Rebirth cycle, capped at the exact Lv200 threshold of 172,370, and derives Level 1–200 from the frozen `round10(100 + 5L + 0.02L²)` curve.
-- Account level-up Money is derived only from the frozen `round100(500 + 75N)` reward curve, totals 1,609,400 Money for Lv2→200, and is minted through an immutable balanced `LEVEL_REWARD` ledger transaction rather than a mutable side balance.
-- Activity EXP has exactly one non-negative authoritative `activity_xp_points` pool. Activity Level and within-level progress are derived from that pool using the exact Minecraft-style piecewise curve; spending or losing AEXP can therefore lower the displayed level.
-- Activity EXP grants, spends, and losses can participate directly in an owning PostgreSQL transaction. They require positive already-effective integer points, a stable per-operation mutation key, and non-empty structured provenance; duplicate replay returns the stored receipt and an input mismatch is rejected instead of double-applying the delta.
-- Activity EXP transaction settlement locks in deterministic operation → player → progression order, rejects terminal operations without a matching stored sub-mutation, rejects frozen accounts, and never permits spend/loss below zero. Source-specific modifier calculation remains outside this settlement kernel so Rebirth/guild/clan/event/automation modifiers cannot be applied twice.
-- A composite operation may own multiple immutable progression events, keyed independently inside the operation; legacy single-event Account XP/Rebirth writes keep the default `primary` mutation key.
-- Rebirth requires Account Level 200, increments the persisted Rebirth count, resets only Account XP to zero, preserves Activity EXP exactly, grants no direct Money, and settles any due Bank interest under the old Rebirth count before changing the count.
-- Rebirth AEXP-gain and Repair-time utility functions use deterministic fixed-point exponentiation for the accepted diminishing-return formulas; they do not create a generic "all buffs scale with Rebirth" rule.
-- Progression events are append-only, progression mutations are operation-idempotent, and canonical state plus ledger/outbox/event provenance commits atomically under the owning operation.
-- Outbox events are committed in the same PostgreSQL transaction as canonical mutation state.
-- Temporary deletion cooldown identity uses a keyed HMAC fingerprint rather than storing a permanent hidden raw Discord identity tombstone.
+Implemented foundations include:
+
+- canonical enchant identity/key mapping and conflict scope;
+- ordinary enchant placement and slot-family policy;
+- authoritative standard finished-book Apply preflight;
+- authoritative embedded-enchant Apply state writer;
+- exact embedded-enchant removal state writer for an already-proven-removable selection;
+- authoritative Slot Orb preflight and successful slot-capacity writer;
+- equipped-armor loadout validation for the implemented Guardian / Nine Life / Phoenix conflict family;
+- equip-time validation of the prospective equipped armor loadout;
+- dormant loadout-scoped survival-core enchant state is allowed on unequipped ordinary armor and validated at activation/equip boundaries;
+- standard combine-base and selected special-enchant policy kernels.
+
+These pieces do **not** yet form a live `/enchant` owner. Remaining lifecycle work includes authoritative book/Orb inventory settlement, Money/AEXP where applicable, deterministic operation RNG, full operation/outbox finalization, and unresolved removal/combine semantics where the active sources do not freeze numeric behavior.
+
+Enchant removal specifically must not invent a numeric removal fee, recovery probability, removability classifier, or multi-remove composition rule where those remain unresolved. The exact state writer is only the terminal state consequence after eligibility/outcome has been authoritatively resolved.
+
+### +N upgrade
+
+Implemented:
+
+- exact +N appraisal factor arithmetic;
+- frozen +1..+20 base outcome rows;
+- Sparkling relative success policy;
+- Stabilize downgrade-prevention policy;
+- authoritative ordinary upgradeability in the locked appraisal snapshot;
+- transaction-composable resolved +N level writer for an already-resolved outcome.
+
+Not implemented as a live attempt:
+
+- complete attempt resource/Money/AEXP settlement;
+- deterministic operation-owned RNG composition with all applicable modifiers;
+- Protection Orb final numeric prevention composition where the active source does not freeze the missing magnitude;
+- deterministic canonical evaluation for `UpgradeAEXP(N) = round10(20 × N^1.55)`;
+- Discord command/lifecycle.
+
+The frozen outcome table ending at +20 is **not** a gameplay cap. Above +20 the current probability authority fails closed because no continuation rows/rule are frozen; the repository must not extrapolate or silently inherit +20 probabilities.
+
+### SoulBind
+
+Persisted and authoritative SoulBind infrastructure is now present:
+
+- one-to-one per-ItemInstance SoulBind bound/rebind-cooldown state;
+- parent-lock serialization for SoulBind child writes;
+- transaction-composable bind/unbind state transitions;
+- typed ItemInstance Favorite/Protected flags included in the locked SoulBind snapshot;
+- authoritative bind preflight foundation;
+- authoritative unbind preflight;
+- transaction-composable Wallet spend primitive;
+- atomic unbind settlement;
+- full service-owned unbind lifecycle with operation/idempotency resolution, exact committed replay, immutable Money ledger, immutable asset event, typed operation receipt, and transactional outbox;
+- live Discord `/unbind` plus text `unbind` / `ub` adapter.
+
+The live unbind path derives current Enhanced Canonical Appraisal under the owning transaction, requires the item to be currently SoulBound with Favorite and Protected cleared, charges `ceil(20% × current Enhanced Canonical Appraisal)` from **Wallet only**, refunds no prior binding resources, writes the seven-day per-item rebind cooldown, and commits all canonical effects atomically. Bank is not auto-pulled for this service fee. Replaying the same external Discord delivery returns the committed operation result instead of charging or rewriting state again; reusing the same idempotency key for different input fails closed.
+
+Full SoulBind **binding** is still not live. Although policy, persisted state, bind preflight, transaction-composable stack consumption, and Activity EXP settlement primitives exist, the repository must still finish the owning bind lifecycle around authoritative production SoulBind Rune/material definitions and stack caps, Rebirth/package validation, Money/AEXP/material settlement, operation result/audit/outbox finalization, and the Discord adapter. `/bind` must remain unavailable until that whole path is proven.
+
+True-death SoulBind protection and bound Netherite → Graphite promotion/top-up integration are also not yet complete lifecycle integrations.
+
+### Repair
+
+The pure Repair economic policy and authoritative ordinary Recraft appraisal reader exist, including frozen ordinary tier/slot material math and cancellation refund policy. No live Repair owner currently reserves/settles equipment, materials, Money/AEXP, job timing, modifiers, terminal delivery, operation/outbox, or Discord command.
+
+Starter Leather is repairable by design, but the active canonical Repair ratio table does not freeze a Leather Money ratio. The implementation must continue to fail closed rather than borrow another tier's ratio.
+
+### Forge
+
+Implemented policy/content foundations cover ordinary fresh Forge and advanced Forge/promotion contracts, including same-ItemInstance promotion identity and durability projection. Transactional stack consumption now exists as a reusable primitive.
+
+A live Forge owner is still blocked by unresolved/unfinished lifecycle authority, including fresh Creation Roll generation, complete resource/Money/AEXP settlement, operation-owned RNG for probabilistic outcomes, job/cancellation semantics where applicable, production ItemDefinition/resource bridges, terminal delivery/audit/outbox, and bound-equipment SoulBind top-up integration for positive appraisal promotion.
+
+### Smelting
+
+Implemented foundations include:
+
+- ordinary Smelting heat/fuel/time/AEXP policy;
+- versioned ordinary-smelting recipe mappings;
+- service-job identity and reservation provenance;
+- transaction-composable stack reservation;
+- immutable tickless runtime snapshots;
+- freeze-aware progress projection interface;
+- pure terminal consequence planning;
+- transaction-composable exact-version capacity-safe Item Bag delivery/pending delivery.
+
+Smelting is not live. The remaining owner must freeze/resolve production resource ItemDefinitions and stack caps, recipe/output identity, authoritative Hard Freeze overlap tracking, atomic terminal output/raw/fuel/AEXP settlement, operation/outbox finalization, and the higher-level Confirm/command path. No preview/planner is permission to mint output or mutate assets by itself.
+
+## Phase 7: Fishing foundation already present
+
+Fishing is no longer accurately described as having zero implementation. The Services crate contains substantial pure policy/routing work, including current foundations for:
+
+- area unlock policy;
+- canonical species and per-area pools;
+- fish variants;
+- catch/treasure branch tables;
+- bait catalog/effects and per-cast bait-consumption planning;
+- rod capability, line strength, catch load, tension and over-cap resolution;
+- rod durability and Unbreaking-X policy;
+- multicatch and multi-treasure;
+- rod Level-X effects;
+- Gold rod side-grade modifiers;
+- direct fishing enchant-book pool/weights;
+- manual fishing AEXP outcome policy.
+
+This remains a **policy foundation**, not a live Fishing system. There is no authoritative persistent cast owner that snapshots state/policy, owns domain-separated deterministic RNG, consumes bait/durability atomically, settles CatchBag/Item Bag output and AEXP, handles line-break/destruction consequences, finalizes operation/outbox, and exposes the Discord command. Phase 7 stateful implementation should resume only after the non-deferred Phase 6 work chosen by the current build plan is sufficiently closed or a newer explicit owner correction changes that order.
+
+## Important cross-cutting invariants already enforced
+
+- PostgreSQL is authoritative canonical state; caches/read models are never mutation truth.
+- Player and operation identifiers use UUIDv7.
+- External Discord delivery keys are used for mutation idempotency; request hashes detect conflicting key reuse.
+- Operation rows persist RNG root material before future domain-separated draws are required.
+- High-value mutation owners use caller-owned PostgreSQL transactions and commit canonical state, ledger/audit records, operation result, and outbox atomically where their full lifecycle is implemented.
+- Wallet/Bank/liability and Activity EXP non-negative constraints fail closed at authoritative boundaries.
+- Money ledger history is immutable and balanced.
+- Bank deposit/withdraw/interest behavior is operation-idempotent and uses deterministic integer/fixed-point arithmetic.
+- Item definitions are immutable/versioned and ItemInstances pin exact versions.
+- Owner-scoped ItemInstance resolution retains locks only for the caller transaction; classification/appraisal snapshots must not be cached and reused as later mutation authority.
+- Capacity-safe stack delivery never silently drops valid assets; overflow becomes keyed pending delivery.
+- Concurrent storage mutations serialize before capacity projection.
+- Equip/unequip is operation-idempotent and equipment consistency is database constrained.
+- Equipped armor enchant conflicts are validated at the active-loadout boundary for the currently implemented conflict family.
+- Creation Roll persistence is exact and immutable after creation; generation distribution is deliberately not guessed.
+- +N persistence supports the current `u64` representation domain but checked appraisal/policy arithmetic may fail closed on unsupported extreme inputs; representation bounds are not gameplay caps.
+- SoulBind child writes serialize through the parent ItemInstance lock.
+- SoulBind unbind is now an atomic Wallet/item/ledger/audit/outbox operation with committed replay semantics.
+- Activity EXP grant/spend/loss is transaction-composable, mutation-keyed, and source-modifier calculation remains outside the generic settlement kernel to prevent double application.
+- Rebirth preserves Activity EXP and resets only the account-cycle XP state defined by the progression owner.
+
+## Deliberately unavailable / fail-closed boundaries
+
+The following must not be inferred from nearby policy code:
+
+- `/bind` is unavailable until the full binding lifecycle and production resource authorities are complete.
+- `/enchant` is unavailable until book/Orb/economy/RNG/operation settlement is complete and unresolved numeric rules are frozen.
+- live +N attempts are unavailable until attempt cost/RNG/modifier settlement is complete; no `N^1.55` approximation may be invented.
+- `/forge`, `/repair`, and `/smelt` remain unavailable until their owning atomic lifecycles are complete.
+- `/fish` is unavailable despite substantial pure Fishing policy work.
+- `/discard` / Trash Recovery remains unavailable while recovery/expiry lifecycle semantics are insufficiently frozen.
+- generic storage-capacity purchase commands remain pending.
+- resources without authoritative production ItemDefinition stack caps must not be activated merely because content/policy keys exist.
+- Casino and Warden are Deferred and must stay unavailable until the owner explicitly reactivates/designs them.
+
+## Maintenance rule
+
+Update this file when a merged slice materially changes what is actually executable, persisted, or authoritatively transaction-composable. Do not copy every pure helper into the phase table, and do not describe a preview/preflight/writer as a live feature unless an owning lifecycle and application adapter actually expose the complete safe mutation path.
