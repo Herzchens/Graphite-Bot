@@ -46,6 +46,7 @@ mod smelting_terminal;
 mod soulbind;
 mod soulbind_bind_preflight;
 mod soulbind_state;
+mod soulbind_unbind_lifecycle;
 mod soulbind_unbind_preflight;
 mod upgrade_appraisal;
 mod upgrade_cost;
@@ -289,6 +290,9 @@ pub use soulbind_state::{
     lock_owned_ordinary_equipment_soulbind_state,
     write_resolved_soulbind_bind_to_owned_ordinary_equipment,
     write_resolved_soulbind_unbind_to_owned_ordinary_equipment,
+};
+pub use soulbind_unbind_lifecycle::{
+    SoulBindUnbindLifecycleError, SoulBindUnbindReceipt, SoulBindUnbindService,
 };
 pub use soulbind_unbind_preflight::{
     OrdinarySoulBindUnbindPreflight, OrdinarySoulBindUnbindPreflightError,
