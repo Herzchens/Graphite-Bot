@@ -12,6 +12,7 @@ chrono.workspace = true
 graphite-core = { path = "../graphite-core" }
 graphite-economy = { path = "../graphite-economy" }
 graphite-items = { path = "../graphite-items" }
+graphite-progression = { path = "../graphite-progression" }
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
