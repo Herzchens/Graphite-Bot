@@ -26,6 +26,7 @@ mod fishing_multi_treasure;
 mod fishing_multicatch;
 mod fishing_over_cap;
 mod fishing_rod_durability;
+mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
 mod fishing_species;
 mod fishing_variant;
@@ -197,6 +198,10 @@ pub use fishing_rod_durability::{
     FishingRodDurabilityConsequence, FishingRodDurabilityPolicyError, FishingRodDurabilityPreview,
     FishingRodDurabilityResolution, FishingUnbreakingLevelXPolicy,
     fishing_unbreaking_level_x_policy, preview_fishing_rod_durability,
+};
+pub use fishing_rod_durability_state::{
+    AppliedFishingRodDurabilityState, FishingRodDurabilityStateError,
+    apply_resolved_equipped_fishing_rod_durability,
 };
 pub use fishing_rod_level_x::{
     FishingRodLevelXEffect, FishingRodLevelXPolicy, FishingRodLevelXPolicyError,
