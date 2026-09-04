@@ -28,6 +28,7 @@ mod fishing_over_cap;
 mod fishing_rod_durability;
 mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
+mod fishing_rod_state;
 mod fishing_species;
 mod fishing_variant;
 mod forge;
@@ -207,6 +208,11 @@ pub use fishing_rod_level_x::{
     FishingRodLevelXEffect, FishingRodLevelXPolicy, FishingRodLevelXPolicyError,
     TreasureLevelXBranchWeightPreview, fishing_rod_level_x_policy,
     preview_treasure_level_x_branch_weight,
+};
+pub use fishing_rod_state::{
+    EquippedFishingRodCastSnapshot, EquippedFishingRodCastSnapshotError,
+    EquippedFishingRodEnchantState, EquippedFishingRodKind,
+    lock_equipped_fishing_rod_cast_snapshot,
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
