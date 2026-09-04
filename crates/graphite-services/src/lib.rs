@@ -13,6 +13,7 @@ mod equipment_policy;
 mod equipment_recraft_resolver;
 mod fishing_aexp;
 mod fishing_area;
+mod fishing_area_state;
 mod fishing_bait;
 mod fishing_bait_cast;
 mod fishing_book_pool;
@@ -126,6 +127,10 @@ pub use fishing_area::{
     FishingArea, FishingAreaFirstUnlockPolicy, FishingAreaFirstUnlockPreview,
     FishingAreaPolicyError, FishingRodForUnlock, fishing_area_first_unlock_policy,
     preview_first_fishing_area_unlock,
+};
+pub use fishing_area_state::{
+    FishingAreaAccessError, FishingAreaAccessOrigin, FishingAreaAccessSnapshot,
+    lock_or_grant_fishing_area_first_unlock,
 };
 pub use fishing_bait::{
     BAIT_RACK_ACTIVE_SLOTS_PER_LEVEL, BAIT_RACK_MAX_LEVEL,
