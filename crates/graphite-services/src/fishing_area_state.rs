@@ -1,17 +1,17 @@
 use chrono::{DateTime, Utc};
-use graphite_items::{ItemError, lock_owned_item_ordinary_equipment_classification};
+use graphite_items::ItemError;
 use graphite_progression::{ProgressionMathError, account_level};
-use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{
-    EquipmentTier, FishingArea, FishingAreaFirstUnlockPreview, FishingAreaPolicyError,
-    FishingRodForUnlock, preview_first_fishing_area_unlock,
+use crate::fishing_rod_state::{
+    EquippedFishingRodKind, EquippedFishingRodStateError, lock_equipped_fishing_rod_state,
 };
-
-const STARTER_BASIC_ROD_DEFINITION_KEY: &str = "equipment.rod.basic.starter";
+use crate::{
+    FishingArea, FishingAreaFirstUnlockPreview, FishingAreaPolicyError, FishingRodForUnlock,
+    preview_first_fishing_area_unlock,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FishingAreaAccessOrigin {
@@ -94,9 +94,9 @@ impl From<sqlx::Error> for FishingAreaAccessError {
 /// never consumes a persistence row.
 ///
 /// The player row serializes same-account progression/equipment mutations while this snapshot is
-/// resolved. The equipped ItemInstance is additionally locked through `graphite-items`; ordinary
-/// classification comes from the exact immutable ItemDefinition version pinned by that item. Neither
-/// Discord input nor the mutable current ItemDefinition is trusted as Rod authority.
+/// resolved. The equipped Rod identity is resolved through the shared authoritative Fishing Rod state
+/// bridge, which locks the pinned ItemInstance before rechecking the `FISHING_ROD` equipment slot.
+/// Neither Discord input nor the mutable current ItemDefinition is trusted as Rod authority.
 pub async fn lock_or_grant_fishing_area_first_unlock(
     tx: &mut Transaction<'_, Postgres>,
     operation_id: Uuid,
@@ -235,79 +235,34 @@ async fn lock_equipped_rod_for_first_unlock(
     tx: &mut Transaction<'_, Postgres>,
     player_id: Uuid,
 ) -> Result<FishingRodForUnlock, FishingAreaAccessError> {
-    // The player row is already locked, so canonical equip/unequip owners for this player cannot
-    // change the slot while this transaction resolves it. Avoid taking the slot lock before the item
-    // lock, preserving the existing item -> equipment-slot ordering used by equip mutation.
-    let item_id: Uuid = sqlx::query_scalar(
-        "SELECT item_instance_id FROM equipment_slots WHERE player_id = $1 AND slot = 'FISHING_ROD'",
-    )
-    .bind(player_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(FishingAreaAccessError::NoEquippedFishingRod)?;
-
-    let classification =
-        lock_owned_item_ordinary_equipment_classification(tx, player_id, item_id).await?;
-    let row = sqlx::query(
-        r#"
-        SELECT i.location, i.is_starter, d.category, d.data
-          FROM item_instances i
-          JOIN item_definition_versions d
-            ON d.key = i.definition_key
-           AND d.version = i.definition_version
-         WHERE i.id = $1
-           AND i.owner_player_id = $2
-           AND i.definition_key = $3
-           AND i.definition_version = $4
-        "#,
-    )
-    .bind(item_id)
-    .bind(player_id)
-    .bind(&classification.definition_key)
-    .bind(classification.definition_version)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(FishingAreaAccessError::EquippedRodIntegrityMismatch)?;
-
-    let location: String = row.try_get("location")?;
-    let is_starter: bool = row.try_get("is_starter")?;
-    let category: String = row.try_get("category")?;
-    let data: Value = row.try_get("data")?;
-    if location != "EQUIPPED" || category != "FISHING_ROD" {
-        return Err(FishingAreaAccessError::EquippedRodIntegrityMismatch);
-    }
-
-    if classification.definition_key == STARTER_BASIC_ROD_DEFINITION_KEY {
-        if !is_starter || classification.is_ordinary_equipment {
-            return Err(FishingAreaAccessError::StarterBasicRodIntegrityMismatch);
-        }
-        return Ok(FishingRodForUnlock::StarterBasic);
-    }
-
-    if is_starter {
-        return Err(FishingAreaAccessError::StarterBasicRodIntegrityMismatch);
-    }
-    if !classification.is_ordinary_equipment {
-        return Err(FishingAreaAccessError::NonOrdinaryFishingRod);
-    }
-
-    let tier = ordinary_rod_tier_from_definition(&data)
-        .ok_or(FishingAreaAccessError::InvalidOrdinaryRodTierMetadata)?;
-    Ok(FishingRodForUnlock::Ordinary(tier))
+    let rod = lock_equipped_fishing_rod_state(tx, player_id)
+        .await
+        .map_err(map_equipped_rod_state_error)?;
+    Ok(match rod.kind {
+        EquippedFishingRodKind::StarterBasic => FishingRodForUnlock::StarterBasic,
+        EquippedFishingRodKind::Ordinary { tier } => FishingRodForUnlock::Ordinary(tier),
+    })
 }
 
-fn ordinary_rod_tier_from_definition(data: &Value) -> Option<EquipmentTier> {
-    match data.get("tier").and_then(Value::as_str) {
-        Some("WOOD") => Some(EquipmentTier::Wood),
-        Some("STONE") => Some(EquipmentTier::Stone),
-        Some("COPPER") => Some(EquipmentTier::Copper),
-        Some("GOLD") => Some(EquipmentTier::Gold),
-        Some("IRON") => Some(EquipmentTier::Iron),
-        Some("DIAMOND") => Some(EquipmentTier::Diamond),
-        Some("OBSIDIAN") => Some(EquipmentTier::Obsidian),
-        Some("NETHERITE") => Some(EquipmentTier::Netherite),
-        Some("GRAPHITE") => Some(EquipmentTier::Graphite),
-        _ => None,
+fn map_equipped_rod_state_error(error: EquippedFishingRodStateError) -> FishingAreaAccessError {
+    match error {
+        EquippedFishingRodStateError::Database(error) => FishingAreaAccessError::Database(error),
+        EquippedFishingRodStateError::Item(error) => FishingAreaAccessError::Item(error),
+        EquippedFishingRodStateError::NoEquippedFishingRod => {
+            FishingAreaAccessError::NoEquippedFishingRod
+        }
+        EquippedFishingRodStateError::EquippedRodIntegrityMismatch => {
+            FishingAreaAccessError::EquippedRodIntegrityMismatch
+        }
+        EquippedFishingRodStateError::StarterBasicRodIntegrityMismatch => {
+            FishingAreaAccessError::StarterBasicRodIntegrityMismatch
+        }
+        EquippedFishingRodStateError::NonOrdinaryFishingRod => {
+            FishingAreaAccessError::NonOrdinaryFishingRod
+        }
+        EquippedFishingRodStateError::InvalidOrdinaryRodTierMetadata => {
+            FishingAreaAccessError::InvalidOrdinaryRodTierMetadata
+        }
     }
 }
 
@@ -332,7 +287,6 @@ const fn persisted_area_key(area: FishingArea) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn persisted_area_keys_cover_only_non_default_areas() {
@@ -342,35 +296,6 @@ mod tests {
         assert_eq!(persisted_area_key(FishingArea::Coast), Some("COAST"));
         assert_eq!(persisted_area_key(FishingArea::DeepSea), Some("DEEP_SEA"));
         assert_eq!(persisted_area_key(FishingArea::Abyss), Some("ABYSS"));
-    }
-
-    #[test]
-    fn ordinary_rod_tier_metadata_is_exact_and_fail_closed() {
-        let cases = [
-            ("WOOD", EquipmentTier::Wood),
-            ("STONE", EquipmentTier::Stone),
-            ("COPPER", EquipmentTier::Copper),
-            ("GOLD", EquipmentTier::Gold),
-            ("IRON", EquipmentTier::Iron),
-            ("DIAMOND", EquipmentTier::Diamond),
-            ("OBSIDIAN", EquipmentTier::Obsidian),
-            ("NETHERITE", EquipmentTier::Netherite),
-            ("GRAPHITE", EquipmentTier::Graphite),
-        ];
-        for (raw, expected) in cases {
-            assert_eq!(
-                ordinary_rod_tier_from_definition(&json!({"tier": raw})),
-                Some(expected)
-            );
-        }
-        for invalid in [
-            json!({}),
-            json!({"tier": "LEATHER"}),
-            json!({"tier": "wood"}),
-            json!({"tier": 7}),
-        ] {
-            assert_eq!(ordinary_rod_tier_from_definition(&invalid), None);
-        }
     }
 
     #[test]

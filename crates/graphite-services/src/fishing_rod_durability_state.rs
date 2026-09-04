@@ -1,15 +1,16 @@
-use graphite_items::{ItemError, lock_owned_item_ordinary_equipment_classification};
+use graphite_items::ItemError;
 use serde::Serialize;
 use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::fishing_rod_state::{
+    EquippedFishingRodKind, EquippedFishingRodStateError, lock_equipped_fishing_rod_state,
+};
 use crate::{
     FishingArea, FishingRodDurabilityPolicyError, FishingRodDurabilityPreview,
     FishingRodDurabilityResolution, preview_fishing_rod_durability,
 };
-
-const STARTER_BASIC_ROD_DEFINITION_KEY: &str = "equipment.rod.basic.starter";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -84,9 +85,10 @@ impl From<sqlx::Error> for FishingRodDurabilityStateError {
 ///
 /// This is deliberately a transaction-composable state primitive, not the `/fish` owner. It locks in
 /// `operation -> player -> ItemInstance -> equipment slot` order, requires the owning operation to be
-/// PENDING for exactly this player, and re-resolves the currently equipped Rod from authoritative
-/// PostgreSQL state. The ItemInstance is classified from the exact immutable ItemDefinition version
-/// pinned by that instance; request-provided Rod identity or ordinary/special flags are never trusted.
+/// PENDING for exactly this player, and re-resolves the currently equipped Rod through the shared
+/// authoritative Rod-state bridge. The ItemInstance is classified from the exact immutable
+/// ItemDefinition version pinned by that instance; request-provided Rod identity or ordinary/special
+/// flags are never trusted.
 ///
 /// `expected_current_durability` is the optimistic state token from the caller's already-resolved
 /// cast snapshot. Ordinary Rods compare it against the locked authoritative value before applying the
@@ -114,61 +116,9 @@ pub async fn apply_resolved_equipped_fishing_rod_durability(
 ) -> Result<AppliedFishingRodDurabilityState, FishingRodDurabilityStateError> {
     lock_pending_player_operation(tx, operation_id, player_id).await?;
     lock_active_player(tx, player_id).await?;
-
-    let item_id: Uuid = sqlx::query_scalar(
-        "SELECT item_instance_id FROM equipment_slots WHERE player_id = $1 AND slot = 'FISHING_ROD'",
-    )
-    .bind(player_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(FishingRodDurabilityStateError::NoEquippedFishingRod)?;
-
-    let classification =
-        lock_owned_item_ordinary_equipment_classification(tx, player_id, item_id).await?;
-    let row = sqlx::query(
-        r#"
-        SELECT i.location,
-               i.is_starter,
-               i.is_unbreakable,
-               i.is_repairable,
-               i.current_durability,
-               i.max_durability,
-               i.is_broken,
-               d.category
-          FROM item_instances i
-          JOIN item_definition_versions d
-            ON d.key = i.definition_key
-           AND d.version = i.definition_version
-         WHERE i.id = $1
-           AND i.owner_player_id = $2
-           AND i.definition_key = $3
-           AND i.definition_version = $4
-        "#,
-    )
-    .bind(item_id)
-    .bind(player_id)
-    .bind(&classification.definition_key)
-    .bind(classification.definition_version)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(FishingRodDurabilityStateError::EquippedRodIntegrityMismatch)?;
-
-    let slot_item_id: Uuid = sqlx::query_scalar(
-        "SELECT item_instance_id FROM equipment_slots WHERE player_id = $1 AND slot = 'FISHING_ROD' FOR UPDATE",
-    )
-    .bind(player_id)
-    .fetch_optional(&mut **tx)
-    .await?
-    .ok_or(FishingRodDurabilityStateError::EquippedRodIntegrityMismatch)?;
-    if slot_item_id != item_id {
-        return Err(FishingRodDurabilityStateError::EquippedRodIntegrityMismatch);
-    }
-
-    let location: String = row.try_get("location")?;
-    let category: String = row.try_get("category")?;
-    if location != "EQUIPPED" || category != "FISHING_ROD" {
-        return Err(FishingRodDurabilityStateError::EquippedRodIntegrityMismatch);
-    }
+    let rod = lock_equipped_fishing_rod_state(tx, player_id)
+        .await
+        .map_err(map_equipped_rod_state_error)?;
 
     if matches!(resolution, FishingRodDurabilityResolution::LineBreak)
         && area == FishingArea::StarterPool
@@ -176,21 +126,13 @@ pub async fn apply_resolved_equipped_fishing_rod_durability(
         return Err(FishingRodDurabilityStateError::LineBreakDisabledInStarterPool);
     }
 
-    let is_starter: bool = row.try_get("is_starter")?;
-    let is_unbreakable: bool = row.try_get("is_unbreakable")?;
-    let is_repairable: bool = row.try_get("is_repairable")?;
-    let current_durability: Option<i64> = row.try_get("current_durability")?;
-    let max_durability: Option<i64> = row.try_get("max_durability")?;
-    let is_broken: bool = row.try_get("is_broken")?;
-
-    if classification.definition_key == STARTER_BASIC_ROD_DEFINITION_KEY {
-        if !is_starter
-            || classification.is_ordinary_equipment
-            || !is_unbreakable
-            || is_repairable
-            || current_durability.is_some()
-            || max_durability.is_some()
-            || is_broken
+    if rod.kind == EquippedFishingRodKind::StarterBasic {
+        if !rod.is_starter
+            || !rod.is_unbreakable
+            || rod.is_repairable
+            || rod.current_durability.is_some()
+            || rod.max_durability.is_some()
+            || rod.is_broken
         {
             return Err(FishingRodDurabilityStateError::StarterBasicRodIntegrityMismatch);
         }
@@ -201,26 +143,21 @@ pub async fn apply_resolved_equipped_fishing_rod_durability(
             return Err(FishingRodDurabilityStateError::StarterBasicExpectedDurability);
         }
         return Ok(AppliedFishingRodDurabilityState::StarterBasicUnbreakable {
-            item_instance_id: item_id,
-            definition_key: classification.definition_key,
-            definition_version: classification.definition_version,
+            item_instance_id: rod.item_instance_id,
+            definition_key: rod.definition_key,
+            definition_version: rod.definition_version,
         });
     }
 
-    if is_starter {
-        return Err(FishingRodDurabilityStateError::StarterBasicRodIntegrityMismatch);
-    }
-    if !classification.is_ordinary_equipment {
-        return Err(FishingRodDurabilityStateError::NonOrdinaryFishingRod);
-    }
-
-    let current = current_durability
+    let current = rod
+        .current_durability
         .and_then(|value| u32::try_from(value).ok())
         .ok_or(FishingRodDurabilityStateError::InvalidOrdinaryRodDurability)?;
-    let maximum = max_durability
+    let maximum = rod
+        .max_durability
         .and_then(|value| u32::try_from(value).ok())
         .ok_or(FishingRodDurabilityStateError::InvalidOrdinaryRodDurability)?;
-    if current == 0 || is_broken {
+    if current == 0 || rod.is_broken {
         return Err(FishingRodDurabilityStateError::OrdinaryRodAlreadyBroken);
     }
     let expected = expected_current_durability
@@ -249,7 +186,7 @@ pub async fn apply_resolved_equipped_fishing_rod_durability(
         )
         .bind(i64::from(preview.resulting_durability))
         .bind(preview.resulting_durability == 0)
-        .bind(item_id)
+        .bind(rod.item_instance_id)
         .bind(player_id)
         .bind(i64::from(current))
         .bind(i64::from(maximum))
@@ -261,11 +198,37 @@ pub async fn apply_resolved_equipped_fishing_rod_durability(
     }
 
     Ok(AppliedFishingRodDurabilityState::Ordinary {
-        item_instance_id: item_id,
-        definition_key: classification.definition_key,
-        definition_version: classification.definition_version,
+        item_instance_id: rod.item_instance_id,
+        definition_key: rod.definition_key,
+        definition_version: rod.definition_version,
         preview,
     })
+}
+
+fn map_equipped_rod_state_error(
+    error: EquippedFishingRodStateError,
+) -> FishingRodDurabilityStateError {
+    match error {
+        EquippedFishingRodStateError::Database(error) => {
+            FishingRodDurabilityStateError::Database(error)
+        }
+        EquippedFishingRodStateError::Item(error) => FishingRodDurabilityStateError::Item(error),
+        EquippedFishingRodStateError::NoEquippedFishingRod => {
+            FishingRodDurabilityStateError::NoEquippedFishingRod
+        }
+        EquippedFishingRodStateError::EquippedRodIntegrityMismatch => {
+            FishingRodDurabilityStateError::EquippedRodIntegrityMismatch
+        }
+        EquippedFishingRodStateError::StarterBasicRodIntegrityMismatch => {
+            FishingRodDurabilityStateError::StarterBasicRodIntegrityMismatch
+        }
+        EquippedFishingRodStateError::NonOrdinaryFishingRod => {
+            FishingRodDurabilityStateError::NonOrdinaryFishingRod
+        }
+        EquippedFishingRodStateError::InvalidOrdinaryRodTierMetadata => {
+            FishingRodDurabilityStateError::EquippedRodIntegrityMismatch
+        }
+    }
 }
 
 async fn lock_pending_player_operation(
