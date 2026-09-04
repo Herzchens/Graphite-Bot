@@ -19,6 +19,7 @@ mod fishing_bait_cast;
 mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_capability_routing;
+mod fishing_cast_preflight;
 mod fishing_droptable;
 mod fishing_gold_rod;
 mod fishing_limits;
@@ -167,6 +168,9 @@ pub use fishing_capability_routing::{
     FishingOverCapResolutionRequired, FishingResolvedOverCapSequence,
     FishingRoutedFishCapabilityStage, fishing_capability_routing_policy,
     resolve_fishing_over_cap_sequence, resolve_routed_fish_capability_stage,
+};
+pub use fishing_cast_preflight::{
+    ManualFishingCastPreflight, ManualFishingCastPreflightError, lock_manual_fishing_cast_preflight,
 };
 pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,
