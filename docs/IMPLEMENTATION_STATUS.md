@@ -2,7 +2,7 @@
 
 This file is an evidence-based snapshot of what the repository currently implements. It is **not** gameplay/design authority. When this file conflicts with a newer explicit owner correction, the newest normative Master Spec, `docs/PLAN_DEVIATIONS.md`, or executable repository/schema/test evidence, follow the authority order in `AGENTS.md`.
 
-Status sync baseline: runtime/code state on `main` at `5743ce19236dd68be36b40cf07262142ab257b7d` (`feat(bot): expose SoulBind unbind command`). This documentation-only sync does not change runtime semantics.
+Status sync baseline: runtime/code state on `main` at `4775b668be02fb50ed2fe055e1f9e6d73eaebb18` (`feat(fishing): persist permanent area unlocks (#131)`). This documentation-only sync does not change runtime semantics.
 
 ## Build-order status
 
@@ -14,7 +14,7 @@ Status sync baseline: runtime/code state on `main` at `5743ce19236dd68be36b40cf0
 | 4 | Fixed NPC price/content registry | Implemented policy/content foundation through registry v3, including ordinary smelting and advanced Forge stack mappings. Live Shop/NPC liquidation and generic Forge transaction commands are not yet implemented. |
 | 5 | Account / Activity progression | Implemented progression foundation. Account XP curve/rewards, authoritative spendable Activity EXP, transaction-composable AEXP grant/spend/loss and settlement prelock, Rebirth persistence/reset, and fixed-point utility formulas exist. General live progression/chat/gameplay source adapters and progression commands remain pending. |
 | 6 | Repair / Forge / Smelt / Enchant / +N / SoulBind | **In progress, substantially implemented.** Authoritative appraisal/state foundations and multiple transaction-composable writers now exist. SoulBind **unbind** has a complete atomic/idempotent/auditable lifecycle and is exposed through Discord as `/unbind` / `ub`. Full SoulBind binding, live Enchant/Slot Orb/+N/Forge/Repair/Smelt lifecycles, and their commands remain incomplete for the blockers listed below. |
-| 7 | Fishing | Policy foundation begun: species/area/variant/drop tables, bait behavior/consumption plan, capability/over-cap routing, multicatch/multi-treasure, durability/Unbreaking-X, Gold rod, book pool, AEXP and related pure policy pieces exist. No authoritative persistent fishing operation/lifecycle or live `/fish` command yet. |
+| 7 | Fishing | Policy foundation plus the first authoritative persistent access state now exist: species/area/variant/drop tables, bait behavior/consumption plan, capability/over-cap routing, multicatch/multi-treasure, durability/Unbreaking-X, Gold rod, book pool, AEXP, and permanent non-default area unlock ownership. No authoritative persistent cast owner or live `/fish` command yet. |
 | 8 | Mining / depletion | Pending stateful implementation. |
 | 9 | Combat / monsters / death protection | Pending stateful implementation. |
 | 10 | Quest / stats / achievements / profile | Basic profile surface exists; the broader Quest/stats/achievements system remains pending. |
@@ -157,8 +157,10 @@ Smelting is not live. The remaining owner must freeze/resolve production resourc
 
 ## Phase 7: Fishing foundation already present
 
-Fishing is no longer accurately described as having zero implementation. The Services crate contains substantial pure policy/routing work, including current foundations for:
+Fishing is no longer accurately described as having zero implementation. The Services crate contains substantial pure policy/routing work plus the first authoritative persistent Fishing access owner, including current foundations for:
 
+- permanent per-account access for non-default Fishing areas, with Starter Pool implicit by default;
+- authoritative first-unlock resolution from persisted Account XP/Rebirth and the currently equipped Rod;
 - area unlock policy;
 - canonical species and per-area pools;
 - fish variants;
@@ -172,7 +174,9 @@ Fishing is no longer accurately described as having zero implementation. The Ser
 - direct fishing enchant-book pool/weights;
 - manual fishing AEXP outcome policy.
 
-This remains a **policy foundation**, not a live Fishing system. There is no authoritative persistent cast owner that snapshots state/policy, owns domain-separated deterministic RNG, consumes bait/durability atomically, settles CatchBag/Item Bag output and AEXP, handles line-break/destruction consequences, finalizes operation/outbox, and exposes the Discord command. Phase 7 stateful implementation should resume only after the non-deferred Phase 6 work chosen by the current build plan is sufficiently closed or a newer explicit owner correction changes that order.
+The access owner persists only non-default area grants and checks persisted access before current qualification, so later Account Level/Rebirth/Rod changes do not re-lock an already-open area. First unlocks resolve the equipped Rod from the authoritative equipment slot and the exact immutable ItemDefinition version pinned by the ItemInstance; request-provided tier metadata is never authority. Starter Basic remains a separate Pool-only per-cast capability rule rather than a way to qualify a first non-Pool unlock.
+
+This remains **pre-command Fishing infrastructure**, not a live Fishing system. There is no authoritative persistent cast owner that snapshots state/policy, owns domain-separated deterministic RNG, consumes bait/durability atomically, settles CatchBag/Item Bag output and AEXP, handles line-break/destruction consequences, finalizes operation/outbox, and exposes the Discord command. The permanent area-access boundary is implemented, but it is only one prerequisite of that future cast lifecycle.
 
 ## Important cross-cutting invariants already enforced
 
@@ -196,6 +200,7 @@ This remains a **policy foundation**, not a live Fishing system. There is no aut
 - SoulBind unbind is now an atomic Wallet/item/ledger/audit/outbox operation with committed replay semantics.
 - Activity EXP grant/spend/loss is transaction-composable, mutation-keyed, and source-modifier calculation remains outside the generic settlement kernel to prevent double application.
 - Rebirth preserves Activity EXP and resets only the account-cycle XP state defined by the progression owner.
+- Permanent Fishing-area access is per account, persists only non-default areas, and is resolved before current unlock qualification so later progression/equipment changes cannot re-lock an unlocked area.
 
 ## Deliberately unavailable / fail-closed boundaries
 
@@ -205,7 +210,7 @@ The following must not be inferred from nearby policy code:
 - `/enchant` is unavailable until book/Orb/economy/RNG/operation settlement is complete and unresolved numeric rules are frozen.
 - live +N attempts are unavailable until attempt cost/RNG/modifier settlement is complete; no `N^1.55` approximation may be invented.
 - `/forge`, `/repair`, and `/smelt` remain unavailable until their owning atomic lifecycles are complete.
-- `/fish` is unavailable despite substantial pure Fishing policy work.
+- `/fish` is unavailable despite substantial Fishing policy and permanent area-access state work.
 - `/discard` / Trash Recovery remains unavailable while recovery/expiry lifecycle semantics are insufficiently frozen.
 - generic storage-capacity purchase commands remain pending.
 - resources without authoritative production ItemDefinition stack caps must not be activated merely because content/policy keys exist.
