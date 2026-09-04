@@ -7,8 +7,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    CanonicalEnchant, EnchantApplyError, EnchantSlotCapacity, EnchantSlotFamily, EquipmentSlot,
-    EquipmentTier, canonical_enchant_max_resulting_level, enchant_placement_policy,
+    CanonicalEnchant, EnchantApplyError, EnchantConflictScope, EnchantSlotCapacity,
+    EnchantSlotFamily, EquipmentSlot, EquipmentTier, canonical_enchant_conflict_scope,
+    canonical_enchant_max_resulting_level, enchant_placement_policy,
 };
 
 pub(crate) const STARTER_BASIC_ROD_DEFINITION_KEY: &str = "equipment.rod.basic.starter";
@@ -107,6 +108,14 @@ pub enum EquippedFishingRodCastSnapshotError {
     },
     #[error("persisted embedded enchant {0:?} cannot be placed on a Fishing Rod")]
     EmbeddedEnchantWrongEquipmentSlot(CanonicalEnchant),
+    #[error(
+        "persisted Fishing Rod enchants {left:?} and {right:?} conflict at scope {scope:?}"
+    )]
+    EmbeddedEnchantConflict {
+        left: CanonicalEnchant,
+        right: CanonicalEnchant,
+        scope: EnchantConflictScope,
+    },
     #[error("embedded enchant row count exceeds the canonical catalog cardinality")]
     TooManyEmbeddedEnchantRows,
     #[error(
@@ -240,8 +249,8 @@ pub(crate) async fn lock_equipped_fishing_rod_state(
 /// shared Rod identity bridge, ordinary Rods lock their structural row only to obtain the authoritative
 /// Normal/class and Special/universal slot capacities; Creation Roll and +N appraisal state are not
 /// interpreted here. Embedded enchant rows are then locked in deterministic key order, mapped through
-/// the shared canonical persistence vocabulary, validated against resulting-level ceilings and the
-/// shared Fishing-Rod placement mask, and checked against the currently unlocked family capacities.
+/// the shared canonical persistence vocabulary, validated against resulting-level ceilings, Fishing-
+/// Rod placement, same-item conflicts, and the currently unlocked family capacities.
 ///
 /// Starter Basic remains a separate system Rod: its canonical state is unbreakable, non-repairable,
 /// has no mutable durability, has no embedded enchants, and does not require ordinary structural
@@ -320,8 +329,9 @@ pub async fn lock_equipped_fishing_rod_cast_snapshot(
     .fetch_optional(&mut **tx)
     .await?
     .ok_or(EquippedFishingRodCastSnapshotError::OrdinaryRodStructuralStateMissing)?;
-    let normal_capacity = u8::try_from(capacity_row.try_get::<i16, _>("normal_enchant_slot_capacity")?)
-        .map_err(|_| EquippedFishingRodCastSnapshotError::OrdinaryRodStructuralStateMissing)?;
+    let normal_capacity =
+        u8::try_from(capacity_row.try_get::<i16, _>("normal_enchant_slot_capacity")?)
+            .map_err(|_| EquippedFishingRodCastSnapshotError::OrdinaryRodStructuralStateMissing)?;
     let special_capacity =
         u8::try_from(capacity_row.try_get::<i16, _>("special_enchant_slot_capacity")?)
             .map_err(|_| EquippedFishingRodCastSnapshotError::OrdinaryRodStructuralStateMissing)?;
@@ -376,6 +386,15 @@ pub async fn lock_equipped_fishing_rod_cast_snapshot(
                 EquippedFishingRodCastSnapshotError::EmbeddedEnchantWrongEquipmentSlot(enchant),
             );
         }
+        for existing in &embedded_enchants {
+            if let Some(scope) = canonical_enchant_conflict_scope(existing.enchant, enchant) {
+                return Err(EquippedFishingRodCastSnapshotError::EmbeddedEnchantConflict {
+                    left: existing.enchant,
+                    right: enchant,
+                    scope,
+                });
+            }
+        }
         match placement.slot_family {
             EnchantSlotFamily::NormalClass => {
                 normal_occupied = normal_occupied.checked_add(1).ok_or(
@@ -426,7 +445,7 @@ pub async fn lock_equipped_fishing_rod_cast_snapshot(
     })
 }
 
-fn ordinary_rod_tier_from_definition(data: &Value) -> Option<EquipmentTier> {
+pub(crate) fn ordinary_rod_tier_from_definition(data: &Value) -> Option<EquipmentTier> {
     match data.get("tier").and_then(Value::as_str) {
         Some("WOOD") => Some(EquipmentTier::Wood),
         Some("STONE") => Some(EquipmentTier::Stone),
@@ -438,5 +457,40 @@ fn ordinary_rod_tier_from_definition(data: &Value) -> Option<EquipmentTier> {
         Some("NETHERITE") => Some(EquipmentTier::Netherite),
         Some("GRAPHITE") => Some(EquipmentTier::Graphite),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ordinary_rod_tier_metadata_is_exact_and_fail_closed() {
+        let cases = [
+            ("WOOD", EquipmentTier::Wood),
+            ("STONE", EquipmentTier::Stone),
+            ("COPPER", EquipmentTier::Copper),
+            ("GOLD", EquipmentTier::Gold),
+            ("IRON", EquipmentTier::Iron),
+            ("DIAMOND", EquipmentTier::Diamond),
+            ("OBSIDIAN", EquipmentTier::Obsidian),
+            ("NETHERITE", EquipmentTier::Netherite),
+            ("GRAPHITE", EquipmentTier::Graphite),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(
+                ordinary_rod_tier_from_definition(&json!({"tier": raw})),
+                Some(expected)
+            );
+        }
+        for invalid in [
+            json!({}),
+            json!({"tier": "LEATHER"}),
+            json!({"tier": "wood"}),
+            json!({"tier": 7}),
+        ] {
+            assert_eq!(ordinary_rod_tier_from_definition(&invalid), None);
+        }
     }
 }
