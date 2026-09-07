@@ -1,4 +1,7 @@
-use graphite_progression::{ActivityXpError, lock_activity_xp_settlement_context};
+use graphite_progression::{
+    AccountXpSettlementError, ActivityXpError, lock_account_xp_settlement_context,
+    lock_activity_xp_settlement_context,
+};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
@@ -22,6 +25,8 @@ pub struct ManualFishingCastPreflight {
 #[derive(Debug, Error)]
 pub enum ManualFishingCastPreflightError {
     #[error(transparent)]
+    AccountXp(#[from] AccountXpSettlementError),
+    #[error(transparent)]
     AreaAccess(#[from] FishingAreaAccessError),
     #[error(transparent)]
     ActivityXp(#[from] ActivityXpError),
@@ -38,35 +43,38 @@ pub enum ManualFishingCastPreflightError {
 /// Locks the authoritative state needed before a future manual Fishing cast resolves RNG or mutates
 /// cast assets.
 ///
-/// Permanent-area access is resolved first because a first non-default unlock already follows the
-/// repository order `operation -> player -> progression -> item`. The generic Activity EXP settlement
-/// prelock is then acquired before the cast-specific Rod snapshot. On a persisted/default area path it
-/// introduces the progression lock before any item lock; on a first-unlock path the same progression
-/// row was already locked before the qualification Rod and this call only re-enters that owned lock.
-/// This keeps a later Fishing Activity EXP mutation from creating an `item -> progression` inversion.
-/// The returned Activity EXP snapshot is deliberately not exposed here: PostgreSQL owns the lock, and
-/// the future settlement must use the canonical keyed mutation API rather than treating a preflight
-/// balance snapshot as later authority. The Rod cast snapshot then extends the held lock set with the
-/// exact equipped ItemInstance, equipment slot, structural capacity row, and canonical embedded enchant
-/// rows.
+/// Account XP is prelocked first because a successful committed manual cast can cross an Account
+/// Level boundary and synchronously mint the frozen Account Level Money reward. That primitive owns
+/// the canonical `operation -> player -> balance -> progression` order, so balance/progression state
+/// is locked before any Fishing-area qualification can enter Rod ItemInstance state. Permanent-area
+/// access is resolved next; on a first non-default unlock it re-enters the already-owned operation,
+/// player and progression rows before locking the qualification Rod. The generic Activity EXP
+/// settlement prelock then re-enters operation/player/progression before the cast-specific Rod
+/// snapshot extends the lock set with the exact equipped ItemInstance, equipment slot, structural
+/// capacity row and canonical embedded-enchant rows.
 ///
-/// Existing area access remains permanent and therefore does not re-check a lower current ordinary Rod
-/// tier; the one explicit per-cast exception is Starter Basic, which remains Pool-only. A consistently
-/// Broken ordinary Rod is a valid low-level Rod snapshot but is rejected here before a cast can proceed.
-/// Bait Rack capacity is derived from the locked canonical embedded-enchant snapshot, so downstream bait
-/// planning does not need to trust Discord input or re-read mutable Rod state.
+/// The returned Account XP and Activity EXP snapshots are deliberately not exposed here: PostgreSQL
+/// owns the locks, and future settlement must use the canonical progression mutation APIs rather than
+/// treating preflight balance snapshots as later authority. Existing area access remains permanent
+/// and therefore does not re-check a lower current ordinary Rod tier; the one explicit per-cast
+/// exception is Starter Basic, which remains Pool-only. A consistently Broken ordinary Rod is a
+/// valid low-level Rod snapshot but is rejected here before a cast can proceed. Bait Rack capacity is
+/// derived from the locked canonical embedded-enchant snapshot, so downstream bait planning does not
+/// need to trust Discord input or re-read mutable Rod state.
 ///
 /// This preflight may insert the player's first permanent non-default area unlock in the caller-owned
 /// transaction. Consequently the caller must roll back the transaction when this function returns an
-/// error. On success the caller still owns RNG resolution, active-bait inventory/consumption, normal or
-/// line-break durability consequence, Mending, CatchBag output, Fishing AEXP, cooldown, operation
-/// finalization, outbox/audit effects, and commit. This function does not expose `/fish` by itself.
+/// error. On success the caller still owns RNG resolution, active-bait inventory/consumption, normal
+/// or line-break durability consequence, Mending, CatchBag output, Fishing Account XP/AEXP, cooldown,
+/// operation finalization, outbox/audit effects, and commit. This function does not expose `/fish` by
+/// itself.
 pub async fn lock_manual_fishing_cast_preflight(
     tx: &mut Transaction<'_, Postgres>,
     operation_id: Uuid,
     player_id: Uuid,
     area: FishingArea,
 ) -> Result<ManualFishingCastPreflight, ManualFishingCastPreflightError> {
+    lock_account_xp_settlement_context(tx, operation_id, player_id).await?;
     let area_access =
         lock_or_grant_fishing_area_first_unlock(tx, operation_id, player_id, area).await?;
     lock_activity_xp_settlement_context(tx, operation_id, player_id).await?;

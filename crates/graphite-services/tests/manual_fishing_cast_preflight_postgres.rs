@@ -99,13 +99,13 @@ async fn first_river_cast_preflight_composes_permanent_unlock_and_locked_bait_ra
 }
 
 #[tokio::test]
-async fn persisted_area_preflight_prelocks_progression_before_cast_item_state() {
+async fn persisted_area_preflight_holds_balance_progression_and_cast_item_locks() {
     let Some(store) = test_store().await else {
         return;
     };
     let nonce = Uuid::now_v7();
     let player_id = seed_player(&store, positive_snowflake(nonce)).await;
-    seed_ordinary_rod(
+    let item_id = seed_ordinary_rod(
         &store,
         player_id,
         nonce,
@@ -144,16 +144,27 @@ async fn persisted_area_preflight_prelocks_progression_before_cast_item_state() 
         preflight.area_access.origin,
         FishingAreaAccessOrigin::Persisted
     );
+    assert_eq!(preflight.rod.item_instance_id, item_id);
 
-    let mut contender = store.pool().begin().await.unwrap();
-    let progression_lock = sqlx::query_scalar::<_, Uuid>(
-        "SELECT player_id FROM player_progression WHERE player_id = $1 FOR UPDATE NOWAIT",
+    assert_row_locked(
+        &store,
+        "SELECT player_id FROM player_balances WHERE player_id = $1 FOR UPDATE NOWAIT",
+        player_id,
     )
-    .bind(player_id)
-    .fetch_one(&mut *contender)
     .await;
-    assert_lock_not_available(progression_lock.unwrap_err());
-    contender.rollback().await.unwrap();
+    assert_row_locked(
+        &store,
+        "SELECT player_id FROM player_progression WHERE player_id = $1 FOR UPDATE NOWAIT",
+        player_id,
+    )
+    .await;
+    assert_row_locked(
+        &store,
+        "SELECT id FROM item_instances WHERE id = $1 FOR UPDATE NOWAIT",
+        item_id,
+    )
+    .await;
+
     owner.rollback().await.unwrap();
 }
 
@@ -241,6 +252,11 @@ async fn seed_player(store: &PgStore, discord_user_id: i64) -> Uuid {
     sqlx::query("INSERT INTO players (id, discord_user_id) VALUES ($1, $2)")
         .bind(player_id)
         .bind(discord_user_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO player_balances (player_id) VALUES ($1)")
+        .bind(player_id)
         .execute(store.pool())
         .await
         .unwrap();
@@ -409,6 +425,16 @@ async fn operation_state(store: &PgStore, operation_id: Uuid) -> String {
         .fetch_one(store.pool())
         .await
         .unwrap()
+}
+
+async fn assert_row_locked(store: &PgStore, query: &'static str, id: Uuid) {
+    let mut contender = store.pool().begin().await.unwrap();
+    let lock = sqlx::query_scalar::<_, Uuid>(query)
+        .bind(id)
+        .fetch_one(&mut *contender)
+        .await;
+    assert_lock_not_available(lock.unwrap_err());
+    contender.rollback().await.unwrap();
 }
 
 fn assert_lock_not_available(error: sqlx::Error) {

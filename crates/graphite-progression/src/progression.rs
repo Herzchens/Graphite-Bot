@@ -8,6 +8,14 @@ use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
+mod account_settlement;
+use account_settlement::{AccountXpGrantProjectionError, project_account_xp_grant};
+pub use account_settlement::{
+    AccountXpSettlementError, AccountXpSettlementReceipt, AccountXpSettlementRequest,
+    LockedAccountXpSettlementContext, apply_account_xp_settlement,
+    lock_account_xp_settlement_context,
+};
+
 const PROGRESSION_POLICY_VERSION: i32 = 1;
 pub const ACCOUNT_MAX_LEVEL: u16 = 200;
 pub const ACCOUNT_XP_CAP: i64 = 172_370;
@@ -226,53 +234,37 @@ impl ProgressionService {
 
         let player = lock_progression(&mut tx, discord_user_id).await?;
         ensure_mutable(&player.status)?;
-        let before = account_progress(player.account_xp)?;
-        let remaining = ACCOUNT_XP_CAP
-            .checked_sub(player.account_xp)
-            .ok_or(ProgressionError::InvalidProgressionState)?;
-        let granted_xp = amount.min(remaining);
-        let account_xp_after =
-            player
-                .account_xp
-                .checked_add(granted_xp)
-                .ok_or(ProgressionError::Math(
-                    ProgressionMathError::ArithmeticOverflow,
-                ))?;
-        let after = account_progress(account_xp_after)?;
-        let level_money_reward = cumulative_level_reward(after.level)
-            .checked_sub(cumulative_level_reward(before.level))
-            .ok_or(ProgressionError::InvalidProgressionState)?;
-        let wallet_after =
-            player
-                .wallet
-                .checked_add(level_money_reward)
-                .ok_or(ProgressionError::Math(
-                    ProgressionMathError::ArithmeticOverflow,
-                ))?;
+        let projection = project_account_xp_grant(player.account_xp, player.wallet, amount)
+            .map_err(|error| match error {
+                AccountXpGrantProjectionError::Math(error) => ProgressionError::Math(error),
+                AccountXpGrantProjectionError::InvalidState => {
+                    ProgressionError::InvalidProgressionState
+                }
+            })?;
 
-        if granted_xp > 0 {
+        if projection.granted_xp > 0 {
             sqlx::query(
                 "UPDATE player_progression SET account_xp = $1, updated_at = now() WHERE player_id = $2",
             )
-            .bind(account_xp_after)
+            .bind(projection.account_xp_after)
             .bind(player.player_id)
             .execute(&mut *tx)
             .await?;
         }
-        if level_money_reward > 0 {
+        if projection.level_money_reward > 0 {
             sqlx::query(
                 "UPDATE player_balances SET wallet = $1, updated_at = now() WHERE player_id = $2",
             )
-            .bind(wallet_after)
+            .bind(projection.wallet_after)
             .bind(player.player_id)
             .execute(&mut *tx)
             .await?;
             let ledger = LevelRewardLedger {
                 source,
-                level_before: before.level,
-                level_after: after.level,
-                granted_xp,
-                reward: level_money_reward,
+                level_before: projection.before.level,
+                level_after: projection.after.level,
+                granted_xp: projection.granted_xp,
+                reward: projection.level_money_reward,
             };
             insert_level_reward_ledger(&mut tx, operation_id, player.player_id, &ledger).await?;
         }
@@ -280,14 +272,14 @@ impl ProgressionService {
         let receipt = AccountXpGrantReceipt {
             operation_id,
             requested_xp: amount,
-            granted_xp,
+            granted_xp: projection.granted_xp,
             source: source.to_owned(),
             account_xp_before: player.account_xp,
-            account_xp_after,
-            level_before: before.level,
-            level_after: after.level,
-            level_money_reward,
-            wallet_after,
+            account_xp_after: projection.account_xp_after,
+            level_before: projection.before.level,
+            level_after: projection.after.level,
+            level_money_reward: projection.level_money_reward,
+            wallet_after: projection.wallet_after,
         };
         insert_progression_event(
             &mut tx,
@@ -297,12 +289,12 @@ impl ProgressionService {
             json!({
                 "source": source,
                 "requested_xp": amount,
-                "granted_xp": granted_xp,
+                "granted_xp": projection.granted_xp,
                 "account_xp_before": player.account_xp,
-                "account_xp_after": account_xp_after,
-                "level_before": before.level,
-                "level_after": after.level,
-                "level_money_reward": level_money_reward,
+                "account_xp_after": projection.account_xp_after,
+                "level_before": projection.before.level,
+                "level_after": projection.after.level,
+                "level_money_reward": projection.level_money_reward,
             }),
         )
         .await?;
