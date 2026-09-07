@@ -138,6 +138,23 @@ async fn soulbind_state_identity_is_immutable_and_parent_delete_cascades() {
     assert_eq!(after_delete, 0);
 }
 
+#[test]
+fn positive_snowflake_uses_uuid_random_tail_instead_of_v7_timestamp_prefix() {
+    let shared_prefix = [0x01, 0x9a, 0xbc, 0xde, 0xf0, 0x12, 0x70, 0x00];
+    let mut first = [0_u8; 16];
+    first[..8].copy_from_slice(&shared_prefix);
+    first[8..].copy_from_slice(&[0x80, 0, 0, 0, 0, 0, 0, 1]);
+    let mut second = first;
+    second[15] = 2;
+
+    let first_snowflake = positive_snowflake(Uuid::from_bytes(first));
+    let second_snowflake = positive_snowflake(Uuid::from_bytes(second));
+
+    assert!(first_snowflake > 0);
+    assert!(second_snowflake > 0);
+    assert_ne!(first_snowflake, second_snowflake);
+}
+
 async fn test_store() -> Option<PgStore> {
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL is not set; skipping PostgreSQL integration test");
@@ -204,6 +221,7 @@ fn fixed_utc(value: &str) -> DateTime<Utc> {
 }
 
 fn positive_snowflake(nonce: Uuid) -> i64 {
-    let raw = u64::from_be_bytes(nonce.as_bytes()[..8].try_into().unwrap());
-    i64::try_from((raw % 8_000_000_000_000_000_000_u64).max(1)).unwrap()
+    let raw = u64::from_be_bytes(nonce.as_bytes()[8..].try_into().unwrap());
+    let value = (raw & i64::MAX as u64).max(1);
+    i64::try_from(value).unwrap()
 }
