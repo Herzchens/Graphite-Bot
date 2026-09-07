@@ -17,7 +17,7 @@ fn public_api_exposes_latest_direct_fishing_pool_weights() {
 
     assert_eq!(
         policies.map(|policy| policy.relative_weight),
-        [58, 24, 12, 4, 2]
+        [50, 28, 15, 5, 2]
     );
     for (policy, pool) in policies.into_iter().zip(pools) {
         assert_eq!(policy.pool, pool);
@@ -66,11 +66,11 @@ fn public_api_exposes_only_the_authoritative_mythic_member_split() {
     );
     assert_eq!(
         direct_fishing_mythic_enchant_weight(CanonicalEnchant::Annihilation),
-        Ok(30)
+        Ok(35)
     );
     assert_eq!(
         direct_fishing_mythic_enchant_weight(CanonicalEnchant::Phoenix),
-        Ok(25)
+        Ok(20)
     );
     assert_eq!(
         direct_fishing_mythic_enchant_weight(CanonicalEnchant::SoulGrind),
@@ -85,20 +85,20 @@ fn public_api_exposes_latest_raw_pool_level_profiles() {
     let cases: &[(DirectFishingBookLevelProfile, &[(u8, u8)])] = &[
         (
             DirectFishingBookLevelProfile::ShopCommon,
-            &[(1, 34), (2, 28), (3, 20), (4, 12), (5, 5), (6, 1)],
+            &[(1, 30), (2, 25), (3, 20), (4, 15), (5, 8), (6, 2)],
         ),
         (
             DirectFishingBookLevelProfile::MidLoot,
-            &[(2, 24), (3, 24), (4, 22), (5, 16), (6, 10), (7, 4)],
+            &[(2, 20), (3, 22), (4, 22), (5, 18), (6, 12), (7, 6)],
         ),
         (
             DirectFishingBookLevelProfile::Rare,
-            &[(3, 14), (4, 22), (5, 26), (6, 20), (7, 12), (8, 6)],
+            &[(3, 10), (4, 18), (5, 25), (6, 22), (7, 15), (8, 10)],
         ),
         (DirectFishingBookLevelProfile::Mending, &[(1, 100)]),
         (
             DirectFishingBookLevelProfile::NukeOrAnnihilation,
-            &[(1, 28), (2, 24), (3, 20), (4, 12), (5, 8), (6, 5), (7, 3)],
+            &[(1, 20), (2, 20), (3, 20), (4, 15), (5, 12), (6, 8), (7, 5)],
         ),
         (DirectFishingBookLevelProfile::Phoenix, &[(1, 100)]),
     ];
