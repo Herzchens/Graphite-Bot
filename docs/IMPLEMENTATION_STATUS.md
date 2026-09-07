@@ -2,7 +2,7 @@
 
 This file is an evidence-based snapshot of what the repository currently implements. It is **not** gameplay/design authority. When this file conflicts with a newer explicit owner correction, the newest normative Master Spec, `docs/PLAN_DEVIATIONS.md`, or executable repository/schema/test evidence, follow the authority order in `AGENTS.md`.
 
-Status sync baseline: runtime/code state through the Account XP settlement slice based on `main` at `b138564f3a461f504ff99fb6abf3e1c91c3894fb` (`feat(fishing): add manual cast preflight`).
+Status sync baseline: runtime/code state through the manual-Fishing RNG-context slice based on `main` at `431821df79132179c79a3d1b690f856a8c3396cf` (`feat(progression): add composable Account XP settlement (#137)`).
 
 ## Build-order status
 
@@ -14,7 +14,7 @@ Status sync baseline: runtime/code state through the Account XP settlement slice
 | 4 | Fixed NPC price/content registry | Implemented policy/content foundation through registry v3, including ordinary smelting and advanced Forge stack mappings. Live Shop/NPC liquidation and generic Forge transaction commands are not yet implemented. |
 | 5 | Account / Activity progression | Implemented progression foundation. Account XP curve/rewards, transaction-composable Account XP settlement/prelock with exact keyed replay and synchronous Account Level Wallet reward integration, authoritative spendable Activity EXP, transaction-composable AEXP grant/spend/loss and settlement prelock, Rebirth persistence/reset, and fixed-point utility formulas exist. General live progression/chat/gameplay source adapters and progression commands remain pending. |
 | 6 | Repair / Forge / Smelt / Enchant / +N / SoulBind | **In progress, substantially implemented.** Authoritative appraisal/state foundations and multiple transaction-composable writers now exist. SoulBind **unbind** has a complete atomic/idempotent/auditable lifecycle and is exposed through Discord as `/unbind` / `ub`. Full SoulBind binding, live Enchant/Slot Orb/+N/Forge/Repair/Smelt lifecycles, and their commands remain incomplete for the blockers listed below. |
-| 7 | Fishing | Policy foundation plus authoritative persistent prerequisites now exist: species/area/variant/drop tables, bait behavior/consumption plan, capability/over-cap routing, multicatch/multi-treasure, durability/Unbreaking-X, Gold rod, book pool, AEXP, permanent non-default area unlock ownership, transaction-composable Account-XP/AEXP prelocks for manual-cast composition, and transaction-composable resolved equipped-Rod durability state. No authoritative persistent cast owner or live `/fish` command yet. |
+| 7 | Fishing | Policy foundation plus authoritative persistent prerequisites now exist: species/area/variant/drop tables, bait behavior/consumption plan, capability/over-cap routing, multicatch/multi-treasure, durability/Unbreaking-X, Gold rod, book pool, AEXP, permanent non-default area unlock ownership, transaction-composable Account-XP/AEXP prelocks, operation-bound opaque persisted RNG context for future manual-cast composition, and transaction-composable resolved equipped-Rod durability state. No authoritative persistent cast owner or live `/fish` command yet. |
 | 8 | Mining / depletion | Pending stateful implementation. |
 | 9 | Combat / monsters / death protection | Pending stateful implementation. |
 | 10 | Quest / stats / achievements / profile | Basic profile surface exists; the broader Quest/stats/achievements system remains pending. |
@@ -173,15 +173,16 @@ Fishing is no longer accurately described as having zero implementation. The Ser
 - Gold rod side-grade modifiers;
 - direct fishing enchant-book pool/weights;
 - manual fishing AEXP outcome policy;
-- transaction-composable Account XP and Activity EXP settlement prelocks composed by manual-cast preflight for the future owning cast lifecycle.
+- transaction-composable Account XP and Activity EXP settlement prelocks composed by manual-cast preflight for the future owning cast lifecycle;
+- operation-bound manual-Fishing RNG context that pins the persisted operation root under lock, retains it as an opaque Services value, and keeps the raw seed private without exposing a gameplay draw API yet.
 
 The access owner persists only non-default area grants and checks persisted access before current qualification, so later Account Level/Rebirth/Rod changes do not re-lock an already-open area. First unlocks resolve the equipped Rod from the authoritative equipment slot and the exact immutable ItemDefinition version pinned by the ItemInstance; request-provided tier metadata is never authority. Starter Basic remains a separate Pool-only per-cast capability rule rather than a way to qualify a first non-Pool unlock.
 
 The durability writer is a caller-owned transaction primitive rather than a cast owner. It re-resolves and locks the current `FISHING_ROD`, derives ordinary/special identity from the pinned immutable ItemDefinition version, uses an expected-current-durability token to reject stale state, applies exactly one ordinary durability point for a resolved normal cast unless Unbreaking already prevented it, and persists zero durability together with `is_broken` for a resolved line break or final durability point. Starter Basic preserves its canonical NULL-durability unbreakable representation and is accepted only in Starter Pool; line-break consequences fail closed in Starter Pool.
 
-Manual-cast preflight now acquires Account XP reward state before area qualification and Rod state. This preserves the effective cross-domain order `operation -> player -> balance -> progression -> item` for the new child settlement path, retains those authoritative row locks in the caller-owned transaction, and then composes Activity EXP and Rod/capability prerequisites. The returned snapshots are not permission to settle independently or to reuse stale state outside that transaction.
+Manual-cast preflight now pins the persisted operation RNG root before extending the transaction through Account XP reward state, area qualification, Activity EXP, and Rod state. This preserves the effective cross-domain order `operation -> player -> balance -> progression -> item`, retains those authoritative row locks in the caller-owned transaction, and gives the future Services-owned cast composition an operation-owned persisted RNG source rather than allowing Discord input, wall-clock timing, or unrelated RNG streams to become authority. The returned progression snapshots are not permission to settle independently or to reuse stale state outside that transaction. The current RNG context exposes no draw API and itself chooses no gameplay outcome.
 
-This remains **pre-command Fishing infrastructure**, not a live Fishing system. There is no authoritative persistent cast owner that snapshots the complete cast state/policy, owns domain-separated deterministic RNG, consumes bait and durability as one cast settlement, settles CatchBag/Item Bag output plus Account XP/AEXP, composes Mending and other terminal consequences, finalizes operation/audit/outbox, and exposes the Discord command. Permanent area access, progression settlement prelocks, and resolved Rod-durability mutation are prerequisites of that future lifecycle, not substitutes for it.
+This remains **pre-command Fishing infrastructure**, not a live Fishing system. There is no authoritative persistent cast owner that composes the complete discrete outcome/modifier sequence, consumes bait and durability as one cast settlement, settles CatchBag/Item Bag output plus Account XP/AEXP, composes Mending and other terminal consequences, finalizes operation/audit/outbox, and exposes the Discord command. The RNG context deliberately does not define the still-unfrozen fish weight/length sampler, additional-FishInstance identity semantics, or School Bait/Multicatch stage ordering. Permanent area access, progression settlement prelocks, pinned RNG context, and resolved Rod-durability mutation are prerequisites of that future lifecycle, not substitutes for it.
 
 ## Important cross-cutting invariants already enforced
 
@@ -189,6 +190,7 @@ This remains **pre-command Fishing infrastructure**, not a live Fishing system. 
 - Player and operation identifiers use UUIDv7.
 - External Discord delivery keys are used for mutation idempotency; request hashes detect conflicting key reuse.
 - Operation rows persist RNG root material before future domain-separated draws are required.
+- Manual Fishing preflight pins the persisted operation RNG root under the owning operation lock and keeps the raw seed private; the returned context is intentionally opaque and exposes no draw API until a Services-owned cast composition has canonical domain/order semantics to consume it.
 - High-value mutation owners use caller-owned PostgreSQL transactions and commit canonical state, ledger/audit records, operation result, and outbox atomically where their full lifecycle is implemented.
 - Wallet/Bank/liability and Activity EXP non-negative constraints fail closed at authoritative boundaries.
 - Money ledger history is immutable and balanced.
@@ -218,7 +220,7 @@ The following must not be inferred from nearby policy code:
 - `/enchant` is unavailable until book/Orb/economy/RNG/operation settlement is complete and unresolved numeric rules are frozen.
 - live +N attempts are unavailable until attempt cost/RNG/modifier settlement is complete; no `N^1.55` approximation may be invented.
 - `/forge`, `/repair`, and `/smelt` remain unavailable until their owning atomic lifecycles are complete.
-- `/fish` is unavailable despite substantial Fishing policy, permanent area-access state, progression settlement prelocks, and transaction-composable Rod-durability state work.
+- `/fish` is unavailable despite substantial Fishing policy, permanent area-access state, progression settlement prelocks, pinned operation RNG context, and transaction-composable Rod-durability state work.
 - `/discard` / Trash Recovery remains unavailable while recovery/expiry lifecycle semantics are insufficiently frozen.
 - generic storage-capacity purchase commands remain pending.
 - resources without authoritative production ItemDefinition stack caps must not be activated merely because content/policy keys exist.
