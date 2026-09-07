@@ -60,10 +60,10 @@ pub const fn direct_fishing_book_pool_policy(
     pool: DirectFishingBookPool,
 ) -> DirectFishingBookPoolPolicy {
     let relative_weight = match pool {
-        DirectFishingBookPool::ShopCommon => 58,
-        DirectFishingBookPool::MidLoot => 24,
-        DirectFishingBookPool::Rare => 12,
-        DirectFishingBookPool::Mending => 4,
+        DirectFishingBookPool::ShopCommon => 50,
+        DirectFishingBookPool::MidLoot => 28,
+        DirectFishingBookPool::Rare => 15,
+        DirectFishingBookPool::Mending => 5,
         DirectFishingBookPool::Mythic => 2,
     };
 
@@ -107,8 +107,8 @@ pub const fn direct_fishing_mythic_enchant_weight(
 ) -> Result<u8, DirectFishingBookPolicyError> {
     match enchant {
         CanonicalEnchant::Nuke => Ok(45),
-        CanonicalEnchant::Annihilation => Ok(30),
-        CanonicalEnchant::Phoenix => Ok(25),
+        CanonicalEnchant::Annihilation => Ok(35),
+        CanonicalEnchant::Phoenix => Ok(20),
         other => Err(DirectFishingBookPolicyError::NotDirectFishingMythic(other)),
     }
 }
@@ -124,36 +124,36 @@ pub const fn direct_fishing_raw_book_level_weight(
     level: u8,
 ) -> Result<u8, DirectFishingBookPolicyError> {
     let weight = match (profile, level) {
-        (DirectFishingBookLevelProfile::ShopCommon, 1) => 34,
-        (DirectFishingBookLevelProfile::ShopCommon, 2) => 28,
+        (DirectFishingBookLevelProfile::ShopCommon, 1) => 30,
+        (DirectFishingBookLevelProfile::ShopCommon, 2) => 25,
         (DirectFishingBookLevelProfile::ShopCommon, 3) => 20,
-        (DirectFishingBookLevelProfile::ShopCommon, 4) => 12,
-        (DirectFishingBookLevelProfile::ShopCommon, 5) => 5,
-        (DirectFishingBookLevelProfile::ShopCommon, 6) => 1,
+        (DirectFishingBookLevelProfile::ShopCommon, 4) => 15,
+        (DirectFishingBookLevelProfile::ShopCommon, 5) => 8,
+        (DirectFishingBookLevelProfile::ShopCommon, 6) => 2,
 
-        (DirectFishingBookLevelProfile::MidLoot, 2) => 24,
-        (DirectFishingBookLevelProfile::MidLoot, 3) => 24,
+        (DirectFishingBookLevelProfile::MidLoot, 2) => 20,
+        (DirectFishingBookLevelProfile::MidLoot, 3) => 22,
         (DirectFishingBookLevelProfile::MidLoot, 4) => 22,
-        (DirectFishingBookLevelProfile::MidLoot, 5) => 16,
-        (DirectFishingBookLevelProfile::MidLoot, 6) => 10,
-        (DirectFishingBookLevelProfile::MidLoot, 7) => 4,
+        (DirectFishingBookLevelProfile::MidLoot, 5) => 18,
+        (DirectFishingBookLevelProfile::MidLoot, 6) => 12,
+        (DirectFishingBookLevelProfile::MidLoot, 7) => 6,
 
-        (DirectFishingBookLevelProfile::Rare, 3) => 14,
-        (DirectFishingBookLevelProfile::Rare, 4) => 22,
-        (DirectFishingBookLevelProfile::Rare, 5) => 26,
-        (DirectFishingBookLevelProfile::Rare, 6) => 20,
-        (DirectFishingBookLevelProfile::Rare, 7) => 12,
-        (DirectFishingBookLevelProfile::Rare, 8) => 6,
+        (DirectFishingBookLevelProfile::Rare, 3) => 10,
+        (DirectFishingBookLevelProfile::Rare, 4) => 18,
+        (DirectFishingBookLevelProfile::Rare, 5) => 25,
+        (DirectFishingBookLevelProfile::Rare, 6) => 22,
+        (DirectFishingBookLevelProfile::Rare, 7) => 15,
+        (DirectFishingBookLevelProfile::Rare, 8) => 10,
 
         (DirectFishingBookLevelProfile::Mending, 1) => 100,
 
-        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 1) => 28,
-        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 2) => 24,
+        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 1) => 20,
+        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 2) => 20,
         (DirectFishingBookLevelProfile::NukeOrAnnihilation, 3) => 20,
-        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 4) => 12,
-        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 5) => 8,
-        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 6) => 5,
-        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 7) => 3,
+        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 4) => 15,
+        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 5) => 12,
+        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 6) => 8,
+        (DirectFishingBookLevelProfile::NukeOrAnnihilation, 7) => 5,
 
         (DirectFishingBookLevelProfile::Phoenix, 1) => 100,
 
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn pool_weights_match_latest_master_and_sum_to_one_hundred() {
         let weights = POOLS.map(|pool| direct_fishing_book_pool_policy(pool).relative_weight);
-        assert_eq!(weights, [58, 24, 12, 4, 2]);
+        assert_eq!(weights, [50, 28, 15, 5, 2]);
         assert_eq!(
             weights.iter().map(|weight| u16::from(*weight)).sum::<u16>(),
             100
@@ -235,7 +235,7 @@ mod tests {
             direct_fishing_mythic_enchant_weight(CanonicalEnchant::Annihilation).unwrap(),
             direct_fishing_mythic_enchant_weight(CanonicalEnchant::Phoenix).unwrap(),
         ];
-        assert_eq!(weights, [45, 30, 25]);
+        assert_eq!(weights, [45, 35, 20]);
         assert_eq!(
             weights.iter().map(|weight| u16::from(*weight)).sum::<u16>(),
             100
@@ -251,11 +251,11 @@ mod tests {
     #[test]
     fn every_raw_level_profile_matches_latest_master_and_sums_to_one_hundred() {
         let expected = [
-            [0, 34, 28, 20, 12, 5, 1, 0, 0],
-            [0, 0, 24, 24, 22, 16, 10, 4, 0],
-            [0, 0, 0, 14, 22, 26, 20, 12, 6],
+            [0, 30, 25, 20, 15, 8, 2, 0, 0],
+            [0, 0, 20, 22, 22, 18, 12, 6, 0],
+            [0, 0, 0, 10, 18, 25, 22, 15, 10],
             [0, 100, 0, 0, 0, 0, 0, 0, 0],
-            [0, 28, 24, 20, 12, 8, 5, 3, 0],
+            [0, 20, 20, 20, 15, 12, 8, 5, 0],
             [0, 100, 0, 0, 0, 0, 0, 0, 0],
         ];
 
