@@ -37,6 +37,7 @@ mod forge;
 mod grinding;
 mod master_enchant;
 mod mending;
+mod mining_depth;
 mod ordinary_forge;
 mod percentage_fee;
 mod repair;
@@ -253,6 +254,10 @@ pub use master_enchant::{
 pub use mending::{
     MENDING_AUTOMATION_AEXP_PER_DURABILITY, MENDING_MANUAL_AEXP_PER_DURABILITY, MendingContext,
     MendingPolicyError, MendingPreview, preview_mending,
+};
+pub use mining_depth::{
+    ALL_MINING_DEPTHS, MINING_DEPTH_COUNT, MiningDepth, MiningDepthRiskPolicy, MiningWorld,
+    mining_depth_risk_policy,
 };
 pub use ordinary_forge::{
     FreshForgeOutcomePolicy, FreshForgeOutputLocation, FreshOrdinaryForgePolicyError,
