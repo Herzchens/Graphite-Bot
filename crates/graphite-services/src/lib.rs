@@ -37,6 +37,7 @@ mod forge;
 mod grinding;
 mod master_enchant;
 mod mending;
+mod mining_capability;
 mod mining_depth;
 mod mining_natural_roll;
 mod mining_operating_cost;
@@ -257,6 +258,10 @@ pub use master_enchant::{
 pub use mending::{
     MENDING_AUTOMATION_AEXP_PER_DURABILITY, MENDING_MANUAL_AEXP_PER_DURABILITY, MendingContext,
     MendingPolicyError, MendingPreview, preview_mending,
+};
+pub use mining_capability::{
+    MiningCapabilityClass, MiningCapabilityError, mining_pickaxe_allows_resource,
+    mining_pickaxe_max_capability, mining_resource_capability,
 };
 pub use mining_depth::{
     ALL_MINING_DEPTHS, MINING_DEPTH_COUNT, MiningDepth, MiningDepthRiskPolicy, MiningWorld,
