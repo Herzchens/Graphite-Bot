@@ -38,6 +38,7 @@ mod grinding;
 mod master_enchant;
 mod mending;
 mod mining_depth;
+mod mining_operating_cost;
 mod mining_pressure;
 mod ordinary_forge;
 mod percentage_fee;
@@ -260,6 +261,7 @@ pub use mining_depth::{
     ALL_MINING_DEPTHS, MINING_DEPTH_COUNT, MiningDepth, MiningDepthRiskPolicy, MiningWorld,
     mining_depth_risk_policy,
 };
+pub use mining_operating_cost::{MiningOperatingCostPolicy, mining_operating_cost_policy};
 pub use mining_pressure::{
     MINING_PRESSURE_APPRAISAL_PER_UNIT, MINING_PRESSURE_MAX_NON_PHYSICAL_OUTPUT_UNITS,
     MINING_PRESSURE_QUARTERS_PER_UNIT, MiningPressureContribution, MiningPressureIncrementRatio,
