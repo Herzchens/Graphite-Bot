@@ -27,6 +27,73 @@ pub enum MiningCapabilityError {
     UnknownMiningResource,
 }
 
+/// Frozen unmodified Pickaxe roll-count row for one material tier.
+///
+/// This is deliberately crate-private until a stateful Mining owner needs the policy as part of a
+/// complete expedition lifecycle. The range is the base material-tier row only: it does not apply
+/// Efficiency, +N main-stat scaling, Day/Night Walker, temporary modifiers, or any other throughput
+/// effect. It also does not define a random distribution or RNG-to-integer mapping inside the range.
+/// Those semantics must be resolved independently before a production roll owner can draw a count.
+///
+/// `EquipmentTier::Wood` identifies the Wood material row only. This policy does not prove whether
+/// a specific Wood ItemInstance is the system-bound Starter Pickaxe or ordinary Wood equipment;
+/// authoritative ItemDefinition identity remains the caller's responsibility.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct MiningPickaxeBaseRollRange {
+    pub(crate) min_rolls: u64,
+    pub(crate) max_rolls: u64,
+}
+
+/// Returns the frozen unmodified Pickaxe roll-count range for a material tier.
+///
+/// `StarterLeather` represents armor rather than a Pickaxe material tier and therefore fails closed.
+pub(crate) const fn mining_pickaxe_base_roll_range(
+    tier: EquipmentTier,
+) -> Result<MiningPickaxeBaseRollRange, MiningCapabilityError> {
+    let range = match tier {
+        EquipmentTier::StarterLeather => {
+            return Err(MiningCapabilityError::UnsupportedPickaxeTier(tier));
+        }
+        EquipmentTier::Wood => MiningPickaxeBaseRollRange {
+            min_rolls: 1,
+            max_rolls: 5,
+        },
+        EquipmentTier::Stone => MiningPickaxeBaseRollRange {
+            min_rolls: 2,
+            max_rolls: 6,
+        },
+        EquipmentTier::Copper => MiningPickaxeBaseRollRange {
+            min_rolls: 4,
+            max_rolls: 8,
+        },
+        EquipmentTier::Gold => MiningPickaxeBaseRollRange {
+            min_rolls: 12,
+            max_rolls: 18,
+        },
+        EquipmentTier::Iron => MiningPickaxeBaseRollRange {
+            min_rolls: 6,
+            max_rolls: 10,
+        },
+        EquipmentTier::Diamond => MiningPickaxeBaseRollRange {
+            min_rolls: 9,
+            max_rolls: 14,
+        },
+        EquipmentTier::Obsidian => MiningPickaxeBaseRollRange {
+            min_rolls: 12,
+            max_rolls: 18,
+        },
+        EquipmentTier::Netherite => MiningPickaxeBaseRollRange {
+            min_rolls: 15,
+            max_rolls: 22,
+        },
+        EquipmentTier::Graphite => MiningPickaxeBaseRollRange {
+            min_rolls: 18,
+            max_rolls: 26,
+        },
+    };
+    Ok(range)
+}
+
 /// Returns the frozen maximum resource capability for a Pickaxe material tier.
 ///
 /// Starter Wood Pickaxes use [`EquipmentTier::Wood`] and therefore resolve to `C0`; the
@@ -127,6 +194,38 @@ pub fn mining_pickaxe_allows_resource(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pickaxe_base_roll_range_matches_every_frozen_material_row() {
+        let cases = [
+            (EquipmentTier::Wood, (1, 5)),
+            (EquipmentTier::Stone, (2, 6)),
+            (EquipmentTier::Copper, (4, 8)),
+            (EquipmentTier::Gold, (12, 18)),
+            (EquipmentTier::Iron, (6, 10)),
+            (EquipmentTier::Diamond, (9, 14)),
+            (EquipmentTier::Obsidian, (12, 18)),
+            (EquipmentTier::Netherite, (15, 22)),
+            (EquipmentTier::Graphite, (18, 26)),
+        ];
+
+        for (tier, (min_rolls, max_rolls)) in cases {
+            assert_eq!(
+                mining_pickaxe_base_roll_range(tier),
+                Ok(MiningPickaxeBaseRollRange {
+                    min_rolls,
+                    max_rolls,
+                })
+            );
+            assert!(min_rolls <= max_rolls);
+        }
+        assert_eq!(
+            mining_pickaxe_base_roll_range(EquipmentTier::StarterLeather),
+            Err(MiningCapabilityError::UnsupportedPickaxeTier(
+                EquipmentTier::StarterLeather
+            ))
+        );
+    }
 
     #[test]
     fn pickaxe_max_capability_matches_every_frozen_tier_row() {
