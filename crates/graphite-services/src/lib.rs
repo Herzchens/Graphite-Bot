@@ -41,6 +41,7 @@ mod mining_aexp;
 mod mining_capability;
 mod mining_depth;
 mod mining_natural_roll;
+mod mining_nuke_collapse;
 mod mining_operating_cost;
 mod mining_pickaxe_durability;
 mod mining_pressure;
@@ -272,6 +273,10 @@ pub use mining_depth::{
 };
 pub use mining_natural_roll::{
     MINING_NATURAL_ROLL_WEIGHT_SCALE, MiningNaturalRollDrop, mining_natural_roll_drops,
+};
+pub use mining_nuke_collapse::{
+    MINING_NUKE_COLLAPSE_PROBABILITY_DENOMINATOR, MINING_NUKE_COLLAPSE_PROBABILITY_NUMERATOR,
+    MiningNukeCollapsePolicy, mining_nuke_collapse_policy,
 };
 pub use mining_operating_cost::{MiningOperatingCostPolicy, mining_operating_cost_policy};
 pub use mining_pickaxe_durability::{
