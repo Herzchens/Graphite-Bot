@@ -44,6 +44,7 @@ mod mining_natural_roll;
 mod mining_nuke_collapse;
 mod mining_operating_cost;
 mod mining_pickaxe_durability;
+mod mining_pickaxe_durability_state;
 mod mining_pressure;
 mod mining_special_proc;
 mod ordinary_forge;
@@ -285,6 +286,10 @@ pub use mining_pickaxe_durability::{
     MiningPickaxeOrdinaryDurabilityConsequence, MiningPickaxeOrdinaryDurabilityPreview,
     NORMAL_PICKAXE_DURABILITY_PER_ORDINARY_EVENT, NUKE_MAX_BLAST_PHYSICAL_BLOCKS,
     preview_mining_pickaxe_nuke_destruction, preview_mining_pickaxe_ordinary_durability_event,
+};
+pub use mining_pickaxe_durability_state::{
+    AppliedMiningPickaxeOrdinaryDurabilityState, MiningPickaxeDurabilityStateError,
+    apply_resolved_equipped_pickaxe_ordinary_durability_event,
 };
 pub use mining_pressure::{
     MINING_PRESSURE_APPRAISAL_PER_UNIT, MINING_PRESSURE_MAX_NON_PHYSICAL_OUTPUT_UNITS,
