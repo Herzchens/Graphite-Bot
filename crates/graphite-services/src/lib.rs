@@ -45,6 +45,7 @@ mod mining_nuke_collapse;
 mod mining_operating_cost;
 mod mining_pickaxe_durability;
 mod mining_pressure;
+mod mining_special_proc;
 mod ordinary_forge;
 mod percentage_fee;
 mod repair;
@@ -292,6 +293,13 @@ pub use mining_pressure::{
     fortune_extra_material_pressure_contribution, mining_pressure_increment_ratio,
     nuke_blast_block_pressure_contribution, physical_block_pressure_contribution,
     trench_extra_block_pressure_contribution,
+};
+pub use mining_special_proc::{
+    MINING_NUKE_CHECKS_PER_MANUAL_MINE, MINING_NUKE_PROC_PPM_PER_LEVEL,
+    MINING_SPECIAL_PROC_PROBABILITY_SCALE_PPM, MINING_TRENCH_EXTRA_BLOCKS_ON_PROC,
+    MINING_TRENCH_MAX_PROCS_PER_MANUAL_MINE, MINING_TRENCH_PROC_PPM_PER_LEVEL,
+    MiningNukeProcPolicy, MiningSpecialProcPolicyError, MiningTrenchProcPolicy,
+    mining_nuke_proc_policy, mining_trench_proc_policy,
 };
 pub use ordinary_forge::{
     FreshForgeOutcomePolicy, FreshForgeOutputLocation, FreshOrdinaryForgePolicyError,
