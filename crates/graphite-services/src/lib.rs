@@ -40,6 +40,7 @@ mod mending;
 mod mining_aexp;
 mod mining_capability;
 mod mining_depth;
+mod mining_gold_pickaxe;
 mod mining_natural_roll;
 mod mining_nuke_collapse;
 mod mining_operating_cost;
@@ -271,6 +272,14 @@ pub use mining_capability::{
 pub use mining_depth::{
     ALL_MINING_DEPTHS, MINING_DEPTH_COUNT, MiningDepth, MiningDepthRiskPolicy, MiningWorld,
     mining_depth_risk_policy,
+};
+pub use mining_gold_pickaxe::{
+    GOLD_PICKAXE_ACTION_SPEED_RATING_PERCENT,
+    GOLD_PICKAXE_ELIGIBLE_TREASURE_RARE_RELATIVE_WEIGHT_DENOMINATOR,
+    GOLD_PICKAXE_ELIGIBLE_TREASURE_RARE_RELATIVE_WEIGHT_INCREASE_PERCENT,
+    GOLD_PICKAXE_ELIGIBLE_TREASURE_RARE_RELATIVE_WEIGHT_NUMERATOR, GoldMiningPickaxeModifierStage,
+    GoldMiningPickaxePolicyError, GoldMiningPickaxeSideGradePolicy,
+    gold_mining_pickaxe_side_grade_policy,
 };
 pub use mining_natural_roll::{
     MINING_NATURAL_ROLL_WEIGHT_SCALE, MiningNaturalRollDrop, mining_natural_roll_drops,
