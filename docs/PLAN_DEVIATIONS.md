@@ -1120,3 +1120,31 @@ Rust 1.98.0 and the relevant direct stable dependencies (`sqlx`, `serde`, `thise
 **Final decision**
 
 Keep the existing Rust/dependency pins. The only manifest change is the first-party `graphite-items` path dependency required by the intended layering. Do not mix unrelated dependency upgrades or prerelease versions into this resolver commit.
+
+## Mining Gold Pickaxe source-policy slice
+
+Branch: \`feat/mining-gold-pickaxe-policy\`
+
+### 1. Standalone base Pickaxe roll-range code remains deferred until a real owner consumes it
+
+**Earlier implementation attempt — \`DISPROVED\`**
+
+Draft PR #148 encoded the frozen material-tier Pickaxe roll ranges as a crate-private helper. Exact-head Clippy correctly rejected that helper as dead production code because no current Mining owner consumed it. Making the same table public solely to silence \`dead_code\` would not create a legitimate integration boundary.
+
+**Final decision**
+
+Do not resurrect the standalone base-roll helper. Keep the frozen table in the Master Specification until a real Mining roll owner/composition consumes it.
+
+Efficiency X remains \`UNRESOLVED\` for roll-count composition: the source says “+50% roll range” but does not freeze whether that scales the minimum, maximum, width, or an already-drawn count, nor the required integer rounding. Day/Night Walker’s “+10% mining rolls” has the same unresolved composition/rounding interaction.
+
+### 2. Gold Pickaxe source-local modifiers are a separate frozen policy boundary
+
+**Implementation-time finding — \`CONFIRMED\`**
+
+The active Master independently freezes the ordinary Gold Pickaxe side-grade as C3 with a +10% Mining action-speed rating input and +20% relative eligible treasure/rare-find weight. The repository already owns C3 through \`mining_pickaxe_max_capability\`, while no competing Gold Pickaxe modifier policy exists.
+
+**Final decision**
+
+Expose only those source-local Gold inputs and re-derive C3 through the existing Mining capability owner. Represent +20% exactly as the relative multiplier \`6/5\`. Do not classify the eligible treasure/rare-find pool, normalize weights, compose the shared action-speed bucket, apply shared caps/depletion, perform RNG, or reintroduce the base roll-range table in this slice.
+
+The existing shared action-speed decision remains authoritative: source-local ratings may be exposed, but the future Modifier Registry must freeze their within-bucket combination rule before live Mining timing composition is activated.
