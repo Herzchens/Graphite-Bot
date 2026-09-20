@@ -42,6 +42,7 @@ mod mining_capability;
 mod mining_depth;
 mod mining_natural_roll;
 mod mining_operating_cost;
+mod mining_pickaxe_durability;
 mod mining_pressure;
 mod ordinary_forge;
 mod percentage_fee;
@@ -273,6 +274,12 @@ pub use mining_natural_roll::{
     MINING_NATURAL_ROLL_WEIGHT_SCALE, MiningNaturalRollDrop, mining_natural_roll_drops,
 };
 pub use mining_operating_cost::{MiningOperatingCostPolicy, mining_operating_cost_policy};
+pub use mining_pickaxe_durability::{
+    MiningPickaxeDurabilityPolicyError, MiningPickaxeNukeDestructionPreview,
+    MiningPickaxeOrdinaryDurabilityConsequence, MiningPickaxeOrdinaryDurabilityPreview,
+    NORMAL_PICKAXE_DURABILITY_PER_ORDINARY_EVENT, NUKE_MAX_BLAST_PHYSICAL_BLOCKS,
+    preview_mining_pickaxe_nuke_destruction, preview_mining_pickaxe_ordinary_durability_event,
+};
 pub use mining_pressure::{
     MINING_PRESSURE_APPRAISAL_PER_UNIT, MINING_PRESSURE_MAX_NON_PHYSICAL_OUTPUT_UNITS,
     MINING_PRESSURE_QUARTERS_PER_UNIT, MiningPressureContribution, MiningPressureIncrementRatio,
