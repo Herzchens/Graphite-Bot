@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     fishing_area::FishingArea,
@@ -8,7 +8,7 @@ use crate::{
 pub const CANONICAL_FISH_SPECIES_COUNT: usize = 22;
 pub const CANONICAL_FISH_AREA_ROWS: usize = 31;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingSpecies {
     Bluegill,
@@ -33,6 +33,36 @@ pub enum FishingSpecies {
     AbyssEel,
     Moonfish,
     LeviathanFry,
+}
+
+impl FishingSpecies {
+    #[must_use]
+    pub const fn item_definition_key(self) -> &'static str {
+        match self {
+            Self::Bluegill => "fishing.fish.bluegill",
+            Self::Carp => "fishing.fish.carp",
+            Self::Catfish => "fishing.fish.catfish",
+            Self::Koi => "fishing.fish.koi",
+            Self::Trout => "fishing.fish.trout",
+            Self::Salmon => "fishing.fish.salmon",
+            Self::Pike => "fishing.fish.pike",
+            Self::Sturgeon => "fishing.fish.sturgeon",
+            Self::Bass => "fishing.fish.bass",
+            Self::Mackerel => "fishing.fish.mackerel",
+            Self::Snapper => "fishing.fish.snapper",
+            Self::Tuna => "fishing.fish.tuna",
+            Self::Pufferfish => "fishing.fish.pufferfish",
+            Self::Swordfish => "fishing.fish.swordfish",
+            Self::Marlin => "fishing.fish.marlin",
+            Self::GiantGrouper => "fishing.fish.giant_grouper",
+            Self::Shark => "fishing.fish.shark",
+            Self::Coelacanth => "fishing.fish.coelacanth",
+            Self::Anglerfish => "fishing.fish.anglerfish",
+            Self::AbyssEel => "fishing.fish.abyss_eel",
+            Self::Moonfish => "fishing.fish.moonfish",
+            Self::LeviathanFry => "fishing.fish.leviathan_fry",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

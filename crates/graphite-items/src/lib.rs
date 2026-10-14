@@ -116,6 +116,7 @@ pub struct CatchBagSnapshot {
     pub level: i64,
     pub capacity_grams: i64,
     pub used_grams: i64,
+    pub pending_deliveries: u64,
     pub catches: Vec<CatchView>,
 }
 
@@ -379,11 +380,21 @@ impl ItemService {
             }
         }
 
+        let pending: i64 = sqlx::query(
+            "SELECT COUNT(*) AS count FROM pending_asset_deliveries WHERE player_id = $1 AND state = 'PENDING' AND desired_location = 'CATCH_BAG'",
+        )
+        .bind(player_id)
+        .fetch_one(self.store.pool())
+        .await?
+        .try_get("count")?;
+
         Ok(CatchBagSnapshot {
             player_id,
             level,
             capacity_grams,
             used_grams: i64::try_from(used).map_err(|_| ItemError::ArithmeticOverflow)?,
+            pending_deliveries: u64::try_from(pending)
+                .map_err(|_| ItemError::ArithmeticOverflow)?,
             catches,
         })
     }
@@ -1231,6 +1242,36 @@ fn equipment_slot(definition: &DefinitionVersion) -> Result<String, ItemError> {
     Ok(slot.to_owned())
 }
 
+pub async fn catch_bag_used_grams(
+    tx: &mut Transaction<'_, Postgres>,
+    player_id: Uuid,
+) -> Result<i64, ItemError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT catch_weight_grams
+          FROM item_instances
+         WHERE owner_player_id = $1
+           AND location = 'CATCH_BAG'
+         ORDER BY created_at, id
+         FOR UPDATE
+        "#,
+    )
+    .bind(player_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let mut used = 0_i128;
+    for row in rows {
+        let weight: Option<i64> = row.try_get("catch_weight_grams")?;
+        let weight = weight.ok_or(ItemError::EquipmentIntegrityMismatch)?;
+        used = used
+            .checked_add(i128::from(weight))
+            .ok_or(ItemError::ArithmeticOverflow)?;
+    }
+
+    i64::try_from(used).map_err(|_| ItemError::ArithmeticOverflow)
+}
+
 async fn item_bag_used_slots(
     tx: &mut Transaction<'_, Postgres>,
     player_id: Uuid,
@@ -1275,7 +1316,7 @@ fn item_bag_capacity_slots(level: i64) -> Result<u64, ItemError> {
     u64::try_from(capacity).map_err(|_| ItemError::ArithmeticOverflow)
 }
 
-fn catch_bag_capacity_grams(level: i64) -> Result<i64, ItemError> {
+pub fn catch_bag_capacity_grams(level: i64) -> Result<i64, ItemError> {
     if level < 0 {
         return Err(ItemError::ArithmeticOverflow);
     }
