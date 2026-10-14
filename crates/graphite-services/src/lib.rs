@@ -207,7 +207,7 @@ pub use fishing_capability_routing::{
 };
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, PendingManualFishingCastV1, PendingManualFishingNonFishReceiptV1,
-    begin_manual_fishing_cast_v1,
+    PendingManualFishingStarterBaseOutcomeV1, begin_manual_fishing_cast_v1,
 };
 pub use fishing_cast_preflight::{
     ManualFishingCastPreflight, ManualFishingCastPreflightError, lock_manual_fishing_cast_preflight,

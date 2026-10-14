@@ -5,7 +5,8 @@ use graphite_services::{
     ManualFishingCastOwnerError, ManualFishingCastPreflightError, ManualFishingPpmDrawV1,
     ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
     ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
-    ManualFishingWeightedDrawV1, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
+    ManualFishingWeightedDrawV1, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    PendingManualFishingStarterBaseOutcomeV1, begin_manual_fishing_cast_v1,
     lock_manual_fishing_cast_preflight,
 };
 use graphite_store::PgStore;
@@ -207,6 +208,94 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
             .unwrap();
     assert_eq!(event_count, 0);
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn pinned_baseline_starter_outcome_stages_only_the_selected_branch_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "selected-base").await;
+    let operation_id = seed_operation(&store, player_id, nonce, "selected-base").await;
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    let selected = pending.preview_unmodified_base_branch_v1().unwrap();
+
+    // A selected direct Enchant Book requires a dedicated ItemInstance writer.
+    // The current pending-only owner must fail closed before any asset or XP.
+    if selected == FishingCatchBranch::Treasure
+        && pending.preview_non_fish_candidate_v1(selected).is_err()
+    {
+        assert!(matches!(
+            pending.stage_unmodified_starter_base_outcome_v1().await,
+            Err(ManualFishingCastOwnerError::NonFishRoll(_))
+        ));
+    } else {
+        let first = pending
+            .stage_unmodified_starter_base_outcome_v1()
+            .await
+            .unwrap();
+        let replay = pending
+            .stage_unmodified_starter_base_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(first, replay);
+        match (selected, first) {
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingStarterBaseOutcomeV1::Fish {
+                    delivery,
+                    progression,
+                },
+            ) => {
+                assert_eq!(delivery.fish_slot, 0);
+                assert_eq!(progression.account_xp.granted_xp, 2);
+                assert!(progression.base_activity_xp > 0);
+            }
+            (
+                FishingCatchBranch::Junk,
+                PendingManualFishingStarterBaseOutcomeV1::NonFish { staged },
+            ) => {
+                assert!(matches!(
+                    staged.outcome,
+                    FishingResolvedNonFishOutcomeV1::Junk { .. }
+                ));
+                assert_eq!(staged.progression.base_activity_xp, 2);
+            }
+            (
+                FishingCatchBranch::Treasure,
+                PendingManualFishingStarterBaseOutcomeV1::NonFish { staged },
+            ) => {
+                assert!(matches!(
+                    staged.outcome,
+                    FishingResolvedNonFishOutcomeV1::Treasure { .. }
+                ));
+                assert!(staged.progression.base_activity_xp >= 5);
+            }
+            (branch, outcome) => panic!("selected branch/staging mismatch: {branch:?} {outcome:?}"),
+        }
+    }
+
+    pending.rollback().await.unwrap();
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+    let asset_events: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp_events: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((asset_events, xp_events), (0, 0));
 }
 
 #[tokio::test]

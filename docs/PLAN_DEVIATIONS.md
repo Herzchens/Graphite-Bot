@@ -2075,3 +2075,45 @@ Only zero-modifier baseline branch selection is exposed for internal pre-command
 composition. It does not grant the caller a right to commit provisional item/XP
 stages or interpret a catch as terminal. Modified cases remain fail-closed until
 the full caps, enrichment and terminal owner is frozen; `/fish` remains disabled.
+
+
+## Fishing Starter Basic selected-branch staging
+
+Branch: feat/fishing-starter-base-outcome
+
+### 1. Selected baseline branch determines staged output and successful XP
+
+**Implementation finding — CONFIRMED**
+
+A no-modifier Starter Basic cast at Starter Pool has a canonical Fish/Junk/Treasure
+distribution, guaranteed physical landing for Fish, and no ordinary Rod durability
+event because the separate Starter Basic definition is unbreakable. The canonical
+FishInstance, non-book payload delivery and successful progression child services
+are already exact and transaction-composable.
+
+**Final decision**
+
+In that narrow baseline, use the operation-pinned `CatchBranch` draw (not an
+adapter-supplied branch) and stage exactly the selected outcome: Fish slot 0 is
+minted via the unique FishInstance child and its rarity earns the canonical Fish
+AEXP; Junk or non-book Treasure uses the existing pinned payload and AEXP path.
+Every successful staged candidate uses exactly 2 Account XP. A retry in the same
+pending transaction returns the original item and XP receipts. The cast remains
+uncommittable, with no live command or completed-result authority.
+
+### 2. Fail closed on unsatisfied Rod and direct-book paths
+
+**Safety finding — CONFIRMED**
+
+Ordinary Rod wear/Mending and other area/gear conditions require further terminal
+composition. A direct Enchant Book result needs specialized item-level and book
+identity settlement rather than a non-book catch-lot stack asset.
+
+**Final decision**
+
+Reject this selected-branch staging path unless the locked Rod is Starter Basic,
+the target area is Starter Pool and no bait/enchant modifiers are active. If the
+selected Treasure result is a direct Enchant Book, stop without staged output or XP
+pending the dedicated book mutation implementation; on rollback all previous
+preflight writes vanish. Even in the supported baseline, final operation result,
+audit/outbox and external `/fish` remain prohibited until the full cast is safe.
