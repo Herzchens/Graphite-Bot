@@ -2036,3 +2036,42 @@ Fish likewise cannot enter the non-Fish staging API. A rollback must remove any 
 unlock, bait consumption, Item Bag or pending output, Account XP, Activity EXP and asset/
 progression events together. Only a future terminal-complete owner may finalize the operation
 and expose `/fish`.
+
+
+## Fishing baseline catch-branch RNG selection
+
+Branch: feat/fishing-baseline-branch-owner
+
+### 1. Zero-modifier catch distribution has one exact versioned RNG authority
+
+**Normative alignment — CONFIRMED**
+
+The canonical zero-temporary-modifier manual Fishing distribution is 88% Fish,
+8.5% Junk and 3.5% Treasure. The existing base drop-table policy preserves the
+reduced integer weights 176/17/7, and the manual Fishing RNG owner exposes an
+operation-seeded `CatchBranch` weighted domain.
+
+**Final decision**
+
+For a cast whose locked state contains no consumed bait, no embedded Fishing Rod
+enchant and no ordinary Gold Rod side-grade, derive the branch from those exact
+canonical weights using the pinned `CatchBranch` domain. A second preview of the
+same operation must select the same branch and never draw from another stage.
+Share the unmodified-state guard with the existing base FishInstance preview,
+so a modified cast cannot silently use baseline branch probabilities.
+
+### 2. Baseline branch preview is not general modifier normalization
+
+**Boundary finding — CONFIRMED**
+
+Treasure Bait, Gold Rod and Rod enchants change relative branch odds. Their
+pre-cap factors are not proof of a complete shared Fishing caps/normalization
+contract, and any currently absent global/Event modifier authority also has
+to be reconciled before runtime activation.
+
+**Final decision**
+
+Only zero-modifier baseline branch selection is exposed for internal pre-command
+composition. It does not grant the caller a right to commit provisional item/XP
+stages or interpret a catch as terminal. Modified cases remain fail-closed until
+the full caps, enrichment and terminal owner is frozen; `/fish` remains disabled.

@@ -13,14 +13,16 @@ use crate::{
     FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
     FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflight,
     ManualFishingCastPreflightError, ManualFishingProgressionSettlementError,
-    ManualFishingProgressionSettlementReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
-    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
-    ManualFishingUnmodifiedLineStageV1, deliver_fishing_fish_instance_v1,
-    deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
-    lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
+    ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
+    ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingUnmodifiedCapabilityError,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
+    deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
+    fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
+    preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_non_fish_outcome_v1,
-    settle_active_fishing_baits_for_cast, settle_manual_fishing_successful_progression_v1,
+    resolve_manual_fishing_unmodified_base_branch_v1, settle_active_fishing_baits_for_cast,
+    settle_manual_fishing_successful_progression_v1,
 };
 
 #[derive(Debug, Error)]
@@ -31,6 +33,8 @@ pub enum ManualFishingCastOwnerError {
     Bait(#[from] FishingBaitStateError),
     #[error(transparent)]
     NonFishRoll(#[from] FishingNonFishRollError),
+    #[error(transparent)]
+    CatchBranchRng(#[from] ManualFishingRngDrawError),
     #[error(transparent)]
     NonFishDelivery(#[from] FishingNonFishPayloadDeliveryError),
     #[error(transparent)]
@@ -174,15 +178,19 @@ impl PendingManualFishingCastV1<'_> {
         })
     }
 
-    /// Deterministically previews one base FishInstance candidate from an unmodified cast.
-    ///
-    /// An active bait, Gold side-grade or any embedded Rod enchant requires later shared
-    /// composition; that case fails closed rather than bypassing a modifier. No assets are
-    /// issued, and Fish capability/terminal consequences still require the full cast owner.
-    pub fn preview_unmodified_fish_candidate_v1(
+    /// Selects the real versioned CatchBranch RNG outcome only for a cast whose
+    /// authoritative locked Rod/bait state has no Fishing modifiers. This is
+    /// still a provisional branch until all cast consequences are finalized.
+    pub fn preview_unmodified_base_branch_v1(
         &self,
-        fish_slot: u8,
-    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+    ) -> Result<FishingCatchBranch, ManualFishingCastOwnerError> {
+        self.ensure_unmodified_cast_v1()?;
+        Ok(resolve_manual_fishing_unmodified_base_branch_v1(
+            self.preflight.rng,
+        )?)
+    }
+
+    fn ensure_unmodified_cast_v1(&self) -> Result<(), ManualFishingCastOwnerError> {
         if self.bait.plan.consumed_bait_categories != 0
             || !self.preflight.rod.embedded_enchants.is_empty()
             || matches!(
@@ -194,6 +202,19 @@ impl PendingManualFishingCastV1<'_> {
         {
             return Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer);
         }
+        Ok(())
+    }
+
+    /// Deterministically previews one base FishInstance candidate from an unmodified cast.
+    ///
+    /// An active bait, Gold side-grade or any embedded Rod enchant requires later shared
+    /// composition; that case fails closed rather than bypassing a modifier. No assets are
+    /// issued, and Fish capability/terminal consequences still require the full cast owner.
+    pub fn preview_unmodified_fish_candidate_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+        self.ensure_unmodified_cast_v1()?;
         Ok(preview_manual_fishing_unmodified_fish_candidate_v1(
             self.preflight.rng,
             self.preflight.area_access.area,
