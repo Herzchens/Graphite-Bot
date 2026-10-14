@@ -5,7 +5,7 @@ use graphite_services::{
     ManualFishingCastOwnerError, ManualFishingCastPreflightError, ManualFishingPpmDrawV1,
     ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
     ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
+    ManualFishingWeightedDrawV1, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
     lock_manual_fishing_cast_preflight,
 };
 use graphite_store::PgStore;
@@ -47,6 +47,10 @@ async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_ident
     assert_eq!(pending.bait_settlement().plan.consumed_bait_categories, 1);
     assert!(matches!(
         pending.preview_unmodified_fish_candidate_v1(0),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
         Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
     ));
     let weights = pending.pre_cap_branch_weights();
@@ -131,6 +135,23 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
     assert_eq!(
         pending.preview_unmodified_line_stage_v1(0).unwrap(),
         ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk
+    );
+    let chosen_branch = pending.preview_unmodified_base_branch_v1().unwrap();
+    assert_eq!(
+        chosen_branch,
+        pending.preview_unmodified_base_branch_v1().unwrap()
+    );
+    assert_eq!(
+        chosen_branch,
+        [
+            FishingCatchBranch::Fish,
+            FishingCatchBranch::Junk,
+            FishingCatchBranch::Treasure,
+        ][pending
+            .preflight()
+            .rng
+            .sample_weighted_v1(ManualFishingWeightedDrawV1::CatchBranch, &[176, 17, 7])
+            .unwrap()]
     );
     let first = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     let replay = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
