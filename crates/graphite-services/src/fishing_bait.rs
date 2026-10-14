@@ -239,8 +239,8 @@ pub fn bait_rack_capacity_policy(
 /// The returned ratios are exact policy factors, not already-normalized probabilities or a runtime
 /// sampling algorithm. Quality/Rare/Treasure effects are intended to transform their documented
 /// relative weights before the future Fishing resolver normalizes the eligible pool. Sturdy exposes
-/// only its exact line-strength and final line-break multipliers; this function deliberately does
-/// not evaluate the unresolved fractional-power base line-break formula.
+/// only its exact line-strength and final line-break multipliers; the versioned deterministic numeric
+/// policy evaluates the separate fractional-power base line-break formula.
 ///
 /// One unit of every active bait category is consumed per cast. Multi Catch and Multi Treasure do
 /// not cause extra bait consumption. Baits are optional Money sinks; this pure catalog does not

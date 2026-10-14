@@ -93,10 +93,9 @@ const VARIANT_CATALOG: [FishingVariantPolicy; CANONICAL_FISH_VARIANT_COUNT] = [
 /// variant distribution only; future Luck/Quality effects may alter eligible variant weights before
 /// normalization, so callers must not treat this function as a modifier-aware selector.
 ///
-/// The value multiplier is an exact factor for the future Fish NPC valuation formula. This policy
-/// performs no intermediate rounding and deliberately does not evaluate the unresolved
-/// `(Weight / Wref)^0.85` term. Species rarity is not part of Money valuation because the latest
-/// canonical specification already prices rarity into each species' base NPC Money value.
+/// The value multiplier is an exact factor consumed by the versioned deterministic FishInstance
+/// numeric kernel. Species rarity is not part of Money valuation because the latest canonical
+/// specification already prices rarity into each species' base NPC Money value.
 #[must_use]
 pub const fn fishing_variant_policy(variant: FishingVariant) -> FishingVariantPolicy {
     match variant {
@@ -125,10 +124,10 @@ pub const fn fishing_variant_catalog() -> &'static [FishingVariantPolicy] {
 /// it is used only as a relative selection weight. The returned adjusted numerator/denominator are
 /// therefore not a final probability and deliberately do not sum to one across the five rows.
 ///
-/// This policy does not implement Quality Bait's separate sampled-weight-center factor because the
-/// authoritative fish-weight sampler and deterministic fractional-power/log-normal evaluation are
-/// still outside this slice. It also does not compose Luck, shared Fishing caps, final normalization,
-/// RNG selection, FishInstance creation, bait consumption, AEXP, or settlement.
+/// This policy only previews variant relative weights. Quality Bait's separate sampled-weight-center
+/// factor is consumed by `resolve_fish_instance_numeric_v1`. This function still does not compose
+/// Luck, shared Fishing caps, final normalization, RNG selection, bait consumption, AEXP, or
+/// settlement.
 #[must_use]
 pub fn preview_quality_bait_variant_weight(
     variant: FishingVariant,

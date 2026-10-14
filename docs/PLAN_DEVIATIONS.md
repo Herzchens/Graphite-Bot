@@ -1181,3 +1181,101 @@ The future fish-weight/valuation/length and line-break kernels must use a versio
 fixed-point contract rather than native floating-point gameplay authority. This decision removes the
 semantic blocker but does not make an arbitrary approximation acceptable; golden vectors and
 cross-platform deterministic tests are required when that numeric kernel is implemented.
+
+
+## Fishing deterministic numeric kernel v1
+
+Branch: feat/fishing-deterministic-numeric-kernel
+
+### 1. Log-normal center, clamp, and biological-noise semantics are owner-approved
+
+**Owner correction — CONFIRMED**
+
+Wref is the median of the log-normal distribution, so mu = ln(Wref) with sigma = 0.25. One
+weight sample is taken and then clamped to [0.40 Wref, 2.50 Wref]; tails are not rejection-resampled.
+Biological noise epsilon is an independent uniform draw on [0.95, 1.05].
+
+**Final decision**
+
+Numeric policy v1 maps an already-authoritative PPM draw through the midpoint of its equiprobable
+bucket. The weight draw uses a deterministic fixed-point inverse-normal approximation followed by
+fixed-point exp. Quality Bait multiplies the sampled-weight center by its existing 1.05 catalog
+factor before the same Wref-relative clamp. The independent epsilon draw uses the same midpoint
+bucket convention.
+
+### 2. Fractional/transcendental gameplay math has a versioned fixed-point contract
+
+**Owner correction — CONFIRMED**
+
+Native floating point must not own fish weight, derived length, NPC valuation, or line-break
+probability. The implementation algorithm may be selected and versioned by the implementation owner
+as long as deterministic golden vectors protect replay semantics.
+
+**Final decision**
+
+Version 1 uses decimal fixed point with scale 10^12, checked i128/u128 arithmetic, deterministic
+half-up/half-away intermediate division, a fixed-coefficient inverse-normal approximation, a
+range-reduced integer ln/exp kernel, and fixed-point rational powers. Cross-platform regression
+vectors assert exact integer outputs. No numeric dependency or Cargo change is introduced.
+
+The FishInstance Money formula remains the latest corrected form: BaseValue multiplied by the
+clamped weight-size factor and VariantMultiplier only. Species rarity is already priced into
+BaseValue and is not multiplied a second time.
+
+### 3. Line-break RNG threshold uses canonical PPM
+
+**Owner correction — CONFIRMED**
+
+The final line-break RNG threshold uses 1,000,000 PPM. The fractional formula is evaluated at higher
+fixed-point precision, Sturdy Bait applies after the base formula, and the final probability is
+rounded half-up to PPM.
+
+**Final decision**
+
+The pure manual line-break preview consumes the existing exact R ratio, evaluates
+min(0.15, 0.002 + 0.015 * (R - 1)^1.30), applies Sturdy Bait's existing x0.90 factor, clamps to the
+same 0.15 maximum, and returns the canonical PPM threshold. R <= 1 remains rejected by this over-cap
+API because the existing capability owner already resolves it as zero line-break chance and
+guaranteed capability landing.
+
+### 4. Numeric policy does not invent operation RNG draw ordering
+
+**Check result — UNRESOLVED for the stateful RNG owner**
+
+The persisted operation RNG root is authoritative, but the repository still has no owner-approved
+domain-label/index schedule for catch branch, species, variant, quantity, FishInstance weight/noise,
+line-break, and later over-cap draws.
+
+**Final decision**
+
+Keep numeric policy v1 pure: it accepts already-authoritative PPM buckets and never reads the RNG
+root. Do not expose a generic draw API from ManualFishingRngContext until the stateful cast lifecycle
+can freeze a typed domain/order contract. Retry timing therefore still cannot become RNG authority.
+
+### 5. Stable dependency baseline remains sufficient
+
+**Check result — DISPROVED for dependency churn**
+
+Rust 1.99.0 is now stable, while this repository is pinned to 1.98.1. This slice requires no new
+language feature or external numeric crate, and upgrading the toolchain would be unrelated churn.
+
+**Final decision**
+
+Keep rust-toolchain.toml and Cargo dependency pins unchanged for this slice.
+
+
+### 6. Sampled sub-gram weight still needs an explicit persistence/capability bridge
+
+**Implementation-time finding — UNRESOLVED**
+
+Numeric policy v1 deliberately preserves sampled weight at 10^12-scaled gram precision. The current
+storage surface persists CatchBag fish as BIGINT `catch_weight_grams`, and the existing
+`fishing_tension` capability primitive accepts whole grams. Neither the specification nor an owner
+correction currently freezes whether sampled weight is rounded for persistence only, rounded before
+FishTension, or represented at higher precision in canonical FishInstance state.
+
+**Final decision**
+
+Do not silently quantize this boundary in the numeric kernel. The future stateful Fishing owner must
+freeze one canonical sampled-weight representation and its conversion into CatchBag capacity and
+FishTension before it can persist FishInstances or compose capability settlement.

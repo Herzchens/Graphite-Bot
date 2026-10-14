@@ -25,6 +25,7 @@ mod fishing_gold_rod;
 mod fishing_limits;
 mod fishing_multi_treasure;
 mod fishing_multicatch;
+mod fishing_numeric;
 mod fishing_over_cap;
 mod fishing_rng;
 mod fishing_rod_durability;
@@ -211,6 +212,12 @@ pub use fishing_multicatch::{
     MulticatchCountPolicy, MulticatchLevelXCount, MulticatchLevelXCountPolicy,
     MulticatchPolicyError, compose_multicatch_and_school_bait, multicatch_count_policy,
     multicatch_level_x_count_policy,
+};
+pub use fishing_numeric::{
+    FISHING_FIXED_POINT_SCALE, FISHING_LINE_BREAK_PROBABILITY_SCALE_PPM,
+    FISHING_NUMERIC_DRAW_SCALE_PPM, FISHING_NUMERIC_POLICY_VERSION, FishingFishInstanceNumericV1,
+    FishingNumericError, ManualFishingLineBreakChanceV1,
+    preview_manual_fishing_line_break_chance_v1, resolve_fish_instance_numeric_v1,
 };
 pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,

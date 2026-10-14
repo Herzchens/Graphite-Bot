@@ -143,9 +143,8 @@ const ABYSS: [FishingAreaSpeciesPolicy; 6] = [
 ///
 /// `base_npc_value_money` is the species base Money value only. The latest canonical specification
 /// already prices rarity into that base value, so rarity must not be multiplied into Money value a
-/// second time. This policy deliberately does not evaluate the unresolved `(Weight/Wref)^0.85`
-/// valuation term, sample the truncated log-normal weight distribution, or evaluate the cube-root
-/// length formula.
+/// second time. The deterministic weight/valuation/length evaluator is owned separately by
+/// `resolve_fish_instance_numeric_v1`; this catalog remains immutable species metadata only.
 #[must_use]
 pub const fn fishing_species_policy(species: FishingSpecies) -> FishingSpeciesPolicy {
     use FishingRarity as R;
