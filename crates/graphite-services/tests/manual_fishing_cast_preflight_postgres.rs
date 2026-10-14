@@ -1,7 +1,9 @@
 use graphite_progression::account_total_xp_for_level;
 use graphite_services::{
     CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingAreaAccessOrigin,
-    FishingCatchBranch, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflightError,
+    FishingCatchBranch, FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST,
+    ManualFishingCastOwnerError, ManualFishingCastPreflightError, ManualFishingPpmDrawV1,
+    ManualFishingRngDrawError, ManualFishingUnmodifiedFishCandidateError,
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
     lock_manual_fishing_cast_preflight,
 };
@@ -42,6 +44,10 @@ async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_ident
     assert_eq!(pending.operation_id(), operation_id);
     assert_eq!(pending.player_id(), player_id);
     assert_eq!(pending.bait_settlement().plan.consumed_bait_categories, 1);
+    assert!(matches!(
+        pending.preview_unmodified_fish_candidate_v1(0),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
     let weights = pending.pre_cap_branch_weights();
     assert_eq!(
         (weights.fish, weights.junk, weights.treasure),
@@ -79,6 +85,77 @@ async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_ident
             .await
             .unwrap();
     assert_eq!(events, 0);
+}
+
+#[tokio::test]
+async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "unmodified-candidate").await;
+    let operation_id = seed_operation(&store, player_id, nonce, "unmodified-candidate").await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    let first = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
+    let replay = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
+    assert_eq!(first, replay);
+    assert_eq!(first.fish_slot, 0);
+    assert_eq!(first.area, FishingArea::StarterPool);
+    assert!(!first.numeric.quality_bait_active);
+    assert_eq!(
+        first.numeric.weight_quantile_ppm,
+        pending
+            .preflight()
+            .rng
+            .sample_ppm_v1(ManualFishingPpmDrawV1::FishWeight { fish_slot: 0 })
+            .unwrap()
+    );
+    let second = pending.preview_unmodified_fish_candidate_v1(1).unwrap();
+    assert_eq!(second.fish_slot, 1);
+    assert!(matches!(
+        pending.preview_unmodified_fish_candidate_v1(MAX_FISH_PER_CAST),
+        Err(ManualFishingCastOwnerError::UnmodifiedFish(
+            ManualFishingUnmodifiedFishCandidateError::Rng(
+                ManualFishingRngDrawError::FishSlotOutOfRange(MAX_FISH_PER_CAST)
+            )
+        ))
+    ));
+
+    let staged = pending
+        .stage_unmodified_starter_pool_fish_v1()
+        .await
+        .unwrap();
+    assert_eq!(staged.fish_slot, 0);
+    assert_eq!(staged.operation_id, operation_id);
+    assert_eq!(staged.player_id, player_id);
+    let staged_again = pending
+        .stage_unmodified_starter_pool_fish_v1()
+        .await
+        .unwrap();
+    assert_eq!(staged, staged_again);
+    let staged_item_id = staged.item_instance_id;
+
+    pending.rollback().await.unwrap();
+    let item_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM item_instances WHERE id = $1")
+        .bind(staged_item_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(item_count, 0);
+    let event_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(event_count, 0);
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
 }
 
 #[tokio::test]

@@ -1871,3 +1871,46 @@ three-slot bound before any SQL write. Delegate each fixed v1 stack sub-delivery
 Item Bag mutation owner with independent per-slot keys, exact definition identity and pending
 overflow conservation. The full cast owner must still choose the branch from final capped
 weights and compose durability, progression, result/audit/outbox before any transaction commit.
+
+
+## Fishing unmodified FishInstance candidate preview
+
+Branch: feat/fishing-fish-cast-candidates
+
+### 1. The base Fish tables can resolve exact deterministic candidates without guessing modifier caps
+
+**Implementation finding — CONFIRMED**
+
+The canonical six-area species tables and five variant probabilities have exact integer weights.
+The existing versioned FishInstance numeric kernel already owns weight/length/value rounding,
+and the persisted manual Fishing RNG context pins independent species/variant/weight/biological
+domains per fish slot. This supports an unmodified preview; it does not freeze how Luck,
+Luck of the Sea, Rare/Quality Bait, Gold side-grade or other eligible modifiers combine with
+future shared caps.
+
+**Final decision**
+
+For an expressly unmodified cast, select species from the area's canonical raw integer
+pool and variants from the exact common-scale base weights 188/6/3/2/1; draw weight and
+biological quantiles from the pre-existing per-slot versioned RNG domains and delegate
+the deterministic transforms to `resolve_fish_instance_numeric_v1`.
+An unmodified preview does not make the catch branch, capability success or issuance
+authoritative. The pending cast owner refuses to use the baseline selector whenever
+any active bait, Gold side-grade or embedded enchant might require the shared composer.
+
+### 2. Starter Pool baseline Fish staging remains uncommittable
+
+**Lifecycle finding — CONFIRMED**
+
+The current Starter Pool Fish capability route guarantees physical landing, but choosing
+the Fish branch, settling durability/progression and finalizing operation/audit/outbox still
+belong to the unfinished complete cast owner.
+
+**Final decision**
+
+Allow the non-committable pending cast to provisionally stage only fish slot 0 for an
+unmodified Starter Pool candidate, using the existing unique FishInstance delivery child
+and its operation-specific mutation key. A same-operation repeat returns the original
+ItemInstance receipt. Dropping or rolling back the pending cast removes the ItemInstance,
+delivery event, bait and any area unlock together. No adapter may treat this preview as
+a finished cast or commit its transaction before the full lifecycle gate passes.
