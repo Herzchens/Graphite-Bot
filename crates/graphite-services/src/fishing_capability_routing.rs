@@ -153,8 +153,8 @@ pub enum FishingCapabilityResolutionError {
 /// - Fish in Starter Pool are tutorial-safe: the candidate fish lands without line-break/fail.
 ///
 /// Only a Fish branch outside Starter Pool continues into CatchLoad / EffectiveLineStrength / `R`
-/// classification. This function deliberately does not evaluate the unresolved `(R - 1)^1.30`
-/// line-break probability, perform RNG, construct FishInstances, consume bait, or settle rewards.
+/// classification. This function deliberately does not evaluate the versioned line-break numeric
+/// policy, perform RNG, construct FishInstances, consume bait, or settle rewards.
 ///
 /// `requires_line_tension_for_capability` describes only this capability-routing decision. It does
 /// not prohibit a future Starter-Pool FishInstance/statistics layer from deriving FishTension for a
@@ -229,9 +229,10 @@ pub fn resolve_routed_fish_capability_stage(
 /// over-cap stage. The resolution enum encodes the mandatory order: line-break is decided first;
 /// only a survived line can carry the later over-cap catch/escape result.
 ///
-/// This function does not calculate the unresolved fractional-power line-break probability, draw
-/// RNG, mutate Rod durability, consume bait, grant AEXP, or settle the catch. Those remain separate
-/// owners in the future atomic Fishing lifecycle.
+/// This function does not calculate the line-break probability, draw RNG, mutate Rod durability,
+/// consume bait, grant AEXP, or settle the catch. The probability is available from the separate
+/// versioned numeric policy; the remaining effects still belong to the future atomic Fishing
+/// lifecycle.
 #[must_use]
 pub const fn resolve_fishing_over_cap_sequence(
     _requirement: FishingOverCapResolutionRequired,

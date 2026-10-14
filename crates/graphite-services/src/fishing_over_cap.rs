@@ -62,8 +62,9 @@ pub enum FishingOverCapError {
 /// gameplay max: the Fishing numeric-cap table and this formula explicitly freeze SharpHook X.
 ///
 /// Resolution ordering remains external and mandatory. The caller may use this probability only
-/// after the candidate has survived the preceding line-break roll. This policy performs no RNG draw
-/// and does not bypass the still-unresolved `(R - 1)^1.30` line-break calculation.
+/// after the candidate has survived the preceding line-break roll. This policy performs no RNG draw;
+/// the preceding probability is resolved separately by the versioned deterministic line-break
+/// numeric policy.
 pub fn preview_over_cap_catch_chance(
     capability_ratio: FishingCapabilityRatio,
     sharp_hook_level: Option<u8>,

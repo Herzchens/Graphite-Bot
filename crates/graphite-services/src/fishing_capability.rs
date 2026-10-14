@@ -202,8 +202,9 @@ pub const fn fishing_rarity_tension_multiplier(rarity: FishingRarity) -> Fishing
 /// Computes exact FishTension for a positive fish weight without rounding.
 ///
 /// The result is normalized to a reduced rational number in gram-tension. This is a deterministic
-/// prerequisite for CatchLoad and Rod-capability evaluation; it deliberately does not evaluate the
-/// unresolved `(R - 1)^1.30` line-break term or perform any RNG draw.
+/// prerequisite for CatchLoad and Rod-capability evaluation. The versioned line-break numeric
+/// policy is owned by `preview_manual_fishing_line_break_chance_v1`; this function performs no RNG
+/// draw.
 pub fn fishing_tension(
     weight_grams: u64,
     rarity: FishingRarity,
@@ -341,8 +342,8 @@ pub fn manual_fishing_line_strength(
 ///
 /// `WithinRodCapability` means `R <= 1`, so the frozen capability rule grants the fish load with
 /// 100% capability success and zero line-break chance. `OverRodCapability` means the later resolver
-/// must continue into the unresolved fractional-power line-break kernel before any over-cap catch
-/// roll can occur.
+/// must continue into the versioned line-break numeric policy before any over-cap catch roll can
+/// occur.
 pub fn manual_fishing_capability_ratio(
     catch_load: FishingCatchLoad,
     line_strength: ManualFishingLineStrength,

@@ -61,9 +61,9 @@ impl From<sqlx::Error> for ManualFishingRngContextError {
 /// This function deliberately does not expose a draw API and does not draw a catch branch, species,
 /// variant, quantity proc, capability result, durability result, weight, biological noise, or reward.
 /// Typed Fishing domain derivation belongs in the future Services-owned cast composition slice where
-/// canonical draw order has an actual production consumer. In particular this primitive does not
-/// resolve the currently unfrozen Fish weight/length sampler or additional-FishInstance identity
-/// semantics.
+/// canonical draw order has an actual production consumer. The FishInstance numeric transform is now
+/// versioned separately, but this primitive still does not choose its domain labels, draw indices, or
+/// map the private operation root into those already-authoritative PPM buckets.
 pub async fn lock_manual_fishing_rng_context(
     tx: &mut Transaction<'_, Postgres>,
     operation_id: Uuid,

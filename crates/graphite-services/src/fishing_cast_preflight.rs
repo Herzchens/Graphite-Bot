@@ -74,9 +74,10 @@ pub enum ManualFishingCastPreflightError {
 /// transaction. Consequently the caller must roll back the transaction when this function returns an
 /// error. On success the caller still owns discrete outcome composition, active-bait inventory and
 /// consumption, normal or line-break durability consequence, Mending, CatchBag output, Fishing Account
-/// XP/AEXP, cooldown, operation finalization, outbox/audit effects, and commit. The RNG context does not
-/// define the still-unfrozen fish weight/length sampler, additional-FishInstance identity, or School
-/// Bait/Multicatch ordering. This function does not expose `/fish` by itself.
+/// XP/AEXP, cooldown, operation finalization, outbox/audit effects, and commit. FishInstance numeric
+/// transforms and additional-fish identity/quantity semantics are frozen separately, but the RNG
+/// context still does not define domain labels, draw indices, or operation-root-to-PPM mapping. This
+/// function does not expose `/fish` by itself.
 pub async fn lock_manual_fishing_cast_preflight(
     tx: &mut Transaction<'_, Postgres>,
     operation_id: Uuid,

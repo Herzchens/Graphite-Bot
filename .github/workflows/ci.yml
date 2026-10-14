@@ -45,3 +45,21 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --all-features
+
+  fishing-numeric-determinism:
+    name: fishing numeric determinism (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2.9.2
+
+      - name: Test deterministic Fishing numeric vectors
+        run: cargo test -p graphite-services --test fishing_numeric_policy
