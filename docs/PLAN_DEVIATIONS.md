@@ -2117,3 +2117,45 @@ selected Treasure result is a direct Enchant Book, stop without staged output or
 pending the dedicated book mutation implementation; on rollback all previous
 preflight writes vanish. Even in the supported baseline, final operation result,
 audit/outbox and external `/fish` remain prohibited until the full cast is safe.
+
+
+## Fishing unmodified Rod-wear staging
+
+Branch: feat/fishing-unmodified-rod-wear
+
+### 1. One physical Rod-durability consequence is derived from the actual pinned branch
+
+**Normative alignment — CONFIRMED**
+
+A completed manual Fishing cast attempt has one ordinary Rod durability event regardless
+of the number of fish or Treasure payloads. When a Fish candidate's canonical over-cap
+line-break roll breaks the line, its Rod is destroyed and that consequence ignores
+Unbreaking/Mending. The separate Starter Basic Rod remains unbreakable at Starter Pool.
+
+**Final decision**
+
+For a locked, zero-modifier manual cast, derive the actual CatchBranch from the pinned
+operation RNG root. A Fish branch may require the prior versioned LineBreak PPM check:
+break means `LineBreak` durability destruction; otherwise use one normal completed
+attempt wear event, including non-Fish branches and a survived (possibly escaping)
+over-cap Fish. An unmodified ordinary Rod has no Unbreaking proc; never accept a
+user- or adapter-supplied avoidance flag. Delegate state mutation to the existing
+locked Rod durability owner and preserve the full PostgreSQL transaction boundary.
+
+### 2. Pending-owner replay cache is not durable post-commit idempotency
+
+**Safety finding — CONFIRMED**
+
+The present low-level Rod durability writer is caller-transaction composable but is not
+a durable operation-keyed final cast wrapper. Calling it twice inside the same pending
+cast would otherwise deduct two wear events. Retrying a completed cast after process
+restart requires a persisted result/mutation-key boundary, not only memory state.
+
+**Final decision**
+
+The non-committable pending cast caches the first staged Rod durability receipt and
+returns it on repeated method calls. Rollback restores both durability and Broken
+state, as well as any first-area unlock. The final cast owner MUST provide persisted
+operation-level replay/finalization before any transaction commit or public `/fish`
+command can expose Rod wear. A line-break terminal path must grant no successful
+Fish XP, and Mending/progression ordering remains a separate unfinished composition.
