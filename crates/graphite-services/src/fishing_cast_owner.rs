@@ -10,14 +10,17 @@ use crate::{
     FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
     FishingCatchBranchPreCapWeightsV1, FishingFishInstanceDeliveryError,
     FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
+    FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
     FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflight,
-    ManualFishingCastPreflightError, ManualFishingUnmodifiedCapabilityError,
-    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
-    deliver_fishing_fish_instance_v1, fishing_catch_branch_pre_cap_weights_v1,
+    ManualFishingCastPreflightError, ManualFishingProgressionSettlementError,
+    ManualFishingProgressionSettlementReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
+    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
+    ManualFishingUnmodifiedLineStageV1, deliver_fishing_fish_instance_v1,
+    deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
     lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_non_fish_outcome_v1,
-    settle_active_fishing_baits_for_cast,
+    settle_active_fishing_baits_for_cast, settle_manual_fishing_successful_progression_v1,
 };
 
 #[derive(Debug, Error)]
@@ -28,6 +31,10 @@ pub enum ManualFishingCastOwnerError {
     Bait(#[from] FishingBaitStateError),
     #[error(transparent)]
     NonFishRoll(#[from] FishingNonFishRollError),
+    #[error(transparent)]
+    NonFishDelivery(#[from] FishingNonFishPayloadDeliveryError),
+    #[error(transparent)]
+    SuccessfulProgression(#[from] ManualFishingProgressionSettlementError),
     #[error(transparent)]
     UnmodifiedFish(#[from] ManualFishingUnmodifiedFishCandidateError),
     #[error("the locked cast contains modifiers requiring the shared capped Fish resolver")]
@@ -40,6 +47,16 @@ pub enum ManualFishingCastOwnerError {
     UnmodifiedCapability(#[from] ManualFishingUnmodifiedCapabilityError),
     #[error(transparent)]
     UnmodifiedLineStage(#[from] ManualFishingUnmodifiedLineStageError),
+}
+
+/// Provisional Junk or non-book Treasure delivery and reward children in a single
+/// uncommitted cast transaction. These receipts are NOT a terminal catch result:
+/// the final catch-branch roll and rod consequences have not been resolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingManualFishingNonFishReceiptV1 {
+    pub outcome: FishingResolvedNonFishOutcomeV1,
+    pub delivery: FishingNonFishOutcomeDeliveryReceiptV1,
+    pub progression: ManualFishingProgressionSettlementReceiptV1,
 }
 
 /// Owns an uncommitted manual Fishing cast transaction.
@@ -108,6 +125,53 @@ impl PendingManualFishingCastV1<'_> {
             candidate,
             multi_treasure_level,
         )?)
+    }
+
+    /// Stages one provisional Junk/non-book Treasure candidate, its canonical stack
+    /// outputs and exact successful-progression children under this same locked transaction.
+    ///
+    /// The passed branch is NOT authoritative until the future full cast owner resolves
+    /// final capped catch weights and the CatchBranch RNG domain. In particular this
+    /// method never commits, draws branch RNG, or resolves ordinary Rod wear/Mending.
+    /// Direct Enchant Book outcomes fail closed before issuing any payload.
+    ///
+    /// Same-operation repeated staging reuses the underlying mutation-key receipts.
+    /// Rollback removes bait use, pending overflow, assets and both XP children together.
+    pub async fn stage_non_fish_candidate_v1(
+        &mut self,
+        candidate: FishingCatchBranch,
+    ) -> Result<PendingManualFishingNonFishReceiptV1, ManualFishingCastOwnerError> {
+        let outcome = self.preview_non_fish_candidate_v1(candidate)?;
+        let delivery = deliver_fishing_non_fish_outcome_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            &outcome,
+        )
+        .await?;
+        let progression_outcome = match &outcome {
+            FishingResolvedNonFishOutcomeV1::Junk { .. } => {
+                ManualFishingSuccessfulProgressionOutcomeV1::Junk
+            }
+            FishingResolvedNonFishOutcomeV1::Treasure { payloads, .. } => {
+                ManualFishingSuccessfulProgressionOutcomeV1::Treasure {
+                    landed_count: u8::try_from(payloads.len())
+                        .expect("canonical Treasure count never exceeds three"),
+                }
+            }
+        };
+        let progression = settle_manual_fishing_successful_progression_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            &progression_outcome,
+        )
+        .await?;
+        Ok(PendingManualFishingNonFishReceiptV1 {
+            outcome,
+            delivery,
+            progression,
+        })
     }
 
     /// Deterministically previews one base FishInstance candidate from an unmodified cast.
