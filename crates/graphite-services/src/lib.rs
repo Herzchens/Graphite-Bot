@@ -70,8 +70,9 @@ mod upgrade_state_writer;
 pub use action_speed::{
     ActionSpeedBonus, ActionSpeedPolicyError, BASE_REPEATABLE_MANUAL_REWARD_ACTION_COOLDOWN_MILLIS,
     MAX_SHARED_ACTION_SPEED_BONUS_DENOMINATOR, MAX_SHARED_ACTION_SPEED_BONUS_NUMERATOR,
-    MIN_MINE_FISH_COOLDOWN_MILLIS, SharedActionSpeedBonusPolicy, cap_shared_action_speed_bonus,
-    max_shared_action_speed_bonus,
+    MIN_MINE_FISH_COOLDOWN_MILLIS, ManualMineFishCooldownPolicy, SharedActionSpeedBonusPolicy,
+    cap_shared_action_speed_bonus, compose_shared_action_speed_bonus,
+    manual_mine_fish_cooldown_policy, max_shared_action_speed_bonus,
 };
 pub use enchant_apply::{
     EnchantApplyAction, EnchantApplyError, EnchantApplyPreview, EnchantSlotCapacity,
@@ -132,8 +133,9 @@ pub use equipment_recraft_resolver::{
     lock_owned_ordinary_equipment_recraft_appraisal,
 };
 pub use fishing_aexp::{
-    MANUAL_FISHING_BASE_JUNK_AEXP, MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP,
-    MANUAL_FISHING_BASE_TREASURE_AEXP, ManualFishingAexpError, ManualFishingAexpOutcome,
+    MANUAL_FISHING_BASE_JUNK_AEXP, MANUAL_FISHING_BASE_MULTI_CATCH_AEXP_CAP_MULTIPLIER,
+    MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP, MANUAL_FISHING_BASE_TREASURE_AEXP,
+    ManualFishingAexpError, ManualFishingAexpOutcome, manual_fishing_base_fish_cast_aexp,
     manual_fishing_base_outcome_aexp, manual_fishing_base_treasure_cast_aexp,
 };
 pub use fishing_area::{
@@ -197,11 +199,17 @@ pub use fishing_gold_rod::{
 };
 pub use fishing_limits::MAX_FISH_PER_CAST;
 pub use fishing_multi_treasure::{
-    MULTI_TREASURE_MAX_ITEMS, MULTI_TREASURE_PROBABILITY_BASIS_POINTS, MultiTreasureLevelXCount,
-    MultiTreasureLevelXCountPolicy, multi_treasure_level_x_count_policy,
+    MULTI_TREASURE_MAX_ITEMS, MULTI_TREASURE_MAX_LEVEL, MULTI_TREASURE_PROBABILITY_BASIS_POINTS,
+    MULTI_TREASURE_PROBABILITY_SCALE_PPM, MultiTreasureCount, MultiTreasureCountPolicy,
+    MultiTreasureLevelXCount, MultiTreasureLevelXCountPolicy, MultiTreasurePolicyError,
+    RepeatedTreasurePayloadResolutionPolicy, multi_treasure_count_policy,
+    multi_treasure_level_x_count_policy, repeated_treasure_payload_resolution_policy,
 };
 pub use fishing_multicatch::{
-    MULTICATCH_PROBABILITY_BASIS_POINTS, MulticatchLevelXCount, MulticatchLevelXCountPolicy,
+    AdditionalFishInstanceIdentityPolicy, FishingQuantityComposition, MULTICATCH_MAX_LEVEL,
+    MULTICATCH_PROBABILITY_BASIS_POINTS, MULTICATCH_PROBABILITY_SCALE_PPM, MulticatchCount,
+    MulticatchCountPolicy, MulticatchLevelXCount, MulticatchLevelXCountPolicy,
+    MulticatchPolicyError, compose_multicatch_and_school_bait, multicatch_count_policy,
     multicatch_level_x_count_policy,
 };
 pub use fishing_over_cap::{
