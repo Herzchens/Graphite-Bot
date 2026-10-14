@@ -1418,3 +1418,57 @@ as Mending I, Phoenix I and Carving I exist, but they do not define a general re
 
 Keep current fail-closed behavior. Do not infer equal member weights, clamp levels, reroll levels, or
 renormalize filtered profiles without a normative amendment.
+
+
+## Fishing canonical weight persistence bridge
+
+Branch: feat/fishing-canonical-weight-persistence
+
+### 1. Canonical sub-gram weight is persisted without redefining CatchBag capacity units
+
+**Owner correction — CONFIRMED**
+
+Canonical FishInstance weight remains the 10^12-scaled gram value used by FishTension and later
+gameplay math. The existing `catch_weight_grams` BIGINT remains the whole-gram CatchBag
+capacity/display projection and must not be reinterpreted as scaled weight.
+
+**Final decision**
+
+Add nullable `item_instances.catch_weight_scaled_grams BIGINT`. A database CHECK requires any
+present scaled value to be positive, requires the legacy whole-gram projection to be present, and
+requires that projection to equal positive round-half-up(scaled / 10^12). The arithmetic uses
+quotient/remainder form so the consistency check does not add 5e11 to the BIGINT and create an
+avoidable overflow boundary.
+
+Existing historical catch rows remain valid with a NULL scaled value. The migration performs no
+backfill because reconstructing lost sub-gram precision from a whole-gram projection would invent
+biological state.
+
+### 2. Read models expose canonical weight while capacity accounting stays whole-gram
+
+**Implementation-time finding — CONFIRMED**
+
+CatchBag capacity is specified and already persisted in whole grams, while the owner-approved
+FishTension contract needs canonical sub-gram weight. Reusing one field for both meanings would let
+display/storage rounding change capability outcomes.
+
+**Final decision**
+
+Expose the optional canonical scaled weight on CatchBag and Item read models, but continue summing
+`catch_weight_grams` for CatchBag capacity. PostgreSQL regression coverage keeps legacy NULL rows
+readable, verifies a 6000.4 g canonical fish consumes 6000 whole CatchBag grams, and rejects a
+6000.5 g canonical value paired with a 6000 g projection.
+
+### 3. This migration does not create a FishInstance minting authority
+
+**Check result — CONFIRMED**
+
+The repository still lacks the stateful manual Fishing cast owner and exact non-book Junk/Treasure
+payload tables. Adding a storage field does not authorize an adapter or generic Item service to mint
+FishInstances independently.
+
+**Final decision**
+
+Keep creation/settlement outside this slice. The future Fishing owner must write the canonical scaled
+weight and its whole-gram projection atomically with the complete FishInstance state, CatchBag
+capacity validation, progression, Rod/bait consequences, operation result, audit and outbox.

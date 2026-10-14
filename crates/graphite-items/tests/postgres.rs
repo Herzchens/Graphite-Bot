@@ -155,6 +155,7 @@ async fn storage_and_equipment_are_capacity_safe_idempotent_and_authoritative() 
     )
     .await;
     let catch_operation = seed_operation(&store, player_id, discord_user_id, &Uuid::now_v7()).await;
+    let legacy_catch_id = Uuid::now_v7();
     sqlx::query(
         r#"
         INSERT INTO item_instances (
@@ -164,17 +165,90 @@ async fn storage_and_equipment_are_capacity_safe_idempotent_and_authoritative() 
         VALUES ($1, $2, 1, $3, $4, 'CATCH_BAG', 1234)
         "#,
     )
-    .bind(Uuid::now_v7())
+    .bind(legacy_catch_id)
     .bind(&catch_definition)
     .bind(player_id)
     .bind(catch_operation)
     .execute(store.pool())
     .await
     .unwrap();
+
+    let canonical_catch_operation =
+        seed_operation(&store, player_id, discord_user_id, &Uuid::now_v7()).await;
+    let canonical_catch_id = Uuid::now_v7();
+    let canonical_scaled_weight = 6_000_400_000_000_000_i64;
+    sqlx::query(
+        r#"
+        INSERT INTO item_instances (
+            id, definition_key, definition_version, owner_player_id,
+            created_by_operation_id, location, catch_weight_grams, catch_weight_scaled_grams
+        )
+        VALUES ($1, $2, 1, $3, $4, 'CATCH_BAG', 6000, $5)
+        "#,
+    )
+    .bind(canonical_catch_id)
+    .bind(&catch_definition)
+    .bind(player_id)
+    .bind(canonical_catch_operation)
+    .bind(canonical_scaled_weight)
+    .execute(store.pool())
+    .await
+    .unwrap();
+
     let catch_bag = items.catch_bag(discord_user_id).await.unwrap();
     assert_eq!(catch_bag.capacity_grams, 1_000_000);
-    assert_eq!(catch_bag.used_grams, 1234);
-    assert_eq!(catch_bag.catches.len(), 1);
+    assert_eq!(catch_bag.used_grams, 7_234);
+    assert_eq!(catch_bag.catches.len(), 2);
+
+    let legacy = catch_bag
+        .catches
+        .iter()
+        .find(|catch| catch.item_instance_id == legacy_catch_id)
+        .unwrap();
+    assert_eq!(legacy.weight_grams, 1_234);
+    assert_eq!(legacy.canonical_weight_scaled_grams, None);
+
+    let canonical = catch_bag
+        .catches
+        .iter()
+        .find(|catch| catch.item_instance_id == canonical_catch_id)
+        .unwrap();
+    assert_eq!(canonical.weight_grams, 6_000);
+    assert_eq!(
+        canonical.canonical_weight_scaled_grams,
+        Some(canonical_scaled_weight)
+    );
+
+    let inspected_canonical = items
+        .item(discord_user_id, canonical_catch_id)
+        .await
+        .unwrap();
+    assert_eq!(inspected_canonical.catch_weight_grams, Some(6_000));
+    assert_eq!(
+        inspected_canonical.canonical_weight_scaled_grams,
+        Some(canonical_scaled_weight)
+    );
+
+    let mismatched_projection = sqlx::query(
+        r#"
+        INSERT INTO item_instances (
+            id, definition_key, definition_version, owner_player_id,
+            created_by_operation_id, location, catch_weight_grams, catch_weight_scaled_grams
+        )
+        VALUES ($1, $2, 1, $3, $4, 'CATCH_BAG', 6000, 6000500000000000)
+        "#,
+    )
+    .bind(Uuid::now_v7())
+    .bind(&catch_definition)
+    .bind(player_id)
+    .bind(canonical_catch_operation)
+    .execute(store.pool())
+    .await
+    .unwrap_err();
+    let sqlx::Error::Database(database) = mismatched_projection else {
+        panic!("expected projection consistency database error");
+    };
+    assert_eq!(database.code().as_deref(), Some("23514"));
 
     let conflict = items
         .deliver_stack_to_item_bag(discord_user_id, &stack_key, 2, &fill_key)
