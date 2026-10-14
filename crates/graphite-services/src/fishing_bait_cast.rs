@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::fishing_bait::{
@@ -12,14 +12,14 @@ pub struct ActiveFishingBaitInventory {
     pub available_units: i64,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingBaitCastConsumptionAction {
     ConsumeForCast,
     AutoDetachMissingUnit,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FishingBaitCastConsumptionEntry {
     pub bait: FishingBait,
     pub category: FishingBaitCategory,
@@ -29,7 +29,7 @@ pub struct FishingBaitCastConsumptionEntry {
     pub action: FishingBaitCastConsumptionAction,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FishingBaitCastConsumptionPlan {
     pub bait_rack_level: Option<u8>,
     pub active_category_capacity: u8,
