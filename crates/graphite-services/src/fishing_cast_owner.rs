@@ -2,6 +2,8 @@ use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::fishing_unmodified_line_stage::resolve_manual_unmodified_line_stage_v1;
+
 use crate::{
     CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingBait,
     FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
@@ -11,6 +13,7 @@ use crate::{
     FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflight,
     ManualFishingCastPreflightError, ManualFishingUnmodifiedCapabilityError,
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
     deliver_fishing_fish_instance_v1, fishing_catch_branch_pre_cap_weights_v1,
     lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_non_fish_outcome_v1,
@@ -35,6 +38,8 @@ pub enum ManualFishingCastOwnerError {
     ProvisionalFishOutsideStarterPool,
     #[error(transparent)]
     UnmodifiedCapability(#[from] ManualFishingUnmodifiedCapabilityError),
+    #[error(transparent)]
+    UnmodifiedLineStage(#[from] ManualFishingUnmodifiedLineStageError),
 }
 
 /// Owns an uncommitted manual Fishing cast transaction.
@@ -143,6 +148,19 @@ impl PendingManualFishingCastV1<'_> {
             self.preflight.area_access.area,
             self.preflight.rod.kind,
             candidate.numeric,
+        )?)
+    }
+
+    /// Resolves the pinned LineBreak PPM stage of an unmodified candidate, never a
+    /// finished cast. Over-cap line survival still requires catch/escape resolution.
+    pub fn preview_unmodified_line_stage_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingCastOwnerError> {
+        let capability = self.preview_unmodified_fish_capability_v1(fish_slot)?;
+        Ok(resolve_manual_unmodified_line_stage_v1(
+            self.preflight.rng,
+            capability,
         )?)
     }
 

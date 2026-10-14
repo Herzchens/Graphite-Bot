@@ -4,8 +4,9 @@ use graphite_services::{
     FishingCatchBranch, FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST,
     ManualFishingCastOwnerError, ManualFishingCastPreflightError, ManualFishingPpmDrawV1,
     ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
-    begin_manual_fishing_cast_v1, lock_manual_fishing_cast_preflight,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
+    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
+    lock_manual_fishing_cast_preflight,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -106,6 +107,10 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
         pending.preview_unmodified_fish_capability_v1(0).unwrap(),
         ManualFishingUnmodifiedCapabilityPreviewV1::StarterPoolGuaranteedLanded
     );
+    assert_eq!(
+        pending.preview_unmodified_line_stage_v1(0).unwrap(),
+        ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk
+    );
     let first = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     let replay = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     assert_eq!(first, replay);
@@ -190,6 +195,39 @@ async fn unmodified_river_candidate_uses_exact_capability_kernel_without_settlem
         .await
         .unwrap();
     let first = pending.preview_unmodified_fish_capability_v1(0).unwrap();
+    let line_stage = pending.preview_unmodified_line_stage_v1(0).unwrap();
+    assert_eq!(
+        line_stage,
+        pending.preview_unmodified_line_stage_v1(0).unwrap()
+    );
+    match (first, line_stage) {
+        (
+            ManualFishingUnmodifiedCapabilityPreviewV1::WithinRodCapability { .. },
+            ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk,
+        ) => {}
+        (
+            ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending { line_break, .. },
+            ManualFishingUnmodifiedLineStageV1::LineBroken {
+                draw_ppm,
+                chance_ppm,
+            },
+        ) => {
+            assert_eq!(chance_ppm, line_break.final_probability_ppm);
+            assert!(draw_ppm < chance_ppm);
+        }
+        (
+            ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending { line_break, .. },
+            ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending {
+                draw_ppm,
+                chance_ppm,
+            },
+        ) => {
+            assert_eq!(chance_ppm, line_break.final_probability_ppm);
+            assert!(draw_ppm >= chance_ppm);
+        }
+        (preview, stage) => panic!("invalid physical line-stage pairing: {preview:?} {stage:?}"),
+    }
+
     assert_eq!(
         pending.preview_unmodified_fish_capability_v1(0).unwrap(),
         first
