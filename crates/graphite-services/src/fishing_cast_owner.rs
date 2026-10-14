@@ -86,6 +86,31 @@ pub enum PendingManualFishingStarterBaseOutcomeV1 {
     },
 }
 
+/// Rollback-only selected baseline cast outcome with its associated Rod consequence.
+///
+/// A survived over-cap line is *not* a landed Fish. Its exact rational catch/escape
+/// roll is not yet frozen into a semantic RNG resolver, so no Fish/XP/wear is staged
+/// for that branch by this API. All variants remain non-committable until the
+/// operation result/audit/outbox and remaining modifiers/Mending are composed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingManualFishingUnmodifiedSelectedOutcomeV1 {
+    LandedFish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    NonFish {
+        staged: PendingManualFishingNonFishReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    LineBroken {
+        durability: AppliedFishingRodDurabilityState,
+    },
+    OverCapCatchPending {
+        line_stage: ManualFishingUnmodifiedLineStageV1,
+    },
+}
+
 /// Owns an uncommitted manual Fishing cast transaction.
 ///
 /// There is intentionally no commit or transaction-extraction method until the entire cast
@@ -386,6 +411,72 @@ impl PendingManualFishingCastV1<'_> {
         let applied = receipt.applied.clone();
         self.staged_durability = Some(receipt);
         Ok(applied)
+    }
+
+    /// Composes the actual pinned zero-modifier branch and its physically resolved
+    /// Fish/Junk/non-book Treasure output, exact successful XP and one Rod event.
+    ///
+    /// The line-break path destroys the Rod without issuing Fish or successful XP.
+    /// A survived over-cap Fish stays pending with no output/durability/XP until
+    /// the rational catch/escape RNG stage has an approved versioned mapping.
+    /// Direct Enchant Book Treasure still fails closed before issuing assets.
+    ///
+    /// This transaction-owned staging method cannot commit the operation or
+    /// expose an application adapter; repeated calls replay the same child receipts.
+    pub async fn stage_unmodified_selected_outcome_v1(
+        &mut self,
+    ) -> Result<PendingManualFishingUnmodifiedSelectedOutcomeV1, ManualFishingCastOwnerError> {
+        let branch = self.preview_unmodified_base_branch_v1()?;
+        match branch {
+            FishingCatchBranch::Fish => {
+                match self.preview_unmodified_line_stage_v1(0)? {
+                    ManualFishingUnmodifiedLineStageV1::LineBroken { .. } => {
+                        let durability = self.stage_unmodified_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::LineBroken {
+                            durability,
+                        })
+                    }
+                    line_stage @ ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending { .. } => {
+                        Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::OverCapCatchPending {
+                            line_stage,
+                        })
+                    }
+                    ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk => {
+                        let request = self.preview_unmodified_fish_candidate_v1(0)?;
+                        let delivery = deliver_fishing_fish_instance_v1(
+                            &mut self.tx,
+                            self.preflight.operation_id,
+                            self.preflight.player_id,
+                            request,
+                        )
+                        .await?;
+                        let progression = settle_manual_fishing_successful_progression_v1(
+                            &mut self.tx,
+                            self.preflight.operation_id,
+                            self.preflight.player_id,
+                            &ManualFishingSuccessfulProgressionOutcomeV1::Fish {
+                                landed_rarities: vec![delivery.rarity],
+                            },
+                        )
+                        .await?;
+                        let durability = self.stage_unmodified_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::LandedFish {
+                            delivery,
+                            progression,
+                            durability,
+                        })
+                    }
+                }
+            }
+            FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
+                let staged = self.stage_non_fish_candidate_v1(branch).await?;
+                let durability = self.stage_unmodified_rod_durability_v1().await?;
+                Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::NonFish {
+                    staged,
+                    durability,
+                })
+            }
+        }
     }
 
     pub async fn rollback(self) -> Result<(), sqlx::Error> {

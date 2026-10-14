@@ -2199,3 +2199,48 @@ keep its local receipt cache as a same-transaction optimization. If anything fai
 the owning transaction must roll back both the Rod mutation and the asset event.
 Do not activate external `/fish` or claim full lifecycle completion because the
 durability child now supports persisted retries.
+
+
+## Fishing selected unmodified cast consequences
+
+Branch: feat/fishing-unmodified-selected-cast
+
+### 1. Physical terminal stage determines which children may be provisionally staged
+
+**Normative alignment — CONFIRMED**
+
+An unmodified cast chooses its Fish/Junk/Treasure branch from the operation-pinned
+canonical baseline draw. Junk and non-book Treasure are successful landed outcomes;
+Fish first uses the frozen capability route, and an over-cap Fish must resolve line
+break before catch/escape. A broken line destroys an ordinary Rod and awards no
+successful Fishing progression.
+
+**Final decision**
+
+For the selected unmodified Fish branch, a within-capability or Starter Pool
+guaranteed landing stages one unique FishInstance, exactly 2 Account XP, frozen
+rarity AEXP and one ordinary Rod wear event (or a Starter Basic unbreakable
+receipt). A line break stages only the Rod destruction child and never a Fish
+or successful XP. A survived over-cap line remains pending a separate exact
+rational catch/escape roll: this resolver stages no Fish, XP or wear for that
+unresolved case. A selected Junk/non-book Treasure stages its canonical payload,
+exact successful XP and the one ordinary Rod event. All children share the same
+rollback-only transaction and same operation identities.
+
+### 2. No premature global live cast or unauthorized rational conversion
+
+**Safety finding — CONFIRMED**
+
+Unmodified composition has neither approved general modifier normalization nor
+the complete over-cap exact-rational-to-RNG mapping, and the total lifecycle
+still lacks final result/audit/outbox and Mending composition. Direct Enchant
+Book Treasure likewise needs its specialized delivery child.
+
+**Final decision**
+
+This provisional selected-outcome API must return an explicit OverCapCatchPending
+stage rather than treating line survival as success or escape. Direct book results
+continue to fail closed. The pending owner must never expose a transaction commit
+or Discord `/fish` adapter until these final boundaries and all terminal effects
+are completed atomically. Repeated child staging must replay the same item,
+progression and operation-keyed Rod receipts without duplicate economic output.
