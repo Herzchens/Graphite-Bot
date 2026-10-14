@@ -39,6 +39,7 @@ mod fishing_payload_roll;
 mod fishing_progression_settlement;
 mod fishing_rng;
 mod fishing_rod_durability;
+mod fishing_rod_durability_receipt;
 mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
 mod fishing_rod_state;
@@ -293,6 +294,10 @@ pub use fishing_rod_durability::{
     FishingRodDurabilityConsequence, FishingRodDurabilityPolicyError, FishingRodDurabilityPreview,
     FishingRodDurabilityResolution, FishingUnbreakingLevelXPolicy,
     fishing_unbreaking_level_x_policy, preview_fishing_rod_durability,
+};
+pub use fishing_rod_durability_receipt::{
+    FishingRodDurabilityMutationError, FishingRodDurabilityMutationReceiptV1,
+    apply_operation_fishing_rod_durability_v1,
 };
 pub use fishing_rod_durability_state::{
     AppliedFishingRodDurabilityState, FishingRodDurabilityStateError,

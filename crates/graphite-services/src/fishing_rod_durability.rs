@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
     },
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingRodDurabilityResolution {
     CompletedCastAttempt {
@@ -18,7 +18,7 @@ pub enum FishingRodDurabilityResolution {
     LineBreak,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingRodDurabilityConsequence {
     OrdinaryWearApplied,
@@ -26,7 +26,7 @@ pub enum FishingRodDurabilityConsequence {
     LineBreakDestroyedRod,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct FishingRodDurabilityPreview {
     pub current_durability: u32,
     pub max_durability: u32,

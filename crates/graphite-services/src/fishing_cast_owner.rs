@@ -11,13 +11,14 @@ use crate::{
     FishingCatchBranchPreCapWeightsV1, FishingFishInstanceDeliveryError,
     FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
     FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
-    FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, FishingRodDurabilityResolution,
-    FishingRodDurabilityStateError, ManualFishingCastPreflight, ManualFishingCastPreflightError,
+    FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, FishingRodDurabilityMutationError,
+    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution,
+    ManualFishingCastPreflight, ManualFishingCastPreflightError,
     ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
     ManualFishingRngDrawError, ManualFishingSuccessfulProgressionOutcomeV1,
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
     ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
-    ManualFishingUnmodifiedLineStageV1, apply_resolved_equipped_fishing_rod_durability,
+    ManualFishingUnmodifiedLineStageV1, apply_operation_fishing_rod_durability_v1,
     deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
     fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
     preview_manual_fishing_unmodified_fish_candidate_v1,
@@ -57,7 +58,7 @@ pub enum ManualFishingCastOwnerError {
     #[error(transparent)]
     UnmodifiedLineStage(#[from] ManualFishingUnmodifiedLineStageError),
     #[error(transparent)]
-    RodDurability(#[from] FishingRodDurabilityStateError),
+    RodDurability(#[from] FishingRodDurabilityMutationError),
 }
 
 /// Provisional Junk or non-book Treasure delivery and reward children in a single
@@ -97,7 +98,7 @@ pub struct PendingManualFishingCastV1<'c> {
     preflight: ManualFishingCastPreflight,
     bait: FishingBaitCastSettlementReceipt,
     pre_cap_branch_weights: FishingCatchBranchPreCapWeightsV1,
-    staged_durability: Option<AppliedFishingRodDurabilityState>,
+    staged_durability: Option<FishingRodDurabilityMutationReceiptV1>,
 }
 
 impl PendingManualFishingCastV1<'_> {
@@ -351,15 +352,15 @@ impl PendingManualFishingCastV1<'_> {
     /// any surviving/within-capability Fish or non-Fish branch consumes the one
     /// ordinary completed-attempt wear event (Starter Basic stays unbreakable).
     ///
-    /// Staged durability is cached on this transaction owner so a duplicate call
-    /// cannot remove two durability points. The still-uncommittable transaction
+    /// The operation-keyed asset event enforces durable replay, while the transaction-owner
+    /// cache also avoids redundant event queries within one attempt. The still-uncommittable transaction
     /// rolls this child back with every other provisional cast mutation.
     pub async fn stage_unmodified_rod_durability_v1(
         &mut self,
     ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
         self.ensure_unmodified_cast_v1()?;
         if let Some(staged) = &self.staged_durability {
-            return Ok(staged.clone());
+            return Ok(staged.applied.clone());
         }
         let branch = self.preview_unmodified_base_branch_v1()?;
         let resolution = if branch == FishingCatchBranch::Fish
@@ -373,7 +374,7 @@ impl PendingManualFishingCastV1<'_> {
                 ordinary_event_prevented_by_unbreaking: false,
             }
         };
-        let receipt = apply_resolved_equipped_fishing_rod_durability(
+        let receipt = apply_operation_fishing_rod_durability_v1(
             &mut self.tx,
             self.preflight.operation_id,
             self.preflight.player_id,
@@ -382,8 +383,9 @@ impl PendingManualFishingCastV1<'_> {
             resolution,
         )
         .await?;
-        self.staged_durability = Some(receipt.clone());
-        Ok(receipt)
+        let applied = receipt.applied.clone();
+        self.staged_durability = Some(receipt);
+        Ok(applied)
     }
 
     pub async fn rollback(self) -> Result<(), sqlx::Error> {
