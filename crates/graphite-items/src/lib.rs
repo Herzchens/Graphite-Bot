@@ -107,6 +107,7 @@ pub struct CatchView {
     pub definition_version: i32,
     pub rarity: String,
     pub weight_grams: i64,
+    pub canonical_weight_scaled_grams: Option<i64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -138,6 +139,7 @@ pub struct ItemView {
     pub current_durability: Option<i64>,
     pub max_durability: Option<i64>,
     pub catch_weight_grams: Option<i64>,
+    pub canonical_weight_scaled_grams: Option<i64>,
     pub state: Value,
 }
 
@@ -342,6 +344,7 @@ impl ItemService {
                    i.definition_key,
                    i.definition_version,
                    i.catch_weight_grams,
+                   i.catch_weight_scaled_grams,
                    d.rarity
               FROM item_instances i
               JOIN item_definition_versions d
@@ -371,6 +374,7 @@ impl ItemService {
                     definition_version: row.try_get("definition_version")?,
                     rarity: row.try_get("rarity")?,
                     weight_grams: weight,
+                    canonical_weight_scaled_grams: row.try_get("catch_weight_scaled_grams")?,
                 });
             }
         }
@@ -406,6 +410,7 @@ impl ItemService {
                    i.current_durability,
                    i.max_durability,
                    i.catch_weight_grams,
+                   i.catch_weight_scaled_grams,
                    i.state
               FROM item_instances i
               JOIN item_definition_versions d
@@ -447,6 +452,7 @@ impl ItemService {
                    i.current_durability,
                    i.max_durability,
                    i.catch_weight_grams,
+                   i.catch_weight_scaled_grams,
                    i.state
               FROM equipment_slots e
               JOIN item_instances i ON i.id = e.item_instance_id
@@ -503,6 +509,7 @@ impl ItemService {
                    i.current_durability,
                    i.max_durability,
                    i.catch_weight_grams,
+                   i.catch_weight_scaled_grams,
                    i.state
               FROM item_instances i
               JOIN item_definition_versions d
@@ -1412,6 +1419,7 @@ fn row_to_item_view(row: sqlx::postgres::PgRow) -> Result<ItemView, ItemError> {
         current_durability: row.try_get("current_durability")?,
         max_durability: row.try_get("max_durability")?,
         catch_weight_grams: row.try_get("catch_weight_grams")?,
+        canonical_weight_scaled_grams: row.try_get("catch_weight_scaled_grams")?,
         state: row.try_get("state")?,
     })
 }
