@@ -1,4 +1,9 @@
-use graphite_services::{ManualFishingRngContextError, lock_manual_fishing_rng_context};
+use graphite_services::{
+    FishingCatchBranch, FishingNonFishRollError, FishingResolvedNonFishOutcomeV1,
+    FishingTreasureResult, ManualFishingRngContextError, ManualFishingWeightedDrawV1,
+    fishing_base_treasure_result_policy, fishing_non_book_treasure_payloads,
+    lock_manual_fishing_rng_context, resolve_manual_fishing_non_fish_outcome_v1,
+};
 use graphite_store::PgStore;
 use uuid::Uuid;
 
@@ -25,6 +30,87 @@ async fn persisted_rng_context_replays_exactly_and_retains_the_operation_lock() 
         .unwrap();
     assert_eq!(replay_context, context);
     replay.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn pinned_rng_replays_junk_and_treasure_payloads_without_cloning_repeat_slots() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "payloads", [37; 32]).await;
+    let mut tx = store.pool().begin().await.unwrap();
+    let rng = lock_manual_fishing_rng_context(&mut tx, operation_id, player_id)
+        .await
+        .unwrap();
+
+    let junk =
+        resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Junk, None).unwrap();
+    assert_eq!(
+        junk,
+        resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Junk, Some(10))
+            .unwrap()
+    );
+    assert!(matches!(junk, FishingResolvedNonFishOutcomeV1::Junk { .. }));
+    assert!(matches!(
+        resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Fish, None),
+        Err(FishingNonFishRollError::FishRequiresUniqueDelivery)
+    ));
+
+    let categories = [
+        FishingTreasureResult::MaterialBundle,
+        FishingTreasureResult::CrateOrChest,
+        FishingTreasureResult::EnchantBook,
+        FishingTreasureResult::OrbOrCatalystFragmentOrItem,
+        FishingTreasureResult::RareBaitOrUtilityItem,
+        FishingTreasureResult::RelicOrCollectible,
+    ];
+    let weights = categories
+        .map(|result| u64::from(fishing_base_treasure_result_policy(result).relative_weight));
+    let selected = rng
+        .sample_weighted_v1(ManualFishingWeightedDrawV1::TreasureResult, &weights)
+        .unwrap();
+    let result = categories[selected];
+
+    if result == FishingTreasureResult::EnchantBook {
+        assert!(matches!(
+            resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Treasure, Some(10)),
+            Err(FishingNonFishRollError::EnchantBookRequiresDedicatedResolver)
+        ));
+    } else {
+        let treasure =
+            resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Treasure, Some(10))
+                .unwrap();
+        let replay =
+            resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Treasure, Some(10))
+                .unwrap();
+        assert_eq!(treasure, replay);
+        let FishingResolvedNonFishOutcomeV1::Treasure {
+            result: actual_result,
+            payloads,
+        } = treasure
+        else {
+            panic!("Treasure branch resolved an unexpected outcome");
+        };
+        assert_eq!(actual_result, result);
+        assert!((1..=3).contains(&payloads.len()));
+        let allowed = fishing_non_book_treasure_payloads(result).unwrap();
+        assert!(payloads.iter().all(|payload| allowed.contains(payload)));
+        let single =
+            resolve_manual_fishing_non_fish_outcome_v1(rng, FishingCatchBranch::Treasure, None)
+                .unwrap();
+        let FishingResolvedNonFishOutcomeV1::Treasure {
+            payloads: single_payloads,
+            ..
+        } = single
+        else {
+            panic!("Treasure branch resolved an unexpected outcome");
+        };
+        assert_eq!(single_payloads.len(), 1);
+        assert_eq!(single_payloads[0], payloads[0]);
+    }
+    tx.rollback().await.unwrap();
 }
 
 #[tokio::test]

@@ -1,11 +1,85 @@
 use graphite_progression::account_total_xp_for_level;
 use graphite_services::{
     CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingAreaAccessOrigin,
-    ManualFishingCastPreflightError, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    FishingCatchBranch, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflightError,
+    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
     lock_manual_fishing_cast_preflight,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_identity() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "pending-owner").await;
+    let operation_id = seed_operation(&store, player_id, nonce, "pending-owner").await;
+
+    sqlx::query(
+        "INSERT INTO item_stacks (player_id, definition_key, definition_version, location, quantity) VALUES ($1, 'fishing.bait.treasure', 1, 'ITEM_BAG', 2)",
+    )
+    .bind(player_id)
+    .execute(store.pool())
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO player_active_fishing_baits (player_id, bait_kind, definition_key, definition_version, activated_by_operation_id) VALUES ($1, 'TREASURE', 'fishing.bait.treasure', 1, $2)",
+    )
+    .bind(player_id)
+    .bind(operation_id)
+    .execute(store.pool())
+    .await
+    .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    assert_eq!(pending.operation_id(), operation_id);
+    assert_eq!(pending.player_id(), player_id);
+    assert_eq!(pending.bait_settlement().plan.consumed_bait_categories, 1);
+    let weights = pending.pre_cap_branch_weights();
+    assert_eq!(
+        (weights.fish, weights.junk, weights.treasure),
+        (70_400, 6_120, 3_220)
+    );
+    let provisional = pending
+        .preview_non_fish_candidate_v1(FishingCatchBranch::Junk)
+        .unwrap();
+    assert!(matches!(
+        provisional,
+        FishingResolvedNonFishOutcomeV1::Junk { .. }
+    ));
+    assert_eq!(
+        provisional,
+        pending
+            .preview_non_fish_candidate_v1(FishingCatchBranch::Junk)
+            .unwrap()
+    );
+    pending.rollback().await.unwrap();
+
+    let quantity: i64 = sqlx::query_scalar(
+        "SELECT quantity FROM item_stacks WHERE player_id = $1 AND definition_key = 'fishing.bait.treasure' AND definition_version = 1 AND location = 'ITEM_BAG'",
+    )
+    .bind(player_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(quantity, 2);
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+
+    let events: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(events, 0);
+}
 
 #[tokio::test]
 async fn starter_pool_preflight_accepts_starter_basic_and_uses_native_bait_capacity() {

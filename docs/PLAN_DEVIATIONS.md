@@ -1815,3 +1815,59 @@ The wrapper composes the existing account and activity child mutations in one ca
 transaction. Exact replay returns the original child receipts, a rollback removes both, and a
 committed operation may replay only the already-recorded rewards. No Fishing-specific progression
 tables or alternate arithmetic are introduced.
+
+
+## Fishing manual cast preparation and non-Fish payload RNG
+
+Branch: feat/fishing-manual-cast-owner
+
+### 1. The cast owner cannot expose an early commit boundary
+
+**Implementation finding — CONFIRMED**
+
+Area-first-unlock and active-bait consumption are already caller-transaction mutations, while the
+later branch selection, terminal Rod/Mending consequences, progression and operation/outbox commit
+are not yet composed. A callable partial "cast" must not make those child effects permanently visible.
+
+**Final decision**
+
+Introduce an owned, non-committable pending manual cast value. It locks the persisted operation RNG
+root, progression/area/Rod preflight and active bait inside one PostgreSQL transaction, deriving
+known pre-cap Gold-Rod/Treasure-Bait modifiers from locked state and the actual consumption receipt.
+It exposes explicit rollback and deterministic previews but no live command or commit/finalization.
+Dropping the pending value rolls all interim writes back.
+
+### 2. Junk and repeated non-book Treasure require disjoint deterministic RNG domains
+
+**Implementation finding — CONFIRMED**
+
+The frozen Junk/within-category Treasure tables have independent integer member weights, and
+Multi Treasure rerolls each payload under the one already-selected outer Treasure result. The
+previous typed RNG schedule covered the outer Treasure result and Enchant Book slots, but not
+Junk or non-book member payloads; borrowing an existing domain would couple unrelated outcomes.
+
+**Final decision**
+
+Extend the existing stable manual Fishing v1 domain family additively with
+`fishing.manual.v1.junk.payload` and
+`fishing.manual.v1.treasure.{slot}.nonbook_payload` for slots 0–2.
+No existing domain label or golden draw vector is changed. The selector uses the canonical
+v1 integer weights, optionally resolves Multi Treasure quantity from its exact level I–X PPM
+curve, and independently samples each payload at its fixed slot. A direct Enchant Book result
+fails closed in this resolver and remains owned by its specialized item/enchant settlement.
+
+### 3. Non-Fish delivery is a bounded, caller-transaction child mutation
+
+**Implementation finding — CONFIRMED**
+
+Unique FishInstance delivery, Junk stack issuance and sealed Treasure payload issuance have
+different asset representations. A generic item mint or new top-level operation would break
+version-pinning, storage-capacity conservation or the existing operation replay keys.
+
+**Final decision**
+
+Validate the entire resolved Junk/Treasure payload batch against the canonical result pool and
+three-slot bound before any SQL write. Delegate each fixed v1 stack sub-delivery to the shared
+Item Bag mutation owner with independent per-slot keys, exact definition identity and pending
+overflow conservation. The full cast owner must still choose the branch from final capped
+weights and compose durability, progression, result/audit/outbox before any transaction commit.
