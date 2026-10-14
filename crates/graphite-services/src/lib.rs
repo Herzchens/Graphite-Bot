@@ -27,6 +27,7 @@ mod fishing_multi_treasure;
 mod fishing_multicatch;
 mod fishing_numeric;
 mod fishing_over_cap;
+mod fishing_payload;
 mod fishing_rng;
 mod fishing_rod_durability;
 mod fishing_rod_durability_state;
@@ -164,10 +165,12 @@ pub use fishing_bait_cast::{
     plan_fishing_bait_cast_consumption,
 };
 pub use fishing_book_pool::{
-    DirectFishingBookLevelProfile, DirectFishingBookPolicyError, DirectFishingBookPool,
-    DirectFishingBookPoolPolicy, direct_fishing_book_pool_membership,
-    direct_fishing_book_pool_policy, direct_fishing_mythic_enchant_weight,
-    direct_fishing_raw_book_level_weight,
+    DirectFishingBookLevelProfile, DirectFishingBookMemberPolicy, DirectFishingBookPolicyError,
+    DirectFishingBookPool, DirectFishingBookPoolPolicy, direct_fishing_book_level_profile,
+    direct_fishing_book_member_policy, direct_fishing_book_pool_members,
+    direct_fishing_book_pool_membership, direct_fishing_book_pool_policy,
+    direct_fishing_finished_book_level_weight, direct_fishing_finished_book_level_weights,
+    direct_fishing_mythic_enchant_weight, direct_fishing_raw_book_level_weight,
 };
 pub use fishing_capability::{
     FishingCapabilityClassification, FishingCapabilityError, FishingCapabilityRatio,
@@ -226,6 +229,11 @@ pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
     OverCapCatchChanceBound, OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL,
     SHARP_HOOK_PERCENTAGE_POINTS_PER_LEVEL, preview_over_cap_catch_chance,
+};
+pub use fishing_payload::{
+    FishingPayload, FishingPayloadPolicy, FishingPayloadPolicyError,
+    fishing_bait_item_definition_key, fishing_junk_payloads, fishing_non_book_treasure_payloads,
+    fishing_payload_policy,
 };
 pub use fishing_rng::{
     MANUAL_FISHING_RNG_POLICY_VERSION, MANUAL_FISHING_RNG_PPM_SCALE, ManualFishingPpmDrawV1,
