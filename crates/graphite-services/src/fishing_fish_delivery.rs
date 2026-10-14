@@ -14,6 +14,8 @@ use crate::{
 
 pub const FISHING_FISH_ITEM_DEFINITION_VERSION: i32 = 1;
 const DELIVERY_EVENT_KIND: &str = "FISHING_FISH_INSTANCE_DELIVERED";
+const CLAIM_EVENT_KIND: &str = "FISHING_PENDING_CATCHES_CLAIMED";
+const CLAIM_MUTATION_KEY: &str = "fishing:pending-catches:claim";
 const PENDING_REASON: &str = "CATCH_BAG_CAPACITY";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -47,6 +49,23 @@ pub struct FishingFishInstanceDeliveryReceiptV1 {
     pub canonical_weight_scaled_grams: i64,
     pub location: FishingFishDeliveryLocation,
     pub pending_delivery_id: Option<Uuid>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FishingClaimedCatchV1 {
+    pub pending_delivery_id: Uuid,
+    pub item_instance_id: Uuid,
+    pub catch_weight_grams: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FishingPendingCatchClaimReceiptV1 {
+    pub event_id: Uuid,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub claimed: Vec<FishingClaimedCatchV1>,
+    pub blocked_pending_delivery_id: Option<Uuid>,
+    pub used_grams_after: i64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -85,6 +104,10 @@ pub enum FishingFishInstanceDeliveryError {
     InvalidStoredEvent(Box<serde_json::Error>),
     #[error("the same Fishing fish-slot delivery was replayed with different input")]
     DeliveryMutationConflict,
+    #[error("pending Fishing catch {0} is internally inconsistent")]
+    PendingCatchIntegrityMismatch(Uuid),
+    #[error("stored pending-catch claim event is internally inconsistent")]
+    ClaimMutationConflict,
 }
 
 impl From<sqlx::Error> for FishingFishInstanceDeliveryError {
@@ -301,6 +324,216 @@ pub async fn deliver_fishing_fish_instance_v1(
     .await?;
 
     Ok(receipt)
+}
+
+/// Moves as many FIFO pending unique FishInstances into CatchBag as current capacity permits.
+///
+/// This is intended to run near the start of a later manual-Fishing owner transaction before new
+/// catch generation. The owning operation/player/storage rows serialize capacity state, current
+/// CatchBag items are locked before projection, and pending rows plus their unique TEMP_OVERFLOW
+/// ItemInstances are then locked in FIFO order. A first item that does not fit stops the pass; later
+/// pending fish cannot leapfrog it.
+///
+/// The mutation is operation-key idempotent. If the surrounding owner rolls back, moved items,
+/// pending-state transitions and this audit receipt roll back together. The function does not alter
+/// the original catch operation and does not claim stack-shaped/non-fish pending deliveries.
+pub async fn claim_pending_fishing_catches_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+    player_id: Uuid,
+) -> Result<FishingPendingCatchClaimReceiptV1, FishingFishInstanceDeliveryError> {
+    let operation = lock_operation(tx, operation_id, player_id).await?;
+    if let Some(receipt) = replay_claim(tx, operation_id, player_id).await? {
+        return Ok(receipt);
+    }
+    if operation.state != "PENDING" {
+        return Err(FishingFishInstanceDeliveryError::OperationTerminal(
+            operation.state,
+        ));
+    }
+
+    let storage = lock_active_player_storage(tx, player_id).await?;
+    let capacity_grams = catch_bag_capacity_grams(storage.catch_bag_level)?;
+    let mut used_grams = catch_bag_used_grams(tx, player_id).await?;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT p.id AS pending_delivery_id,
+               p.item_instance_id,
+               p.definition_key,
+               p.definition_version,
+               p.quantity,
+               i.owner_player_id,
+               i.location,
+               i.definition_key AS item_definition_key,
+               i.definition_version AS item_definition_version,
+               i.catch_weight_grams,
+               d.category
+          FROM pending_asset_deliveries p
+          JOIN item_instances i ON i.id = p.item_instance_id
+          JOIN item_definition_versions d
+            ON d.key = i.definition_key
+           AND d.version = i.definition_version
+         WHERE p.player_id = $1
+           AND p.state = 'PENDING'
+           AND p.desired_location = 'CATCH_BAG'
+           AND p.item_instance_id IS NOT NULL
+         ORDER BY p.created_at, p.id
+         FOR UPDATE OF p, i
+        "#,
+    )
+    .bind(player_id)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let mut claimed = Vec::with_capacity(rows.len());
+    let mut blocked_pending_delivery_id = None;
+
+    for row in rows {
+        let pending_delivery_id: Uuid = row.try_get("pending_delivery_id")?;
+        let item_instance_id: Uuid = row.try_get("item_instance_id")?;
+        let definition_key: String = row.try_get("definition_key")?;
+        let definition_version: i32 = row.try_get("definition_version")?;
+        let quantity: i64 = row.try_get("quantity")?;
+        let owner_player_id: Uuid = row.try_get("owner_player_id")?;
+        let location: String = row.try_get("location")?;
+        let item_definition_key: String = row.try_get("item_definition_key")?;
+        let item_definition_version: i32 = row.try_get("item_definition_version")?;
+        let catch_weight_grams: Option<i64> = row.try_get("catch_weight_grams")?;
+        let category: String = row.try_get("category")?;
+
+        if quantity != 1
+            || owner_player_id != player_id
+            || location != "TEMP_OVERFLOW"
+            || item_definition_key != definition_key
+            || item_definition_version != definition_version
+            || category != "FISH"
+        {
+            return Err(
+                FishingFishInstanceDeliveryError::PendingCatchIntegrityMismatch(
+                    pending_delivery_id,
+                ),
+            );
+        }
+
+        let catch_weight_grams = catch_weight_grams.ok_or(
+            FishingFishInstanceDeliveryError::PendingCatchIntegrityMismatch(pending_delivery_id),
+        )?;
+        if catch_weight_grams <= 0 {
+            return Err(
+                FishingFishInstanceDeliveryError::PendingCatchIntegrityMismatch(
+                    pending_delivery_id,
+                ),
+            );
+        }
+
+        let projected_used = i128::from(used_grams)
+            .checked_add(i128::from(catch_weight_grams))
+            .ok_or(FishingFishInstanceDeliveryError::ArithmeticOverflow)?;
+        if projected_used > i128::from(capacity_grams) {
+            blocked_pending_delivery_id = Some(pending_delivery_id);
+            break;
+        }
+
+        let moved = sqlx::query(
+            "UPDATE item_instances SET location = 'CATCH_BAG' WHERE id = $1 AND owner_player_id = $2 AND location = 'TEMP_OVERFLOW'",
+        )
+        .bind(item_instance_id)
+        .bind(player_id)
+        .execute(&mut **tx)
+        .await?;
+        let resolved = sqlx::query(
+            "UPDATE pending_asset_deliveries SET state = 'CLAIMED', resolved_at = now() WHERE id = $1 AND state = 'PENDING'",
+        )
+        .bind(pending_delivery_id)
+        .execute(&mut **tx)
+        .await?;
+        if moved.rows_affected() != 1 || resolved.rows_affected() != 1 {
+            return Err(
+                FishingFishInstanceDeliveryError::PendingCatchIntegrityMismatch(
+                    pending_delivery_id,
+                ),
+            );
+        }
+
+        used_grams = i64::try_from(projected_used)
+            .map_err(|_| FishingFishInstanceDeliveryError::ArithmeticOverflow)?;
+        claimed.push(FishingClaimedCatchV1 {
+            pending_delivery_id,
+            item_instance_id,
+            catch_weight_grams,
+        });
+    }
+
+    let receipt = FishingPendingCatchClaimReceiptV1 {
+        event_id: OperationId::new().as_uuid(),
+        operation_id,
+        player_id,
+        claimed,
+        blocked_pending_delivery_id,
+        used_grams_after: used_grams,
+    };
+    let payload = serde_json::to_value(&receipt)
+        .map_err(|error| FishingFishInstanceDeliveryError::InvalidStoredEvent(Box::new(error)))?;
+    sqlx::query(
+        r#"
+        INSERT INTO asset_events (
+            id, operation_id, mutation_key, player_id, event_kind, payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(receipt.event_id)
+    .bind(operation_id)
+    .bind(CLAIM_MUTATION_KEY)
+    .bind(player_id)
+    .bind(CLAIM_EVENT_KIND)
+    .bind(payload)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(receipt)
+}
+
+async fn replay_claim(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+    player_id: Uuid,
+) -> Result<Option<FishingPendingCatchClaimReceiptV1>, FishingFishInstanceDeliveryError> {
+    let Some(row) = sqlx::query(
+        r#"
+        SELECT id, player_id, event_kind, payload
+          FROM asset_events
+         WHERE operation_id = $1
+           AND mutation_key = $2
+         FOR UPDATE
+        "#,
+    )
+    .bind(operation_id)
+    .bind(CLAIM_MUTATION_KEY)
+    .fetch_optional(&mut **tx)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let event_id: Uuid = row.try_get("id")?;
+    let stored_player_id: Uuid = row.try_get("player_id")?;
+    let event_kind: String = row.try_get("event_kind")?;
+    let payload: Value = row.try_get("payload")?;
+    let receipt: FishingPendingCatchClaimReceiptV1 = serde_json::from_value(payload)
+        .map_err(|error| FishingFishInstanceDeliveryError::InvalidStoredEvent(Box::new(error)))?;
+
+    if event_kind != CLAIM_EVENT_KIND
+        || event_id != receipt.event_id
+        || stored_player_id != player_id
+        || receipt.operation_id != operation_id
+        || receipt.player_id != player_id
+    {
+        return Err(FishingFishInstanceDeliveryError::ClaimMutationConflict);
+    }
+
+    Ok(Some(receipt))
 }
 
 struct LockedOperation {
