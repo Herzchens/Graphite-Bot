@@ -1279,3 +1279,73 @@ FishTension, or represented at higher precision in canonical FishInstance state.
 Do not silently quantize this boundary in the numeric kernel. The future stateful Fishing owner must
 freeze one canonical sampled-weight representation and its conversion into CatchBag capacity and
 FishTension before it can persist FishInstances or compose capability settlement.
+
+
+## Fishing typed RNG and canonical weight bridge
+
+Branch: feat/fishing-rng-weight-bridge
+
+### 1. Canonical sampled weight remains sub-gram gameplay authority
+
+**Owner correction — CONFIRMED**
+
+A sampled FishInstance keeps its 10^12-scaled gram weight as canonical gameplay state. FishTension,
+CatchLoad and later capability/line-break math use that full value. The existing whole-gram CatchBag
+surface is not allowed to become gameplay authority merely because it is easier to persist/display.
+
+**Final decision**
+
+Add an exact scaled-weight FishTension/CatchLoad path. Whole-gram CatchBag weight is derived exactly
+once by positive round-half-up at the storage/display boundary. Regression coverage demonstrates a
+6000.4 g Common fish is over a 6000 gram-tension Wood line even though its CatchBag projection is
+6000 g; feeding the rounded projection back into gameplay would change the outcome and is therefore
+forbidden.
+
+No schema column is added in this prerequisite slice because no FishInstance persistence owner exists
+yet. The future stateful owner must persist the canonical scaled weight explicitly rather than
+changing the meaning of the legacy catch_weight_grams column.
+
+### 2. Manual Fishing RNG uses semantic domain separation, not one sequential stream
+
+**Owner correction — CONFIRMED**
+
+Manual Fishing randomness is partitioned by fixed semantic stage and stable zero-based slot index.
+Unrelated optional draws must never shift another outcome on replay.
+
+**Final decision**
+
+RNG policy v1 derives a fresh DomainRng for each typed stage. Global domains cover catch branch,
+Treasure result, Multicatch count, School Bait proc, Multi Treasure count, line break, over-cap
+catch and ordinary Unbreaking. Fish slots 0..4 independently own species, variant, weight and
+biological-noise domains. Treasure payload slots 0..2 independently own Enchant Book pool/member/
+level domains. Invalid slot indices fail closed before deriving a draw.
+
+Weighted selectors consume exact authoritative integer weights. PPM stages consume one unbiased
+bucket in 0..1,000,000. The raw operation RNG root remains private; adapters cannot submit arbitrary
+domain strings.
+
+### 3. Generic RNG support is extended without changing weighted-selection semantics
+
+**Check result — CONFIRMED**
+
+The core domain RNG previously exposed exact weighted sampling but no unbiased uniform integer range,
+which the numeric FishInstance kernel requires for canonical PPM buckets.
+
+**Final decision**
+
+Add sample_uniform_below using the same rejection rule already embedded in weighted sampling, and
+make weighted sampling delegate to it. This preserves the existing weighted draw sequence while
+giving typed Fishing domains a bounded integer primitive.
+
+### 4. No dependency or toolchain churn is justified
+
+**Check result — DISPROVED for unrelated upgrade work**
+
+Rust 1.99.0 is stable upstream, while 1.99.1 is still pre-release during this slice. The repository
+remains intentionally pinned to Rust 1.98.1 and the current exact direct dependency set. The RNG and
+weight bridge require no new crate or language feature.
+
+**Final decision**
+
+Keep toolchain and dependency pins unchanged. Cross-platform deterministic Fishing tests remain the
+relevant compatibility evidence.

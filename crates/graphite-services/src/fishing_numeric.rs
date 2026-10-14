@@ -6,10 +6,14 @@ use crate::{
     fishing_capability::FishingCapabilityRatio,
     fishing_species::{FishingSpecies, fishing_species_policy},
     fishing_variant::{FishingVariant, fishing_variant_policy},
+    fishing_weight_bridge::{
+        FISHING_CANONICAL_WEIGHT_SCALE, FishingCatchWeightBridgeV1, FishingWeightBridgeError,
+        bridge_canonical_fish_weight_v1,
+    },
 };
 
 pub const FISHING_NUMERIC_POLICY_VERSION: u16 = 1;
-pub const FISHING_FIXED_POINT_SCALE: u64 = 1_000_000_000_000;
+pub const FISHING_FIXED_POINT_SCALE: u64 = FISHING_CANONICAL_WEIGHT_SCALE;
 pub const FISHING_NUMERIC_DRAW_SCALE_PPM: u32 = 1_000_000;
 pub const FISHING_LINE_BREAK_PROBABILITY_SCALE_PPM: u32 = 1_000_000;
 
@@ -91,6 +95,12 @@ impl FishingFishInstanceNumericV1 {
     #[must_use]
     pub const fn weight_scaled_grams(self) -> u64 {
         self.weight_scaled_grams
+    }
+
+    pub fn catch_weight_bridge(
+        self,
+    ) -> Result<FishingCatchWeightBridgeV1, FishingWeightBridgeError> {
+        bridge_canonical_fish_weight_v1(self.weight_scaled_grams)
     }
 
     #[must_use]

@@ -46,8 +46,8 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
-  fishing-numeric-determinism:
-    name: fishing numeric determinism (${{ matrix.os }})
+  fishing-determinism:
+    name: fishing determinism (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -61,5 +61,9 @@ jobs:
           toolchain: 1.98.1
       - uses: Swatinem/rust-cache@v2.9.2
 
-      - name: Test deterministic Fishing numeric vectors
-        run: cargo test -p graphite-services --test fishing_numeric_policy
+      - name: Test deterministic Fishing contracts
+        run: |
+          cargo test -p graphite-core rng::tests::
+          cargo test -p graphite-services --lib fishing_rng::tests::
+          cargo test -p graphite-services --test fishing_numeric_policy
+          cargo test -p graphite-services --test fishing_weight_bridge_policy
