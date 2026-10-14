@@ -1349,3 +1349,72 @@ weight bridge require no new crate or language feature.
 
 Keep toolchain and dependency pins unchanged. Cross-platform deterministic Fishing tests remain the
 relevant compatibility evidence.
+
+
+## Fishing balance-source audit and regression gate
+
+Branch: feat/fishing-balance-regressions
+
+### 1. Latest Master Spec already freezes aggregate Fishing economy balance
+
+**Check result — CONFIRMED**
+
+The latest verified 31-Aug-2026 Master Spec freezes the zero-modifier catch branch at Fish 88.00%,
+Junk 8.50%, Treasure 3.50%; the within-Treasure table at 40/30/8/8/10/4; the direct Enchant Book
+pool at 58/24/12/4/2; the Mythic split at 45/30/25; and the raw book-level profiles already exposed
+by the Services catalog.
+
+The same normative source includes analytic direct-book pacing at the 10-second baseline and red-team
+evidence for the corrected Fish NPC Money formula: roughly 607k/h Deep Sea and 995k/h Abyss before
+bait/enchant/line-break/speed effects. It explicitly rejects multiplying species rarity into Money a
+second time.
+
+**Final decision**
+
+Treat those values as balance regression oracles rather than redesign prompts. Add a consolidated
+cross-table regression that composes the existing policies and checks direct-book cadence plus a
+deterministic stratified integration of the production FishInstance valuation kernel against the
+Deep Sea/Abyss envelopes. Keep the six area pools stationary and exactly normalized.
+
+### 2. Repository policy already matches the latest aggregate Fishing tables
+
+**Check result — CONFIRMED**
+
+Current source uses catch weights 176/17/7, Treasure-result weights 20/15/4/4/5/2, direct-book pool
+weights 58/24/12/4/2, Mythic weights 45/30/25, and the latest raw level profiles. The current fish
+species/area tables and variant distribution likewise match the latest Master Spec.
+
+**Final decision**
+
+Do not retune those tables merely because older v1.5/v1.6 documents contain earlier 38/26/10/... or
+50/28/15/5/2 variants. The 31-Aug-2026 v2 correction remains authoritative.
+
+### 3. Item-level Junk and non-book Treasure payload tables are not present in the latest spec
+
+**Check result — UNRESOLVED**
+
+A full-source search of the latest Master Spec finds the aggregate Junk branch and six Treasure
+result categories, plus CatchBag provenance/death semantics, but no versioned item/quantity subtable
+for Junk, Material Bundle, Crate/Chest, Orb/Catalyst, Rare Bait/Utility, or Relic/Collectible
+payloads. The specification therefore supports their category probabilities but not arbitrary
+finished asset identities or quantities.
+
+**Final decision**
+
+Do not invent those payload tables inside the stateful cast owner. Continue implementing safe
+prerequisites and aggregate/category selection, but exact non-book asset settlement remains fail
+closed until a normative content table or owner-approved amendment exists.
+
+### 4. Common/Mid/Rare Enchant Book member weights and level-ceiling reconciliation remain unspecified
+
+**Check result — UNRESOLVED**
+
+The latest Master Spec lists eligible members for Shop/Common, Mid and Rare pools and gives raw
+pool-level distributions, but it does not assign within-pool member weights or define how a selected
+enchant's narrower canonical maximum level reconciles with the raw profile. Fixed special cases such
+as Mending I, Phoenix I and Carving I exist, but they do not define a general reconciliation rule.
+
+**Final decision**
+
+Keep current fail-closed behavior. Do not infer equal member weights, clamp levels, reroll levels, or
+renormalize filtered profiles without a normative amendment.

@@ -67,3 +67,4 @@ jobs:
           cargo test -p graphite-services --lib fishing_rng::tests::
           cargo test -p graphite-services --test fishing_numeric_policy
           cargo test -p graphite-services --test fishing_weight_bridge_policy
+          cargo test -p graphite-services --test fishing_balance_regression
