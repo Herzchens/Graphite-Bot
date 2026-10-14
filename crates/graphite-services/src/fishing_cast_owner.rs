@@ -47,6 +47,10 @@ pub enum ManualFishingCastOwnerError {
     FishDelivery(#[from] FishingFishInstanceDeliveryError),
     #[error("unmodified Starter Pool provisional fish delivery requires Starter Pool")]
     ProvisionalFishOutsideStarterPool,
+    #[error(
+        "baseline Starter Basic outcome staging requires Starter Pool with Starter Basic equipped"
+    )]
+    StarterBaselineRequiresStarterBasic,
     #[error(transparent)]
     UnmodifiedCapability(#[from] ManualFishingUnmodifiedCapabilityError),
     #[error(transparent)]
@@ -61,6 +65,21 @@ pub struct PendingManualFishingNonFishReceiptV1 {
     pub outcome: FishingResolvedNonFishOutcomeV1,
     pub delivery: FishingNonFishOutcomeDeliveryReceiptV1,
     pub progression: ManualFishingProgressionSettlementReceiptV1,
+}
+
+/// Internal, rollback-only resolution of the complete *baseline Starter Basic* branch:
+/// its deterministic Fish/Junk/non-book Treasure asset and successful XP children.
+/// Rod wear is physically unavailable on the unbreakable Starter Basic, but operation
+/// result, audit, outbox and command integration are still absent.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingManualFishingStarterBaseOutcomeV1 {
+    Fish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+    },
+    NonFish {
+        staged: PendingManualFishingNonFishReceiptV1,
+    },
 }
 
 /// Owns an uncommitted manual Fishing cast transaction.
@@ -276,6 +295,51 @@ impl PendingManualFishingCastV1<'_> {
             request,
         )
         .await?)
+    }
+
+    /// Resolves the actual zero-modifier CatchBranch RNG result, then stages its
+    /// matching unique Fish or non-book Junk/Treasure and exact successful XP under
+    /// the same still-uncommittable transaction.
+    ///
+    /// This path is deliberately restricted to the unbreakable Starter Basic Rod
+    /// in Starter Pool, where Fish physically lands without line risk, and to casts
+    /// with no active bait or enchants. Direct Enchant Book results fail closed
+    /// until the separate canonical book-item settlement is composed.
+    ///
+    /// A same-operation repeated call replays the original item/XP child receipts.
+    /// The pending owner has no commit method: these staged effects roll back unless
+    /// the future final lifecycle also implements operation/audit/outbox settlement.
+    pub async fn stage_unmodified_starter_base_outcome_v1(
+        &mut self,
+    ) -> Result<PendingManualFishingStarterBaseOutcomeV1, ManualFishingCastOwnerError> {
+        if self.preflight.area_access.area != FishingArea::StarterPool
+            || self.preflight.rod.kind != EquippedFishingRodKind::StarterBasic
+        {
+            return Err(ManualFishingCastOwnerError::StarterBaselineRequiresStarterBasic);
+        }
+        let selected = self.preview_unmodified_base_branch_v1()?;
+        match selected {
+            FishingCatchBranch::Fish => {
+                let delivery = self.stage_unmodified_starter_pool_fish_v1().await?;
+                let progression = settle_manual_fishing_successful_progression_v1(
+                    &mut self.tx,
+                    self.preflight.operation_id,
+                    self.preflight.player_id,
+                    &ManualFishingSuccessfulProgressionOutcomeV1::Fish {
+                        landed_rarities: vec![delivery.rarity],
+                    },
+                )
+                .await?;
+                Ok(PendingManualFishingStarterBaseOutcomeV1::Fish {
+                    delivery,
+                    progression,
+                })
+            }
+            FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
+                let staged = self.stage_non_fish_candidate_v1(selected).await?;
+                Ok(PendingManualFishingStarterBaseOutcomeV1::NonFish { staged })
+            }
+        }
     }
 
     pub async fn rollback(self) -> Result<(), sqlx::Error> {
