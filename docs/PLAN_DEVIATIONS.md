@@ -1996,3 +1996,43 @@ Keep the `OverCapCatch` RNG stage unexecuted in this slice. The full owner must
 resolve the exact probability mapping and conditional draw ordering, then compose
 the immutable branch/outcome with the remaining asset, Rod, progression,
 operation-result and audit/outbox writes in the same PostgreSQL transaction.
+
+
+## Fishing provisional non-Fish output and progression composition
+
+Branch: feat/fishing-non-fish-cast-staging
+
+### 1. Child delivery and reward mutations share the locked cast operation
+
+**Implementation finding — CONFIRMED**
+
+The canonical Junk and non-book Treasure payload selectors now have stable operation-seeded
+identity and repeat-slot domains. The existing bounded Item Bag delivery and successful
+Fishing Account XP/Activity EXP services are transaction-composable and replay-safe. Issuing
+them in separate transactions would violate the future all-or-nothing cast boundary.
+
+**Final decision**
+
+On a provisional Junk or non-book Treasure branch, resolve the canonical payload identity,
+stage the exact quantity of item outputs, then stage exactly 2 Account XP and the frozen
+Junk/Treasure Activity EXP result under the original operation and PostgreSQL transaction.
+Use the existing one-time mutation keys and shared progression owners. On a duplicate call,
+require exact stored child receipt replay; don't allocate or grant twice.
+
+### 2. Provisional branch selection never authorizes commit or external command handling
+
+**Safety finding — CONFIRMED**
+
+The branch parameter in this pending API is not produced from the final capped catch
+distribution. Ordinary Rod durability, Mending and operation-result/audit/outbox remain
+unresolved. Treating this provisional selection as a completed cast could issue rewards
+for an outcome that the canonical RNG would never have selected.
+
+**Final decision**
+
+The pending cast retains exclusive ownership of its transaction and deliberately offers no
+commit or extraction path. Direct Enchant Book Treasure fails closed before stack delivery;
+Fish likewise cannot enter the non-Fish staging API. A rollback must remove any first-area
+unlock, bait consumption, Item Bag or pending output, Account XP, Activity EXP and asset/
+progression events together. Only a future terminal-complete owner may finalize the operation
+and expose `/fish`.

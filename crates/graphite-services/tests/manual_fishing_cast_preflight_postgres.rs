@@ -38,7 +38,7 @@ async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_ident
     .unwrap();
 
     let tx = store.pool().begin().await.unwrap();
-    let pending =
+    let mut pending =
         begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
             .await
             .unwrap();
@@ -67,8 +67,29 @@ async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_ident
             .preview_non_fish_candidate_v1(FishingCatchBranch::Junk)
             .unwrap()
     );
+    let first_stage = pending
+        .stage_non_fish_candidate_v1(FishingCatchBranch::Junk)
+        .await
+        .unwrap();
+    assert_eq!(first_stage.outcome, provisional);
+    assert_eq!(first_stage.delivery.deliveries.len(), 1);
+    assert_eq!(first_stage.progression.base_activity_xp, 2);
+    assert_eq!(first_stage.progression.account_xp.granted_xp, 2);
+    let replay = pending
+        .stage_non_fish_candidate_v1(FishingCatchBranch::Junk)
+        .await
+        .unwrap();
+    assert_eq!(first_stage, replay);
+
     pending.rollback().await.unwrap();
 
+    let staged_events: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(staged_events, 0);
     let quantity: i64 = sqlx::query_scalar(
         "SELECT quantity FROM item_stacks WHERE player_id = $1 AND definition_key = 'fishing.bait.treasure' AND definition_version = 1 AND location = 'ITEM_BAG'",
     )
