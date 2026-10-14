@@ -24,6 +24,7 @@ mod fishing_cast_owner;
 mod fishing_cast_preflight;
 mod fishing_catch_branch_composition;
 mod fishing_droptable;
+mod fishing_fish_candidate;
 mod fishing_fish_delivery;
 mod fishing_gold_rod;
 mod fishing_limits;
@@ -214,6 +215,10 @@ pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,
     FishingTreasureResultBasePolicy, fishing_base_catch_branch_policy,
     fishing_base_treasure_result_policy,
+};
+pub use fishing_fish_candidate::{
+    BASE_FISH_VARIANT_WEIGHT_SCALE_V1, ManualFishingUnmodifiedFishCandidateError,
+    preview_manual_fishing_unmodified_fish_candidate_v1,
 };
 pub use fishing_fish_delivery::{
     FISHING_FISH_ITEM_DEFINITION_VERSION, FishingClaimedCatchV1, FishingFishDeliveryLocation,

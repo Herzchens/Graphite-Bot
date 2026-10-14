@@ -6,9 +6,12 @@ use crate::{
     CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingBait,
     FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
     FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
-    FishingCatchBranchPreCapWeightsV1, FishingNonFishRollError, FishingResolvedNonFishOutcomeV1,
-    ManualFishingCastPreflight, ManualFishingCastPreflightError,
-    fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
+    FishingCatchBranchPreCapWeightsV1, FishingFishInstanceDeliveryError,
+    FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
+    FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflight,
+    ManualFishingCastPreflightError, ManualFishingUnmodifiedFishCandidateError,
+    deliver_fishing_fish_instance_v1, fishing_catch_branch_pre_cap_weights_v1,
+    lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
     resolve_manual_fishing_non_fish_outcome_v1, settle_active_fishing_baits_for_cast,
 };
 
@@ -20,6 +23,14 @@ pub enum ManualFishingCastOwnerError {
     Bait(#[from] FishingBaitStateError),
     #[error(transparent)]
     NonFishRoll(#[from] FishingNonFishRollError),
+    #[error(transparent)]
+    UnmodifiedFish(#[from] ManualFishingUnmodifiedFishCandidateError),
+    #[error("the locked cast contains modifiers requiring the shared capped Fish resolver")]
+    ModifiedFishRequiresSharedComposer,
+    #[error(transparent)]
+    FishDelivery(#[from] FishingFishInstanceDeliveryError),
+    #[error("unmodified Starter Pool provisional fish delivery requires Starter Pool")]
+    ProvisionalFishOutsideStarterPool,
 }
 
 /// Owns an uncommitted manual Fishing cast transaction.
@@ -88,6 +99,57 @@ impl PendingManualFishingCastV1<'_> {
             candidate,
             multi_treasure_level,
         )?)
+    }
+
+    /// Deterministically previews one base FishInstance candidate from an unmodified cast.
+    ///
+    /// An active bait, Gold side-grade or any embedded Rod enchant requires later shared
+    /// composition; that case fails closed rather than bypassing a modifier. No assets are
+    /// issued, and Fish capability/terminal consequences still require the full cast owner.
+    pub fn preview_unmodified_fish_candidate_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+        if self.bait.plan.consumed_bait_categories != 0
+            || !self.preflight.rod.embedded_enchants.is_empty()
+            || matches!(
+                self.preflight.rod.kind,
+                EquippedFishingRodKind::Ordinary {
+                    tier: EquipmentTier::Gold
+                }
+            )
+        {
+            return Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer);
+        }
+        Ok(preview_manual_fishing_unmodified_fish_candidate_v1(
+            self.preflight.rng,
+            self.preflight.area_access.area,
+            fish_slot,
+        )?)
+    }
+
+    /// Stages the single unmodified Starter Pool Fish candidate in the *still uncommittable*
+    /// cast transaction. Starter Pool Fish always lands at the capability stage, so the
+    /// physical line-break stage is bypassed. This call does NOT choose the catch branch;
+    /// it is a provisional internal composition step, not a completed Fishing cast.
+    ///
+    /// With no Multicatch/School Bait permitted by the unmodified guard, only fish slot 0
+    /// is eligible. The shared unique delivery child ensures repeated staging cannot mint
+    /// another ItemInstance. The entire candidate vanishes on pending-owner rollback.
+    pub async fn stage_unmodified_starter_pool_fish_v1(
+        &mut self,
+    ) -> Result<FishingFishInstanceDeliveryReceiptV1, ManualFishingCastOwnerError> {
+        if self.preflight.area_access.area != FishingArea::StarterPool {
+            return Err(ManualFishingCastOwnerError::ProvisionalFishOutsideStarterPool);
+        }
+        let request = self.preview_unmodified_fish_candidate_v1(0)?;
+        Ok(deliver_fishing_fish_instance_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            request,
+        )
+        .await?)
     }
 
     pub async fn rollback(self) -> Result<(), sqlx::Error> {
