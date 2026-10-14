@@ -5,18 +5,19 @@ use uuid::Uuid;
 use crate::fishing_unmodified_line_stage::resolve_manual_unmodified_line_stage_v1;
 
 use crate::{
-    CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingBait,
-    FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
+    AppliedFishingRodDurabilityState, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind,
+    FishingArea, FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
     FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
     FishingCatchBranchPreCapWeightsV1, FishingFishInstanceDeliveryError,
     FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
     FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
-    FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflight,
-    ManualFishingCastPreflightError, ManualFishingProgressionSettlementError,
-    ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
-    ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingUnmodifiedCapabilityError,
-    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
+    FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, FishingRodDurabilityResolution,
+    FishingRodDurabilityStateError, ManualFishingCastPreflight, ManualFishingCastPreflightError,
+    ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
+    ManualFishingRngDrawError, ManualFishingSuccessfulProgressionOutcomeV1,
+    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
+    ManualFishingUnmodifiedLineStageV1, apply_resolved_equipped_fishing_rod_durability,
     deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
     fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
     preview_manual_fishing_unmodified_fish_candidate_v1,
@@ -55,6 +56,8 @@ pub enum ManualFishingCastOwnerError {
     UnmodifiedCapability(#[from] ManualFishingUnmodifiedCapabilityError),
     #[error(transparent)]
     UnmodifiedLineStage(#[from] ManualFishingUnmodifiedLineStageError),
+    #[error(transparent)]
+    RodDurability(#[from] FishingRodDurabilityStateError),
 }
 
 /// Provisional Junk or non-book Treasure delivery and reward children in a single
@@ -94,6 +97,7 @@ pub struct PendingManualFishingCastV1<'c> {
     preflight: ManualFishingCastPreflight,
     bait: FishingBaitCastSettlementReceipt,
     pre_cap_branch_weights: FishingCatchBranchPreCapWeightsV1,
+    staged_durability: Option<AppliedFishingRodDurabilityState>,
 }
 
 impl PendingManualFishingCastV1<'_> {
@@ -342,6 +346,46 @@ impl PendingManualFishingCastV1<'_> {
         }
     }
 
+    /// Stages the Rod consequence of a pinned zero-modifier cast with no user-supplied
+    /// outcome or Unbreaking flag. A selected Fish branch resolves LineBreak first;
+    /// any surviving/within-capability Fish or non-Fish branch consumes the one
+    /// ordinary completed-attempt wear event (Starter Basic stays unbreakable).
+    ///
+    /// Staged durability is cached on this transaction owner so a duplicate call
+    /// cannot remove two durability points. The still-uncommittable transaction
+    /// rolls this child back with every other provisional cast mutation.
+    pub async fn stage_unmodified_rod_durability_v1(
+        &mut self,
+    ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
+        self.ensure_unmodified_cast_v1()?;
+        if let Some(staged) = &self.staged_durability {
+            return Ok(staged.clone());
+        }
+        let branch = self.preview_unmodified_base_branch_v1()?;
+        let resolution = if branch == FishingCatchBranch::Fish
+            && matches!(
+                self.preview_unmodified_line_stage_v1(0)?,
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+            ) {
+            FishingRodDurabilityResolution::LineBreak
+        } else {
+            FishingRodDurabilityResolution::CompletedCastAttempt {
+                ordinary_event_prevented_by_unbreaking: false,
+            }
+        };
+        let receipt = apply_resolved_equipped_fishing_rod_durability(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            self.preflight.area_access.area,
+            self.preflight.rod.current_durability,
+            resolution,
+        )
+        .await?;
+        self.staged_durability = Some(receipt.clone());
+        Ok(receipt)
+    }
+
     pub async fn rollback(self) -> Result<(), sqlx::Error> {
         self.tx.rollback().await
     }
@@ -393,6 +437,7 @@ pub async fn begin_manual_fishing_cast_v1<'c>(
             treasure_bait_active,
             ordinary_gold_rod_active,
         ),
+        staged_durability: None,
     })
 }
 

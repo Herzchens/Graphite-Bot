@@ -1,9 +1,9 @@
 use graphite_progression::account_total_xp_for_level;
 use graphite_services::{
-    CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingAreaAccessOrigin,
-    FishingCatchBranch, FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST,
-    ManualFishingCastOwnerError, ManualFishingCastPreflightError, ManualFishingPpmDrawV1,
-    ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
+    AppliedFishingRodDurabilityState, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind,
+    FishingArea, FishingAreaAccessOrigin, FishingCatchBranch, FishingResolvedNonFishOutcomeV1,
+    MAX_FISH_PER_CAST, ManualFishingCastOwnerError, ManualFishingCastPreflightError,
+    ManualFishingPpmDrawV1, ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
     ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
     ManualFishingWeightedDrawV1, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
     PendingManualFishingStarterBaseOutcomeV1, begin_manual_fishing_cast_v1,
@@ -52,6 +52,10 @@ async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_ident
     ));
     assert!(matches!(
         pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+    assert!(matches!(
+        pending.stage_unmodified_rod_durability_v1().await,
         Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
     ));
     let weights = pending.pre_cap_branch_weights();
@@ -178,6 +182,16 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
             )
         ))
     ));
+
+    let starter_rod_receipt = pending.stage_unmodified_rod_durability_v1().await.unwrap();
+    assert!(matches!(
+        starter_rod_receipt,
+        AppliedFishingRodDurabilityState::StarterBasicUnbreakable { .. }
+    ));
+    assert_eq!(
+        starter_rod_receipt,
+        pending.stage_unmodified_rod_durability_v1().await.unwrap()
+    );
 
     let staged = pending
         .stage_unmodified_starter_pool_fish_v1()
@@ -383,6 +397,68 @@ async fn unmodified_river_candidate_uses_exact_capability_kernel_without_settlem
     }
 
     pending.rollback().await.unwrap();
+    assert_eq!(unlock_count(&store, player_id).await, 0);
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn unmodified_rod_wear_is_staged_once_and_rollback_restores_ordinary_rod() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "wear-owner",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let operation_id = seed_operation(&store, player_id, nonce, "wear-owner").await;
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    let selected = pending.preview_unmodified_base_branch_v1().unwrap();
+    let broken_line = selected == FishingCatchBranch::Fish
+        && matches!(
+            pending.preview_unmodified_line_stage_v1(0).unwrap(),
+            ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+        );
+    let first = pending.stage_unmodified_rod_durability_v1().await.unwrap();
+    let replay = pending.stage_unmodified_rod_durability_v1().await.unwrap();
+    assert_eq!(first, replay);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = first else {
+        panic!("an ordinary Wood Rod cannot be a Starter Basic Rod");
+    };
+    assert_eq!(preview.current_durability, 200);
+    assert_eq!(preview.max_durability, 600);
+    assert_eq!(
+        preview.resulting_durability,
+        if broken_line { 0 } else { 199 }
+    );
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let broken: bool = sqlx::query_scalar("SELECT is_broken FROM item_instances WHERE id = $1")
+        .bind(rod_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!((current, broken), (200, false));
     assert_eq!(unlock_count(&store, player_id).await, 0);
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
 }
