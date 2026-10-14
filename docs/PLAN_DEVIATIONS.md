@@ -1472,3 +1472,100 @@ FishInstances independently.
 Keep creation/settlement outside this slice. The future Fishing owner must write the canonical scaled
 weight and its whole-gram projection atomically with the complete FishInstance state, CatchBag
 capacity validation, progression, Rod/bait consequences, operation result, audit and outbox.
+
+
+## Fishing payload and direct-book gap resolution
+
+Branch: feat/fishing-payload-and-book-policy
+
+### 1. Shop/Common, Mid and Rare direct-book members use equal weight within their selected pool
+
+**Owner delegation — CONFIRMED**
+
+The owner delegated the previously unresolved within-pool member weighting decision. The outer direct-book
+pool split already freezes acquisition rarity at 58/24/12/4/2, while Mythic separately freezes its
+45/30/25 identity split.
+
+**Final decision**
+
+Shop/Common, Mid and Rare use equal relative weight for every eligible canonical member after the pool is
+selected. Mending is a singleton. Mythic keeps 45/30/25. This avoids creating a hidden second rarity layer
+inside pools whose member lists, rather than member-specific weights, are the normative distinction.
+
+### 2. Book-level ceilings filter the generic profile; singleton rules override it
+
+**Owner delegation — CONFIRMED**
+
+A selected enchant's more-specific canonical resulting-level ceiling remains authoritative over the
+generic raw pool profile.
+
+**Final decision**
+
+For ordinary directly fishable enchants, remove raw-profile levels above the enchant's canonical ceiling
+and sample the surviving original integer weights. The weighted selector therefore renormalizes legal
+support implicitly without moving rejected mass onto the maximum level. Bait Rack III consequently keeps
+Shop/Common relative weights 34/28/20 for I/II/III.
+
+Specific singleton contracts override a generic pool profile. Carving always resolves as Carving I even
+though the Mid raw profile begins at II; Mending and Phoenix likewise remain I. An unsupported or
+non-direct-fishing enchant still fails closed.
+
+### 3. Junk and non-book Treasure categories now have exact v1 catch-lot payload tables
+
+**Owner delegation — CONFIRMED**
+
+The owner delegated the missing exact payload identity/quantity tables. These tables are deliberately
+conservative because Fishing already has a large Fish NPC Money issuance path and the missing categories
+must not become an undocumented second liquid-Money faucet.
+
+**Final decision**
+
+Junk:
+- Driftwood 40%, Rusted Can 30%, Torn Net 20%, Broken Hook 10%; one item each.
+
+Material Bundle:
+- Common 65%, Refined 25%, Deep 10%; one sealed bundle each.
+
+Crate/Chest:
+- Weathered Crate 70%, Ironbound Chest 25%, Sunken Cache 5%; one sealed container each.
+
+Orb/Catalyst:
+- Enchant Catalyst Fragment 60%, Normal Slot Orb Fragment 25%, Special Slot Orb Fragment 15%; one
+  fragment each.
+
+Rare Bait/Utility:
+- School Bait 10%, Quality Bait 15%, Rare Bait 30%, Treasure Bait 25%, Sturdy Bait 20%; one unit each.
+
+Relic/Collectible:
+- Ancient Coin 50%, Sea Glass 30%, Fossil Shell 15%, Abyssal Idol 5%; one collectible each.
+
+Each within-category table sums to 100 and is sampled independently for each Multi Treasure repetition
+inside the already-selected outer Treasure result.
+
+### 4. Material bundles and containers are sealed assets, not hidden immediate material issuance
+
+**Design decision — REVERSIBLE**
+
+The current content registry has no authoritative opening table for a Material Bundle, Crate or Chest.
+Expanding those labels directly into mining/forge resources would silently create a new cross-system source
+and could undermine Mining scarcity.
+
+**Final decision**
+
+The Fishing cast settles exact sealed catch-lot ItemDefinitions for those categories. Opening contents,
+fragment-combination thresholds and collectible utility remain separate future item-service contracts.
+All newly introduced payload ItemDefinitions keep neutral COMMON item rarity; the within-category tables
+own their selection rarity, and this slice does not invent a second generic item-rarity effect. They do
+not block the fish command's result identity or capacity settlement, and undeclared downstream contents
+must not be inferred by the cast owner.
+
+### 5. Stable toolchain review does not justify unrelated churn
+
+**Check result — DISPROVED for version churn**
+
+Rust 1.99.0 is stable upstream, while this repository remains pinned to 1.98.1. This policy/content slice
+requires no new dependency or language feature.
+
+**Final decision**
+
+Keep the existing toolchain and dependency pins unchanged.

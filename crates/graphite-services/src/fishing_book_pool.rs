@@ -1,7 +1,10 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::{CanonicalEnchant, EnchantAcquisitionSource, enchant_catalog_policy};
+use crate::{
+    CanonicalEnchant, EnchantAcquisitionSource, canonical_enchant_max_resulting_level,
+    enchant_catalog_policy,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -19,13 +22,19 @@ pub struct DirectFishingBookPoolPolicy {
     pub relative_weight: u8,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct DirectFishingBookMemberPolicy {
+    pub enchant: CanonicalEnchant,
+    pub pool: DirectFishingBookPool,
+    pub relative_weight: u16,
+}
+
 /// Raw level profile attached to a direct-fishing Book pool/family before a specific enchant's
 /// own level ceiling is reconciled.
 ///
-/// `ShopCommon`, `MidLoot`, and `Rare` are intentionally not per-enchant validators. The active
-/// specification freezes pool-level distributions but also contains more-specific level contracts
-/// such as Bait Rack III and Carving I. Until the specification defines how those narrower ceilings
-/// compose with the pool profile, callers must not use a raw profile alone to mint a finished book.
+/// `ShopCommon`, `MidLoot`, and `Rare` are intentionally raw pool profiles rather than
+/// per-enchant validators. Finished-book resolution applies the selected enchant's canonical level
+/// ceiling, while singleton contracts such as Carving I override the generic profile entirely.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DirectFishingBookLevelProfile {
@@ -46,6 +55,16 @@ pub enum DirectFishingBookPolicyError {
     },
     #[error("{0:?} is not a direct-fishing mythic enchant")]
     NotDirectFishingMythic(CanonicalEnchant),
+    #[error("{0:?} is not directly fishable")]
+    NotDirectFishingEnchant(CanonicalEnchant),
+    #[error(
+        "level {level} exceeds the direct-fishing resulting-level ceiling {max_level} for {enchant:?}"
+    )]
+    LevelOutsideEnchantCeiling {
+        enchant: CanonicalEnchant,
+        level: u8,
+        max_level: u8,
+    },
 }
 
 /// Resolves the latest authoritative pool weight after the Treasure result has already selected an
@@ -53,8 +72,8 @@ pub enum DirectFishingBookPolicyError {
 ///
 /// The five weights sum to 100 and therefore also read as percentages at the current design point.
 /// They remain expressed as relative weights so a later selection owner does not confuse this pure
-/// table with an RNG draw. This policy does not choose an enchant inside Shop/Common, Mid Loot, or
-/// Rare because the specification lists pool members but does not freeze within-pool member weights.
+/// table with an RNG draw. Member identity is resolved separately by the owner-approved within-pool
+/// policy: equal weights for Shop/Common, Mid Loot and Rare; singleton Mending; explicit Mythic split.
 #[must_use]
 pub const fn direct_fishing_book_pool_policy(
     pool: DirectFishingBookPool,
@@ -98,10 +117,180 @@ pub const fn direct_fishing_book_pool_membership(
     }
 }
 
+const SHOP_COMMON_MEMBERS: [CanonicalEnchant; 25] = [
+    CanonicalEnchant::Efficiency,
+    CanonicalEnchant::Fortune,
+    CanonicalEnchant::Smelt,
+    CanonicalEnchant::Lure,
+    CanonicalEnchant::LuckOfTheSea,
+    CanonicalEnchant::Luck,
+    CanonicalEnchant::Strengthen,
+    CanonicalEnchant::SharpHook,
+    CanonicalEnchant::BaitRack,
+    CanonicalEnchant::Sharpness,
+    CanonicalEnchant::Smite,
+    CanonicalEnchant::BaneOfArthropods,
+    CanonicalEnchant::SweepingEdge,
+    CanonicalEnchant::FireAspect,
+    CanonicalEnchant::Knockback,
+    CanonicalEnchant::Protection,
+    CanonicalEnchant::Thorn,
+    CanonicalEnchant::Cat,
+    CanonicalEnchant::Dog,
+    CanonicalEnchant::Dodge,
+    CanonicalEnchant::Unbreaking,
+    CanonicalEnchant::Stabilize,
+    CanonicalEnchant::Sparkling,
+    CanonicalEnchant::Grinding,
+    CanonicalEnchant::Mosaic,
+];
+
+const MID_LOOT_MEMBERS: [CanonicalEnchant; 15] = [
+    CanonicalEnchant::PickaxeTreasure,
+    CanonicalEnchant::FishingRodTreasure,
+    CanonicalEnchant::MultiTreasure,
+    CanonicalEnchant::Multicatch,
+    CanonicalEnchant::Looting,
+    CanonicalEnchant::Devour,
+    CanonicalEnchant::Bleeding,
+    CanonicalEnchant::Freezing,
+    CanonicalEnchant::Angel,
+    CanonicalEnchant::Evil,
+    CanonicalEnchant::DayWalker,
+    CanonicalEnchant::NightWalker,
+    CanonicalEnchant::Reinforce,
+    CanonicalEnchant::Empowering,
+    CanonicalEnchant::Carving,
+];
+
+const RARE_MEMBERS: [CanonicalEnchant; 8] = [
+    CanonicalEnchant::Trench,
+    CanonicalEnchant::Execution,
+    CanonicalEnchant::BloodFrenzy,
+    CanonicalEnchant::ArmorPiercing,
+    CanonicalEnchant::Piercing,
+    CanonicalEnchant::Guardian,
+    CanonicalEnchant::NineLife,
+    CanonicalEnchant::SoulGrind,
+];
+
+const MENDING_MEMBERS: [CanonicalEnchant; 1] = [CanonicalEnchant::Mending];
+
+const MYTHIC_MEMBERS: [CanonicalEnchant; 3] = [
+    CanonicalEnchant::Nuke,
+    CanonicalEnchant::Annihilation,
+    CanonicalEnchant::Phoenix,
+];
+
+#[must_use]
+pub const fn direct_fishing_book_pool_members(
+    pool: DirectFishingBookPool,
+) -> &'static [CanonicalEnchant] {
+    match pool {
+        DirectFishingBookPool::ShopCommon => &SHOP_COMMON_MEMBERS,
+        DirectFishingBookPool::MidLoot => &MID_LOOT_MEMBERS,
+        DirectFishingBookPool::Rare => &RARE_MEMBERS,
+        DirectFishingBookPool::Mending => &MENDING_MEMBERS,
+        DirectFishingBookPool::Mythic => &MYTHIC_MEMBERS,
+    }
+}
+
+pub const fn direct_fishing_book_member_policy(
+    enchant: CanonicalEnchant,
+) -> Result<DirectFishingBookMemberPolicy, DirectFishingBookPolicyError> {
+    let Some(pool) = direct_fishing_book_pool_membership(enchant) else {
+        return Err(DirectFishingBookPolicyError::NotDirectFishingEnchant(
+            enchant,
+        ));
+    };
+    let relative_weight = match pool {
+        DirectFishingBookPool::ShopCommon
+        | DirectFishingBookPool::MidLoot
+        | DirectFishingBookPool::Rare
+        | DirectFishingBookPool::Mending => 1,
+        DirectFishingBookPool::Mythic => match direct_fishing_mythic_enchant_weight(enchant) {
+            Ok(weight) => weight as u16,
+            Err(error) => return Err(error),
+        },
+    };
+
+    Ok(DirectFishingBookMemberPolicy {
+        enchant,
+        pool,
+        relative_weight,
+    })
+}
+
+pub const fn direct_fishing_book_level_profile(
+    enchant: CanonicalEnchant,
+) -> Result<DirectFishingBookLevelProfile, DirectFishingBookPolicyError> {
+    Ok(match enchant {
+        CanonicalEnchant::Mending => DirectFishingBookLevelProfile::Mending,
+        CanonicalEnchant::Nuke | CanonicalEnchant::Annihilation => {
+            DirectFishingBookLevelProfile::NukeOrAnnihilation
+        }
+        CanonicalEnchant::Phoenix => DirectFishingBookLevelProfile::Phoenix,
+        other => match direct_fishing_book_pool_membership(other) {
+            Some(DirectFishingBookPool::ShopCommon) => DirectFishingBookLevelProfile::ShopCommon,
+            Some(DirectFishingBookPool::MidLoot) => DirectFishingBookLevelProfile::MidLoot,
+            Some(DirectFishingBookPool::Rare) => DirectFishingBookLevelProfile::Rare,
+            Some(DirectFishingBookPool::Mending | DirectFishingBookPool::Mythic) | None => {
+                return Err(DirectFishingBookPolicyError::NotDirectFishingEnchant(other));
+            }
+        },
+    })
+}
+
+pub fn direct_fishing_finished_book_level_weights(
+    enchant: CanonicalEnchant,
+) -> Result<[u16; 10], DirectFishingBookPolicyError> {
+    direct_fishing_book_member_policy(enchant)?;
+
+    if matches!(
+        enchant,
+        CanonicalEnchant::Mending | CanonicalEnchant::Phoenix | CanonicalEnchant::Carving
+    ) {
+        let mut weights = [0_u16; 10];
+        weights[0] = 100;
+        return Ok(weights);
+    }
+
+    let profile = direct_fishing_book_level_profile(enchant)?;
+    let max_level = canonical_enchant_max_resulting_level(enchant);
+    let mut weights = [0_u16; 10];
+    let mut level = 1_u8;
+    while level <= max_level {
+        weights[usize::from(level - 1)] = match direct_fishing_raw_book_level_weight(profile, level)
+        {
+            Ok(weight) => u16::from(weight),
+            Err(DirectFishingBookPolicyError::LevelOutsideProfile { .. }) => 0,
+            Err(error) => return Err(error),
+        };
+        level += 1;
+    }
+    Ok(weights)
+}
+
+pub fn direct_fishing_finished_book_level_weight(
+    enchant: CanonicalEnchant,
+    level: u8,
+) -> Result<u16, DirectFishingBookPolicyError> {
+    let max_level = canonical_enchant_max_resulting_level(enchant);
+    if level == 0 || level > max_level {
+        return Err(DirectFishingBookPolicyError::LevelOutsideEnchantCeiling {
+            enchant,
+            level,
+            max_level,
+        });
+    }
+
+    Ok(direct_fishing_finished_book_level_weights(enchant)?[usize::from(level - 1)])
+}
+
 /// Resolves the explicit split inside the Mythic direct-fishing Book pool.
 ///
-/// Shop/Common, Mid Loot, and Rare do not have authoritative per-enchant weights and therefore have
-/// no equivalent resolver yet.
+/// Mythic keeps its frozen 45/30/25 identity split. Shop/Common, Mid Loot and Rare use the separate
+/// equal-member policy after their outer pool is selected.
 pub const fn direct_fishing_mythic_enchant_weight(
     enchant: CanonicalEnchant,
 ) -> Result<u8, DirectFishingBookPolicyError> {
@@ -229,6 +418,72 @@ mod tests {
     }
 
     #[test]
+    fn within_pool_members_are_explicit_and_only_mythic_is_nonuniform() {
+        let mut unique_members = std::collections::HashSet::new();
+
+        assert_eq!(
+            direct_fishing_book_pool_members(DirectFishingBookPool::ShopCommon).len(),
+            25
+        );
+        assert_eq!(
+            direct_fishing_book_pool_members(DirectFishingBookPool::MidLoot).len(),
+            15
+        );
+        assert_eq!(
+            direct_fishing_book_pool_members(DirectFishingBookPool::Rare).len(),
+            8
+        );
+        assert_eq!(
+            direct_fishing_book_pool_members(DirectFishingBookPool::Mending),
+            &[CanonicalEnchant::Mending]
+        );
+        assert_eq!(
+            direct_fishing_book_pool_members(DirectFishingBookPool::Mythic),
+            &[
+                CanonicalEnchant::Nuke,
+                CanonicalEnchant::Annihilation,
+                CanonicalEnchant::Phoenix,
+            ]
+        );
+
+        for pool in [
+            DirectFishingBookPool::ShopCommon,
+            DirectFishingBookPool::MidLoot,
+            DirectFishingBookPool::Rare,
+            DirectFishingBookPool::Mending,
+            DirectFishingBookPool::Mythic,
+        ] {
+            for enchant in direct_fishing_book_pool_members(pool) {
+                assert!(unique_members.insert(enchant.persisted_key()));
+                let policy = direct_fishing_book_member_policy(*enchant).unwrap();
+                assert_eq!(policy.pool, pool);
+                if pool == DirectFishingBookPool::Mythic {
+                    assert_eq!(
+                        policy.relative_weight,
+                        u16::from(direct_fishing_mythic_enchant_weight(*enchant).unwrap())
+                    );
+                } else {
+                    assert_eq!(policy.relative_weight, 1);
+                }
+            }
+        }
+        assert_eq!(unique_members.len(), 52);
+
+        assert_eq!(
+            direct_fishing_book_member_policy(CanonicalEnchant::ShadowWalker),
+            Err(DirectFishingBookPolicyError::NotDirectFishingEnchant(
+                CanonicalEnchant::ShadowWalker
+            ))
+        );
+        assert_eq!(
+            direct_fishing_book_member_policy(CanonicalEnchant::Master),
+            Err(DirectFishingBookPolicyError::NotDirectFishingEnchant(
+                CanonicalEnchant::Master
+            ))
+        );
+    }
+
+    #[test]
     fn mythic_split_is_exact_and_rejects_non_mythic_enchants() {
         let weights = [
             direct_fishing_mythic_enchant_weight(CanonicalEnchant::Nuke).unwrap(),
@@ -269,6 +524,38 @@ mod tests {
                 100
             );
         }
+    }
+
+    #[test]
+    fn selected_enchant_ceiling_filters_profile_without_clamping() {
+        assert_eq!(
+            direct_fishing_finished_book_level_weights(CanonicalEnchant::BaitRack).unwrap(),
+            [34, 28, 20, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            direct_fishing_finished_book_level_weights(CanonicalEnchant::Carving).unwrap(),
+            [100, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            direct_fishing_finished_book_level_weights(CanonicalEnchant::Mending).unwrap(),
+            [100, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            direct_fishing_finished_book_level_weights(CanonicalEnchant::Phoenix).unwrap(),
+            [100, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(
+            direct_fishing_finished_book_level_weights(CanonicalEnchant::NineLife).unwrap(),
+            [0, 0, 14, 22, 26, 20, 12, 6, 0, 0]
+        );
+        assert_eq!(
+            direct_fishing_finished_book_level_weight(CanonicalEnchant::BaitRack, 4),
+            Err(DirectFishingBookPolicyError::LevelOutsideEnchantCeiling {
+                enchant: CanonicalEnchant::BaitRack,
+                level: 4,
+                max_level: 3,
+            })
+        );
     }
 
     #[test]
