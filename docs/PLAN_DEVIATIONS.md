@@ -1956,3 +1956,43 @@ pure preview from its pinned unmodified FishInstance candidate. Provisional Star
 Pool staging is now explicitly guarded by the guaranteed physical capability route.
 No transaction commit, terminal operation, progression, Mending or Discord command
 is enabled by this slice.
+
+
+## Fishing unmodified line-break-first stage
+
+Branch: feat/fishing-unmodified-linebreak-stage
+
+### 1. Terminal ordering preserves canonical LineBreak domain and PPM threshold
+
+**Normative alignment — CONFIRMED**
+
+The versioned manual Fishing numeric kernel already produces exact integer final
+line-break chance in parts per million for R > 1. The pinned manual RNG owner
+exposes an independently derived `LineBreak` 0..999,999 draw, and the canonical
+capability route explicitly orders line-break before over-cap catch/escape.
+
+**Final decision**
+
+The unmodified cast may preview whether the line broke by comparing one stable
+operation-pinned LineBreak PPM bucket with the revalidated exact-ratio final
+probability (`draw < chance`). Starter Pool and R <= 1 bypass that draw.
+After line survival, represent the state explicitly as pending over-cap catch
+selection; never report landed Fish or issue a completed cast solely on survival.
+This provisional result authorizes no operation finalization, durability, payout,
+outbox or Discord command.
+
+### 2. Over-cap exact rational chance is not silently rounded to PPM
+
+**Implementation finding — UNRESOLVED**
+
+The over-cap catch policy stores its exact rational probability, while
+`ManualFishingRngContext::sample_ppm_v1` returns a 1,000,000-domain integer.
+The current source does not freeze a rational-to-PPM threshold conversion,
+and no legacy helper should silently supply different rounding semantics.
+
+**Final decision**
+
+Keep the `OverCapCatch` RNG stage unexecuted in this slice. The full owner must
+resolve the exact probability mapping and conditional draw ordering, then compose
+the immutable branch/outcome with the remaining asset, Rod, progression,
+operation-result and audit/outbox writes in the same PostgreSQL transaction.

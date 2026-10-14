@@ -43,6 +43,7 @@ mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_species;
 mod fishing_unmodified_capability;
+mod fishing_unmodified_line_stage;
 mod fishing_variant;
 mod fishing_weight_bridge;
 mod forge;
@@ -312,6 +313,9 @@ pub use fishing_species::{
 pub use fishing_unmodified_capability::{
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
     preview_manual_unmodified_fish_capability_v1,
+};
+pub use fishing_unmodified_line_stage::{
+    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
 };
 pub use fishing_variant::{
     CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,
