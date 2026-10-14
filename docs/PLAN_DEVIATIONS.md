@@ -1602,10 +1602,11 @@ operation.
 
 **Final decision**
 
-The cast bait settler locks the active selection and exact-version Item Bag rows, delegates every
-one-unit decrement to the shared stack-consumption mutation primitive with stable per-bait mutation
-keys, removes missing selections in the same transaction, and records one replayable bait-settlement
-audit receipt. Multi Catch and Multi Treasure therefore cannot create extra bait consumption.
+The cast bait settler locks the active selection under the owning player lock, reads exact-version
+Item Bag availability for planning, then delegates every one-unit decrement to the shared
+stack-consumption mutation primitive so definition/stack locks are acquired in that primitive's
+canonical order. Missing selections are removed in the same transaction and one replayable
+bait-settlement audit receipt records the result. Multi Catch and Multi Treasure therefore cannot create extra bait consumption.
 
 Consuming the final available unit leaves the bait selected for that completed cast; the following cast
 observes zero stock and auto-detaches it. This preserves the existing planner contract and avoids
@@ -1636,3 +1637,86 @@ without a policy-version decision.
 
 Persist and consume bait ItemDefinition version 1 explicitly in the current resolver. A future bait
 content version must add an explicit compatible resolver/migration rather than inheriting v1 semantics.
+
+
+## Fishing unique FishInstance delivery and CatchBag overflow
+
+Branch: feat/fishing-fish-instance-delivery
+
+### 1. Every canonical fish species now has an exact unique ItemDefinition identity
+
+**Implementation finding — CONFIRMED**
+
+The FishInstance numeric kernel and canonical weight persistence existed, but the repository still had
+no versioned ItemDefinition identities for the 22 canonical fish species. A stateful cast owner cannot
+safely mint a unique asset from an unversioned string convention.
+
+**Final decision**
+
+Add one non-stackable v1 `FISH` ItemDefinition for every canonical species and pin the species-to-key
+mapping in Services. Definition rarity matches the canonical species rarity. Per-instance weight,
+length, variant, biological draw state and NPC value remain instance state rather than being copied
+into immutable definition balance data.
+
+### 2. FishInstance biological state is persisted as one unique non-transferable asset
+
+**Normative alignment — CONFIRMED**
+
+The latest Master Spec requires FishInstances to retain species, weight, length, catch time/location,
+rarity and variant, and explicitly states that fish are non-transferable while remaining directly
+NPC-sellable.
+
+**Final decision**
+
+The typed delivery primitive creates exactly one ItemInstance per resolved fish slot, marks it
+account-bound/non-tradeable but sellable, and persists the complete deterministic numeric inputs and
+outputs in `state`. The canonical 10^12-scaled gram weight and the database-checked whole-gram
+CatchBag projection are written together. The owning operation's persisted `created_at` is the catch
+time, so retry timing cannot change immutable biological metadata.
+
+The primitive does not choose species/variant, draw RNG, consume bait, mutate Rod durability, award
+progression or finalize the operation. Those remain responsibilities of the future single cast owner.
+
+### 3. Full CatchBag preserves the unique asset through item-linked pending delivery
+
+**Normative alignment — CONFIRMED**
+
+Graphite overflow rules prohibit silent asset loss: valid overflow uses TEMP_OVERFLOW/pending delivery.
+The existing pending-delivery schema previously represented stack rewards only and therefore could not
+identify a unique FishInstance.
+
+**Final decision**
+
+Extend pending delivery with an optional unique `item_instance_id`. When a resolved fish does not fit
+the current CatchBag weight capacity, create the FishInstance in `TEMP_OVERFLOW` and link a quantity-1
+pending delivery targeting CatchBag. Existing stack pending deliveries remain unchanged with a NULL
+instance link.
+
+CatchBag read state now reports pending-delivery count so overflow is visible rather than hidden.
+
+### 4. Pending CatchBag output bounds further catch generation
+
+**Safety decision — CONFIRMED**
+
+TEMP_OVERFLOW is explicitly bounded internal state. Allowing unrelated later casts to keep adding
+unique fish while an earlier CatchBag delivery remains unresolved would turn it into an unbounded
+secondary inventory.
+
+**Final decision**
+
+A pending CatchBag delivery from an earlier operation blocks new FishInstance delivery. Additional
+fish slots belonging to the same already-running cast may finish settling, preserving atomic
+multi-catch behavior while bounding unresolved overflow to one cast's output domain.
+
+### 5. CatchBag capacity uses the whole-gram projection only at its storage boundary
+
+**Regression decision — CONFIRMED**
+
+The owner-approved numeric contract keeps canonical scaled weight authoritative for FishTension while
+CatchBag capacity/display remains whole grams.
+
+**Final decision**
+
+The delivery path locks current CatchBag instances, sums their existing whole-gram projections, and
+checks the new fish's one-time round-half-up projection against the persisted CatchBag capacity curve.
+It never feeds that rounded number back into FishTension, valuation or length math.

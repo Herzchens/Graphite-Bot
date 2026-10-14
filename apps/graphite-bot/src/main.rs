@@ -396,6 +396,15 @@ impl App {
                     snapshot.used_grams as f64 / 1000.0,
                     snapshot.capacity_grams as f64 / 1000.0
                 );
+                if snapshot.pending_deliveries > 0 {
+                    use std::fmt::Write as _;
+                    write!(
+                        content,
+                        " — {} pending delivery",
+                        snapshot.pending_deliveries
+                    )
+                    .expect("writing to a String cannot fail");
+                }
                 for catch in snapshot.catches.iter().take(DISPLAY_ITEM_LIMIT) {
                     use std::fmt::Write as _;
                     write!(

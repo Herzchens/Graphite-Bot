@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -66,7 +66,7 @@ const INVERSE_NORMAL_D: [i128; 4] = [
     3_754_408_661_907,
 ];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FishingFishInstanceNumericV1 {
     pub policy_version: u16,
     pub species: FishingSpecies,

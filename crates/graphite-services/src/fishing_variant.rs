@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::fishing_bait::{FishingBait, FishingBaitEffect, fishing_bait_policy};
 
 pub const CANONICAL_FISH_VARIANT_COUNT: usize = 5;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingVariant {
     Normal,

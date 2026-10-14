@@ -49,7 +49,7 @@ pub enum FishingBaitCategory {
     Safety,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingRarity {
     Common,
@@ -58,6 +58,20 @@ pub enum FishingRarity {
     Epic,
     Legendary,
     Mythic,
+}
+
+impl FishingRarity {
+    #[must_use]
+    pub const fn persisted_key(self) -> &'static str {
+        match self {
+            Self::Common => "COMMON",
+            Self::Uncommon => "UNCOMMON",
+            Self::Rare => "RARE",
+            Self::Epic => "EPIC",
+            Self::Legendary => "LEGENDARY",
+            Self::Mythic => "MYTHIC",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

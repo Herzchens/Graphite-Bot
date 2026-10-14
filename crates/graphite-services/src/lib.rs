@@ -22,6 +22,7 @@ mod fishing_capability;
 mod fishing_capability_routing;
 mod fishing_cast_preflight;
 mod fishing_droptable;
+mod fishing_fish_delivery;
 mod fishing_gold_rod;
 mod fishing_limits;
 mod fishing_multi_treasure;
@@ -201,6 +202,11 @@ pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,
     FishingTreasureResultBasePolicy, fishing_base_catch_branch_policy,
     fishing_base_treasure_result_policy,
+};
+pub use fishing_fish_delivery::{
+    FISHING_FISH_ITEM_DEFINITION_VERSION, FishingFishDeliveryLocation,
+    FishingFishInstanceDeliveryError, FishingFishInstanceDeliveryReceiptV1,
+    FishingFishInstanceDeliveryRequestV1, deliver_fishing_fish_instance_v1,
 };
 pub use fishing_gold_rod::{
     FishingRelativeWeightMultiplier, GOLD_ROD_ACTION_SPEED_RATING_PERCENT,
