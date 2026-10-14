@@ -20,7 +20,9 @@ mod fishing_bait_state;
 mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_capability_routing;
+mod fishing_cast_owner;
 mod fishing_cast_preflight;
+mod fishing_catch_branch_composition;
 mod fishing_droptable;
 mod fishing_fish_delivery;
 mod fishing_gold_rod;
@@ -30,6 +32,8 @@ mod fishing_multicatch;
 mod fishing_numeric;
 mod fishing_over_cap;
 mod fishing_payload;
+mod fishing_payload_delivery;
+mod fishing_payload_roll;
 mod fishing_progression_settlement;
 mod fishing_rng;
 mod fishing_rod_durability;
@@ -196,8 +200,15 @@ pub use fishing_capability_routing::{
     FishingRoutedFishCapabilityStage, fishing_capability_routing_policy,
     resolve_fishing_over_cap_sequence, resolve_routed_fish_capability_stage,
 };
+pub use fishing_cast_owner::{
+    ManualFishingCastOwnerError, PendingManualFishingCastV1, begin_manual_fishing_cast_v1,
+};
 pub use fishing_cast_preflight::{
     ManualFishingCastPreflight, ManualFishingCastPreflightError, lock_manual_fishing_cast_preflight,
+};
+pub use fishing_catch_branch_composition::{
+    FISHING_BRANCH_PRE_CAP_WEIGHT_DENOMINATOR_V1, FishingCatchBranchPreCapWeightsV1,
+    fishing_catch_branch_pre_cap_weights_v1,
 };
 pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,
@@ -248,6 +259,15 @@ pub use fishing_payload::{
     FishingPayload, FishingPayloadPolicy, FishingPayloadPolicyError,
     fishing_bait_item_definition_key, fishing_junk_payloads, fishing_non_book_treasure_payloads,
     fishing_payload_policy,
+};
+pub use fishing_payload_delivery::{
+    FISHING_PAYLOAD_ITEM_DEFINITION_VERSION_V1, FishingNonFishOutcomeDeliveryReceiptV1,
+    FishingNonFishPayloadDeliveryError, FishingNonFishPayloadDeliveryReceiptV1,
+    FishingResolvedNonFishOutcomeV1, FishingResolvedNonFishPayloadV1,
+    deliver_fishing_non_fish_outcome_v1, deliver_fishing_non_fish_payload_v1,
+};
+pub use fishing_payload_roll::{
+    FishingNonFishRollError, resolve_manual_fishing_non_fish_outcome_v1,
 };
 pub use fishing_progression_settlement::{
     MANUAL_FISHING_ACCOUNT_XP_REWARD, ManualFishingProgressionSettlementError,

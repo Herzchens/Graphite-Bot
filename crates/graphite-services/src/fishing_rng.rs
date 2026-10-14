@@ -18,6 +18,8 @@ pub const MANUAL_FISHING_RNG_PPM_SCALE: u32 = FISHING_NUMERIC_DRAW_SCALE_PPM;
 pub enum ManualFishingWeightedDrawV1 {
     CatchBranch,
     TreasureResult,
+    JunkPayload,
+    NonBookTreasurePayload { treasure_slot: u8 },
     FishSpecies { fish_slot: u8 },
     FishVariant { fish_slot: u8 },
     EnchantBookPool { treasure_slot: u8 },
@@ -176,6 +178,11 @@ fn weighted_domain_label(
         ManualFishingWeightedDrawV1::TreasureResult => {
             "fishing.manual.v1.treasure_result".to_owned()
         }
+        ManualFishingWeightedDrawV1::JunkPayload => "fishing.manual.v1.junk.payload".to_owned(),
+        ManualFishingWeightedDrawV1::NonBookTreasurePayload { treasure_slot } => {
+            validate_treasure_slot(treasure_slot)?;
+            format!("fishing.manual.v1.treasure.{treasure_slot}.nonbook_payload")
+        }
         ManualFishingWeightedDrawV1::FishSpecies { fish_slot } => {
             validate_fish_slot(fish_slot)?;
             format!("fishing.manual.v1.fish.{fish_slot}.species")
@@ -288,6 +295,46 @@ mod tests {
             })
             .unwrap(),
             "fishing.manual.v1.treasure.2.book.level"
+        );
+    }
+
+    #[test]
+    fn non_fish_payload_domains_are_distinct_and_versioned() {
+        assert_eq!(
+            weighted_domain_label(ManualFishingWeightedDrawV1::JunkPayload).unwrap(),
+            "fishing.manual.v1.junk.payload"
+        );
+        for slot in 0..MULTI_TREASURE_MAX_ITEMS {
+            let domain =
+                weighted_domain_label(ManualFishingWeightedDrawV1::NonBookTreasurePayload {
+                    treasure_slot: slot,
+                })
+                .unwrap();
+            assert_eq!(
+                domain,
+                format!("fishing.manual.v1.treasure.{slot}.nonbook_payload")
+            );
+            assert!(
+                context()
+                    .sample_weighted_v1(
+                        ManualFishingWeightedDrawV1::NonBookTreasurePayload {
+                            treasure_slot: slot,
+                        },
+                        &[1, 1, 1, 1, 1],
+                    )
+                    .is_ok()
+            );
+        }
+        assert_eq!(
+            context().sample_weighted_v1(
+                ManualFishingWeightedDrawV1::NonBookTreasurePayload {
+                    treasure_slot: MULTI_TREASURE_MAX_ITEMS,
+                },
+                &[1, 1],
+            ),
+            Err(ManualFishingRngDrawError::TreasureSlotOutOfRange(
+                MULTI_TREASURE_MAX_ITEMS
+            ))
         );
     }
 
