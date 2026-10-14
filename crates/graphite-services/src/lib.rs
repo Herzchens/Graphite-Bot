@@ -30,6 +30,7 @@ mod fishing_multicatch;
 mod fishing_numeric;
 mod fishing_over_cap;
 mod fishing_payload;
+mod fishing_progression_settlement;
 mod fishing_rng;
 mod fishing_rod_durability;
 mod fishing_rod_durability_state;
@@ -247,6 +248,11 @@ pub use fishing_payload::{
     FishingPayload, FishingPayloadPolicy, FishingPayloadPolicyError,
     fishing_bait_item_definition_key, fishing_junk_payloads, fishing_non_book_treasure_payloads,
     fishing_payload_policy,
+};
+pub use fishing_progression_settlement::{
+    MANUAL_FISHING_ACCOUNT_XP_REWARD, ManualFishingProgressionSettlementError,
+    ManualFishingProgressionSettlementReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
+    manual_fishing_successful_base_aexp_v1, settle_manual_fishing_successful_progression_v1,
 };
 pub use fishing_rng::{
     MANUAL_FISHING_RNG_POLICY_VERSION, MANUAL_FISHING_RNG_PPM_SCALE, ManualFishingPpmDrawV1,

@@ -1765,3 +1765,53 @@ resolution must not reopen or rewrite that historical operation.
 Claim uses the current owning operation for mutation-key replay/audit while leaving the original
 FishInstance creation operation unchanged. Rollback restores ItemInstance location, pending state and
 claim audit together. A committed retry returns the stored claim receipt without moving the fish twice.
+
+
+## Fishing successful-cast progression settlement
+
+Branch: feat/fishing-progression-settlement
+
+### 1. Successful committed manual Fishing grants exactly 2 Account XP
+
+**Normative alignment — CONFIRMED**
+
+The latest Master Spec source matrix assigns exactly 2 Account XP to a successful committed manual
+Fishing action. This is independent of fish rarity, Multi Catch count and Treasure multiplicity.
+
+**Final decision**
+
+Add a transaction-composable successful-outcome settlement primitive that always requests exactly
+2 Account XP through the canonical Account XP settlement owner. The primitive does not commit the
+operation itself, so rollback removes the Account XP child mutation and any synchronous Account Level
+Money reward together with the rest of the cast.
+
+### 2. Fishing Activity EXP reuses the already-frozen outcome table and caps
+
+**Normative alignment — CONFIRMED**
+
+The exact base Manual Fishing AEXP table is Junk 2, Treasure 5, Common 3, Uncommon 4, Rare 5,
+Epic 7, Legendary 10 and Mythic 14. Multi Catch uses each landed fish rarity but is capped at
+3 times the base fish's AEXP; Multi Treasure caps total Treasure AEXP at 10 per cast.
+
+**Final decision**
+
+The progression settlement owner accepts only successful landed outcomes and delegates AEXP
+calculation to the existing Fishing AEXP policy. It then grants the exact resulting integer through
+the shared Activity EXP mutation owner using one stable mutation key.
+
+Escaped-fish and line-break outcomes are deliberately absent from this successful-outcome type.
+They receive zero Fishing AEXP and cannot accidentally receive the successful-manual-Fishing
+Account XP child through this API.
+
+### 3. Progression replay remains owned by shared progression primitives
+
+**Lifecycle decision — CONFIRMED**
+
+Fishing must not duplicate Account XP cap/level reward arithmetic or Activity EXP point mutation.
+
+**Final decision**
+
+The wrapper composes the existing account and activity child mutations in one caller-owned
+transaction. Exact replay returns the original child receipts, a rollback removes both, and a
+committed operation may replay only the already-recorded rewards. No Fishing-specific progression
+tables or alternate arithmetic are introduced.
