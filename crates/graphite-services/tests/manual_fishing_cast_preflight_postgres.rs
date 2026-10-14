@@ -3,9 +3,9 @@ use graphite_services::{
     CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea, FishingAreaAccessOrigin,
     FishingCatchBranch, FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST,
     ManualFishingCastOwnerError, ManualFishingCastPreflightError, ManualFishingPpmDrawV1,
-    ManualFishingRngDrawError, ManualFishingUnmodifiedFishCandidateError,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, begin_manual_fishing_cast_v1,
-    lock_manual_fishing_cast_preflight,
+    ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    begin_manual_fishing_cast_v1, lock_manual_fishing_cast_preflight,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -102,6 +102,10 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
         begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
             .await
             .unwrap();
+    assert_eq!(
+        pending.preview_unmodified_fish_capability_v1(0).unwrap(),
+        ManualFishingUnmodifiedCapabilityPreviewV1::StarterPoolGuaranteedLanded
+    );
     let first = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     let replay = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     assert_eq!(first, replay);
@@ -155,6 +159,62 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
             .await
             .unwrap();
     assert_eq!(event_count, 0);
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn unmodified_river_candidate_uses_exact_capability_kernel_without_settlement() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "capability",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let operation_id = seed_operation(&store, player_id, nonce, "river-capability").await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    let first = pending.preview_unmodified_fish_capability_v1(0).unwrap();
+    assert_eq!(
+        pending.preview_unmodified_fish_capability_v1(0).unwrap(),
+        first
+    );
+    match first {
+        ManualFishingUnmodifiedCapabilityPreviewV1::WithinRodCapability { ratio } => {
+            assert!(ratio.numerator() <= ratio.denominator());
+        }
+        ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending {
+            ratio,
+            line_break,
+            catch_chance,
+        } => {
+            assert!(ratio.numerator() > ratio.denominator());
+            assert!(line_break.final_probability_ppm <= 150_000);
+            assert!(catch_chance.numerator() > 0);
+            assert!(catch_chance.denominator() > 0);
+        }
+        ManualFishingUnmodifiedCapabilityPreviewV1::StarterPoolGuaranteedLanded => {
+            panic!("non-pool fish cannot bypass capability");
+        }
+    }
+
+    pending.rollback().await.unwrap();
+    assert_eq!(unlock_count(&store, player_id).await, 0);
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
 }
 

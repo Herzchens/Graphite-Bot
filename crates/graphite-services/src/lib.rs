@@ -42,6 +42,7 @@ mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_species;
+mod fishing_unmodified_capability;
 mod fishing_variant;
 mod fishing_weight_bridge;
 mod forge;
@@ -307,6 +308,10 @@ pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
     FishingSpecies, FishingSpeciesPolicy, RareBaitAreaSpeciesWeightPreview,
     fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
+};
+pub use fishing_unmodified_capability::{
+    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
+    preview_manual_unmodified_fish_capability_v1,
 };
 pub use fishing_variant::{
     CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,

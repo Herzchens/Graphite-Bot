@@ -1914,3 +1914,45 @@ and its operation-specific mutation key. A same-operation repeat returns the ori
 ItemInstance receipt. Dropping or rolling back the pending cast removes the ItemInstance,
 delivery event, bait and any area unlock together. No adapter may treat this preview as
 a finished cast or commit its transaction before the full lifecycle gate passes.
+
+  
+## Fishing unmodified capability composition
+
+Branch: feat/fishing-unmodified-capability
+
+### 1. Canonical FishInstance weight, not CatchBag projection, drives physical capability
+
+**Normative alignment — CONFIRMED**
+
+The frozen Fishing model defines FishTension from canonical scaled fish weight and rarity,
+summing across fish candidates before dividing by exact effective Rod line strength.
+The existing numeric FishInstance owner and capability kernel already implement this
+without discarding sub-gram precision.
+
+**Final decision**
+
+An unmodified single-fish candidate first validates membership in the selected area's
+canonical species pool. Starter Pool Fish bypasses capability and always physically lands.
+Outside Starter Pool, the caller must hold an ordinary Rod: the preview computes scaled
+FishTension and one-fish CatchLoad exactly, obtains ordinary unmodified line strength, and
+classifies R <= 1 as landed or R > 1 as over-cap, using the existing rational owner.
+
+### 2. Over-cap probability previews do not authorize a terminal result or asset issuance
+
+**Implementation finding — CONFIRMED**
+
+The line-break numeric policy provides a versioned final PPM chance, while the over-cap
+catch policy returns an exact rational chance with a 15–95% clamp. The canonical sequence
+requires resolving line break first, and only after survival may the over-cap catch
+resolution determine landing or escape.
+
+**Final decision**
+
+For R > 1 the pure preview exposes both existing probability contracts but does not
+draw either RNG stage or invent a conversion from rational catch probability to a
+PPM threshold. A future full cast resolver must preserve the order and version the
+probability-to-draw interpretation. The non-committable pending cast can call this
+pure preview from its pinned unmodified FishInstance candidate. Provisional Starter
+Pool staging is now explicitly guarded by the guaranteed physical capability route.
+No transaction commit, terminal operation, progression, Mending or Discord command
+is enabled by this slice.
