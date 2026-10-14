@@ -21,10 +21,6 @@ pub struct ActionSpeedBonus {
 
 impl ActionSpeedBonus {
     /// Creates an exact non-negative action-speed bonus ratio and reduces it to canonical form.
-    ///
-    /// For example, `10/100` is stored as `1/10`. No fixed decimal/basis-point precision is chosen
-    /// by this type; the future Modifier Registry may therefore preserve whatever exact rational
-    /// precision its authoritative combination rule requires.
     pub const fn new(numerator: u64, denominator: u64) -> Result<Self, ActionSpeedPolicyError> {
         if denominator == 0 {
             return Err(ActionSpeedPolicyError::ZeroDenominator);
@@ -61,10 +57,19 @@ pub struct SharedActionSpeedBonusPolicy {
     pub cap_applied: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct ManualMineFishCooldownPolicy {
+    pub speed_policy: SharedActionSpeedBonusPolicy,
+    pub cooldown_millis: u32,
+    pub minimum_clamp_applied: bool,
+}
+
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum ActionSpeedPolicyError {
     #[error("action-speed bonus denominator must be positive")]
     ZeroDenominator,
+    #[error("action-speed rational composition overflow")]
+    ArithmeticOverflow,
 }
 
 /// Returns the exact frozen maximum shared action-speed bonus: +33.33% = 3,333 / 10,000.
@@ -77,22 +82,6 @@ pub const fn max_shared_action_speed_bonus() -> ActionSpeedBonus {
 }
 
 /// Applies the canonical shared action-speed cap to an already-resolved exact bucket total.
-///
-/// The active specification freezes a +33.33% maximum shared action-speed bonus and states that
-/// action-speed sources share one capped bucket instead of multiplying separately. The Modifier
-/// Registry contract, however, gives modifiers an explicit `Combination Rule`, and the current
-/// specification does not freeze the rule that combines Gold/Lure/Efficiency/Day/Night/Event/Partner
-/// source values into the uncapped bucket total. Therefore this function deliberately accepts an
-/// authoritative already-composed total instead of inventing additive stacking.
-///
-/// The specification also requires deterministic integer/fixed-point canonical arithmetic but does
-/// not freeze a one-basis-point precision for Modifier Registry values. The bucket total is therefore
-/// accepted as an exact reduced rational instead of being quantized to basis points. The frozen cap
-/// itself remains exactly `3333/10000`.
-///
-/// This policy does **not** convert the capped rating into a cooldown duration. The active
-/// specification freezes the 10.0-second base cooldown and the 7.5-second Mine/Fish floor, but does
-/// not freeze a rating-to-duration conversion formula. Callers must not infer one here.
 #[must_use]
 pub const fn cap_shared_action_speed_bonus(
     uncapped_bonus: ActionSpeedBonus,
@@ -108,13 +97,105 @@ pub const fn cap_shared_action_speed_bonus(
     }
 }
 
+/// Adds all non-negative action-speed sources in one shared bucket, then applies the shared cap.
+///
+/// This is the owner-approved combination rule for Gold/Lure/Efficiency/Day/Night/Event/Partner
+/// speed sources. Sources do not multiply one another.
+pub fn compose_shared_action_speed_bonus(
+    sources: &[ActionSpeedBonus],
+) -> Result<SharedActionSpeedBonusPolicy, ActionSpeedPolicyError> {
+    let mut uncapped = ActionSpeedBonus {
+        numerator: 0,
+        denominator: 1,
+    };
+    for source in sources {
+        uncapped = add_action_speed_bonus(uncapped, *source)?;
+    }
+    Ok(cap_shared_action_speed_bonus(uncapped))
+}
+
+/// Resolves the canonical manual Mine/Fish cooldown.
+///
+/// Cooldown is base / (1 + capped_speed_rating), rounded half-up to the nearest millisecond, then
+/// clamped to the frozen 7.5-second minimum.
+pub fn manual_mine_fish_cooldown_policy(
+    sources: &[ActionSpeedBonus],
+) -> Result<ManualMineFishCooldownPolicy, ActionSpeedPolicyError> {
+    let speed_policy = compose_shared_action_speed_bonus(sources)?;
+    let speed = speed_policy.applied_bonus;
+
+    let numerator = u128::from(BASE_REPEATABLE_MANUAL_REWARD_ACTION_COOLDOWN_MILLIS)
+        * u128::from(speed.denominator);
+    let denominator = u128::from(speed.denominator) + u128::from(speed.numerator);
+    let rounded = round_half_up_non_negative(numerator, denominator);
+    let rounded = u32::try_from(rounded).map_err(|_| ActionSpeedPolicyError::ArithmeticOverflow)?;
+    let minimum_clamp_applied = rounded < MIN_MINE_FISH_COOLDOWN_MILLIS;
+    let cooldown_millis = rounded.max(MIN_MINE_FISH_COOLDOWN_MILLIS);
+
+    Ok(ManualMineFishCooldownPolicy {
+        speed_policy,
+        cooldown_millis,
+        minimum_clamp_applied,
+    })
+}
+
+fn add_action_speed_bonus(
+    left: ActionSpeedBonus,
+    right: ActionSpeedBonus,
+) -> Result<ActionSpeedBonus, ActionSpeedPolicyError> {
+    let left_numerator = u128::from(left.numerator);
+    let left_denominator = u128::from(left.denominator);
+    let right_numerator = u128::from(right.numerator);
+    let right_denominator = u128::from(right.denominator);
+
+    let numerator = left_numerator
+        .checked_mul(right_denominator)
+        .and_then(|value| {
+            right_numerator
+                .checked_mul(left_denominator)
+                .and_then(|right_scaled| value.checked_add(right_scaled))
+        })
+        .ok_or(ActionSpeedPolicyError::ArithmeticOverflow)?;
+    let denominator = left_denominator
+        .checked_mul(right_denominator)
+        .ok_or(ActionSpeedPolicyError::ArithmeticOverflow)?;
+
+    let divisor = gcd_u128(numerator, denominator);
+    let numerator = numerator / divisor;
+    let denominator = denominator / divisor;
+    let numerator =
+        u64::try_from(numerator).map_err(|_| ActionSpeedPolicyError::ArithmeticOverflow)?;
+    let denominator =
+        u64::try_from(denominator).map_err(|_| ActionSpeedPolicyError::ArithmeticOverflow)?;
+
+    ActionSpeedBonus::new(numerator, denominator)
+}
+
+fn round_half_up_non_negative(numerator: u128, denominator: u128) -> u128 {
+    let quotient = numerator / denominator;
+    let remainder = numerator % denominator;
+    if remainder * 2 >= denominator {
+        quotient + 1
+    } else {
+        quotient
+    }
+}
+
 const fn ratio_greater_than(left: ActionSpeedBonus, right: ActionSpeedBonus) -> bool {
-    // A u64 × u64 product always fits in u128, so comparison is exact and overflow-free.
     (left.numerator as u128) * (right.denominator as u128)
         > (right.numerator as u128) * (left.denominator as u128)
 }
 
 const fn gcd(mut left: u64, mut right: u64) -> u64 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
+
+fn gcd_u128(mut left: u128, mut right: u128) -> u128 {
     while right != 0 {
         let remainder = left % right;
         left = right;
@@ -144,9 +225,34 @@ mod tests {
     }
 
     #[test]
-    fn ratios_normalize_without_selecting_decimal_precision() {
+    fn additive_bucket_and_half_up_cooldown_are_exact() {
+        let policy = manual_mine_fish_cooldown_policy(&[ratio(1, 10), ratio(1, 20)]).unwrap();
+        assert_eq!(policy.speed_policy.uncapped_bonus, ratio(3, 20));
+        assert_eq!(policy.speed_policy.applied_bonus, ratio(3, 20));
+        assert!(!policy.speed_policy.cap_applied);
+        assert_eq!(policy.cooldown_millis, 8_696);
+        assert!(!policy.minimum_clamp_applied);
+    }
+
+    #[test]
+    fn shared_cap_yields_the_frozen_minimum_after_half_up_rounding() {
+        let policy = manual_mine_fish_cooldown_policy(&[ratio(2, 5)]).unwrap();
+        assert!(policy.speed_policy.cap_applied);
+        assert_eq!(policy.speed_policy.applied_bonus, ratio(3_333, 10_000));
+        assert_eq!(policy.cooldown_millis, 7_500);
+    }
+
+    #[test]
+    fn empty_bucket_preserves_the_base_cooldown() {
+        let policy = manual_mine_fish_cooldown_policy(&[]).unwrap();
+        assert_eq!(policy.speed_policy.uncapped_bonus, ratio(0, 1));
+        assert_eq!(policy.cooldown_millis, 10_000);
+        assert!(!policy.minimum_clamp_applied);
+    }
+
+    #[test]
+    fn ratios_normalize_and_invalid_denominator_fails_closed() {
         assert_eq!(ActionSpeedBonus::new(10, 100).unwrap(), ratio(1, 10));
-        assert_eq!(ActionSpeedBonus::new(15, 100).unwrap(), ratio(3, 20));
         assert_eq!(ActionSpeedBonus::new(0, u64::MAX).unwrap(), ratio(0, 1));
         assert_eq!(
             ActionSpeedBonus::new(1, 0),
@@ -155,20 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn bucket_total_below_the_cap_is_preserved_exactly() {
-        let uncapped = ratio(33_329, 100_000);
-        assert_eq!(
-            cap_shared_action_speed_bonus(uncapped),
-            SharedActionSpeedBonusPolicy {
-                uncapped_bonus: uncapped,
-                applied_bonus: uncapped,
-                cap_applied: false,
-            }
-        );
-    }
-
-    #[test]
-    fn bucket_total_above_the_cap_is_clamped_exactly() {
+    fn precomposed_cap_api_remains_exact() {
         let uncapped = ratio(1, 3);
         assert_eq!(
             cap_shared_action_speed_bonus(uncapped),
@@ -178,37 +271,5 @@ mod tests {
                 cap_applied: true,
             }
         );
-    }
-
-    #[test]
-    fn exact_cap_and_zero_do_not_report_clamping() {
-        let cap = ratio(3_333, 10_000);
-        assert_eq!(
-            cap_shared_action_speed_bonus(cap),
-            SharedActionSpeedBonusPolicy {
-                uncapped_bonus: cap,
-                applied_bonus: cap,
-                cap_applied: false,
-            }
-        );
-
-        let zero = ratio(0, 1);
-        assert_eq!(
-            cap_shared_action_speed_bonus(zero),
-            SharedActionSpeedBonusPolicy {
-                uncapped_bonus: zero,
-                applied_bonus: zero,
-                cap_applied: false,
-            }
-        );
-    }
-
-    #[test]
-    fn arbitrarily_large_resolved_ratios_are_safely_capped() {
-        let uncapped = ratio(u64::MAX, 1);
-        let policy = cap_shared_action_speed_bonus(uncapped);
-        assert_eq!(policy.uncapped_bonus, uncapped);
-        assert_eq!(policy.applied_bonus, max_shared_action_speed_bonus());
-        assert!(policy.cap_applied);
     }
 }

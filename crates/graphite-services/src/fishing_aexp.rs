@@ -1,11 +1,15 @@
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::{fishing_bait::FishingRarity, fishing_multi_treasure::MULTI_TREASURE_MAX_ITEMS};
+use crate::{
+    fishing_bait::FishingRarity, fishing_limits::MAX_FISH_PER_CAST,
+    fishing_multi_treasure::MULTI_TREASURE_MAX_ITEMS,
+};
 
 pub const MANUAL_FISHING_BASE_JUNK_AEXP: i64 = 2;
 pub const MANUAL_FISHING_BASE_TREASURE_AEXP: i64 = 5;
 pub const MANUAL_FISHING_BASE_MULTI_TREASURE_AEXP_CAP: i64 = 10;
+pub const MANUAL_FISHING_BASE_MULTI_CATCH_AEXP_CAP_MULTIPLIER: i64 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -21,25 +25,11 @@ pub enum ManualFishingAexpOutcome {
 pub enum ManualFishingAexpError {
     #[error("landed treasure count must be between 1 and {MULTI_TREASURE_MAX_ITEMS}; got {0}")]
     LandedTreasureCountOutOfRange(u8),
+    #[error("landed fish count must be between 1 and {MAX_FISH_PER_CAST}; got {0}")]
+    LandedFishCountOutOfRange(usize),
 }
 
 /// Resolves the frozen base Manual Fishing Activity EXP for one terminal single-result outcome.
-///
-/// Successful Junk/Treasure/Fish outcomes return a positive **base** amount before AEXP gain
-/// modifiers. `FishEscaped` and `LineBreak` return `None`, which means the owning transaction must
-/// not create an Activity EXP grant mutation for that failed fish result. This shape composes with
-/// the progression layer, whose mutation primitive intentionally rejects zero-amount mutations.
-///
-/// The future stateful Fishing settlement owner must apply the authoritative AEXP gain modifier
-/// stack and its global cap after this source-specific base policy, then pass the final integer grant
-/// to the progression mutation primitive. This module deliberately does not apply Rebirth or any
-/// other global AEXP gain modifier itself.
-///
-/// For a Treasure branch expanded by Multi Treasure, use
-/// `manual_fishing_base_treasure_cast_aexp` so the canonical 10-base-AEXP-per-cast Treasure cap is
-/// applied. Aggregate Multi Catch fish AEXP is deliberately not calculated here because the
-/// specification does not yet define which fish owns the `single-cast fish AEXP` cap basis when
-/// landed fish have different rarities.
 #[must_use]
 pub const fn manual_fishing_base_outcome_aexp(outcome: ManualFishingAexpOutcome) -> Option<i64> {
     match outcome {
@@ -50,14 +40,34 @@ pub const fn manual_fishing_base_outcome_aexp(outcome: ManualFishingAexpOutcome)
     }
 }
 
-/// Applies the frozen base Treasure Activity EXP cap for one successfully landed Treasure cast.
+/// Aggregates base AEXP for one landed Multi Catch fish result.
 ///
-/// The caller supplies the authoritative number of landed Treasure items after Multi Treasure has
-/// already resolved. Canonical Multi Treasure output is single, double, or triple Treasure, so any
-/// count outside `1..=MULTI_TREASURE_MAX_ITEMS` fails closed instead of being silently hidden by the
-/// AEXP cap. This function does not own Multi Treasure RNG or enchant-level count distributions; it
-/// only applies `5 base AEXP × landed treasure count`, capped at 10 base AEXP per cast before global
-/// AEXP gain modifiers.
+/// The first entry is the base fish selected by the cast branch. Every additional fish contributes
+/// its own rarity AEXP, but the owner-approved heterogeneous cap is exactly three times the base
+/// fish's single-fish AEXP. Additional fish rarity can therefore never raise its own cap basis.
+pub fn manual_fishing_base_fish_cast_aexp(
+    landed_fish_rarities: &[FishingRarity],
+) -> Result<i64, ManualFishingAexpError> {
+    if landed_fish_rarities.is_empty()
+        || landed_fish_rarities.len() > usize::from(MAX_FISH_PER_CAST)
+    {
+        return Err(ManualFishingAexpError::LandedFishCountOutOfRange(
+            landed_fish_rarities.len(),
+        ));
+    }
+
+    let base_fish_aexp = fish_rarity_base_aexp(landed_fish_rarities[0]);
+    let total = landed_fish_rarities
+        .iter()
+        .copied()
+        .map(fish_rarity_base_aexp)
+        .sum::<i64>();
+    let cap = base_fish_aexp * MANUAL_FISHING_BASE_MULTI_CATCH_AEXP_CAP_MULTIPLIER;
+
+    Ok(total.min(cap))
+}
+
+/// Applies the frozen base Treasure Activity EXP cap for one successfully landed Treasure cast.
 pub fn manual_fishing_base_treasure_cast_aexp(
     landed_treasure_count: u8,
 ) -> Result<i64, ManualFishingAexpError> {
@@ -117,6 +127,28 @@ mod tests {
     }
 
     #[test]
+    fn heterogeneous_multi_catch_uses_the_base_fish_cap_basis() {
+        assert_eq!(
+            manual_fishing_base_fish_cast_aexp(&[
+                FishingRarity::Common,
+                FishingRarity::Mythic,
+                FishingRarity::Mythic,
+            ]),
+            Ok(9)
+        );
+        assert_eq!(
+            manual_fishing_base_fish_cast_aexp(&[
+                FishingRarity::Mythic,
+                FishingRarity::Common,
+                FishingRarity::Common,
+                FishingRarity::Common,
+                FishingRarity::Common,
+            ]),
+            Ok(26)
+        );
+    }
+
+    #[test]
     fn failed_fish_outcomes_create_no_aexp_grant() {
         assert_eq!(
             manual_fishing_base_outcome_aexp(ManualFishingAexpOutcome::FishEscaped),
@@ -139,12 +171,21 @@ mod tests {
     }
 
     #[test]
-    fn noncanonical_treasure_counts_fail_closed() {
+    fn noncanonical_counts_fail_closed() {
         for count in [0, MULTI_TREASURE_MAX_ITEMS + 1, u8::MAX] {
             assert_eq!(
                 manual_fishing_base_treasure_cast_aexp(count),
                 Err(ManualFishingAexpError::LandedTreasureCountOutOfRange(count))
             );
         }
+        assert_eq!(
+            manual_fishing_base_fish_cast_aexp(&[]),
+            Err(ManualFishingAexpError::LandedFishCountOutOfRange(0))
+        );
+        let six = [FishingRarity::Common; 6];
+        assert_eq!(
+            manual_fishing_base_fish_cast_aexp(&six),
+            Err(ManualFishingAexpError::LandedFishCountOutOfRange(6))
+        );
     }
 }

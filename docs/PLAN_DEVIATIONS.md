@@ -1120,3 +1120,64 @@ Rust 1.98.0 and the relevant direct stable dependencies (`sqlx`, `serde`, `thise
 **Final decision**
 
 Keep the existing Rust/dependency pins. The only manifest change is the first-party `graphite-items` path dependency required by the intended layering. Do not mix unrelated dependency upgrades or prerelease versions into this resolver commit.
+
+
+## Fishing owner-approved runtime policy resolutions
+
+Branch: feat/fishing-owner-decisions
+
+### 1. Additional fish are independent FishInstance rolls
+
+**Owner correction — CONFIRMED**
+
+Multicatch and School Bait never clone the base fish. Every additional fish independently rolls
+species, weight, variant, and biological noise in the same Fishing area. Their quantity effects are
+independent and share the global five-fish cap.
+
+**Final decision**
+
+Compose the two quantity effects arithmetically under one cap so evaluation order cannot change the
+final count. Keep FishInstance generation itself with the future operation-owned Fishing RNG
+lifecycle.
+
+### 2. Heterogeneous Multi Catch AEXP uses the base fish as cap basis
+
+**Owner correction — CONFIRMED**
+
+The first/base fish owns the single-cast AEXP cap basis. Sum every landed fish's rarity base AEXP,
+then cap the cast at exactly three times the base fish's AEXP. An additional rarer fish does not
+raise the cap.
+
+### 3. Repeated Multi Treasure results reroll independently
+
+**Owner correction — CONFIRMED**
+
+Multi Treasure preserves the already-selected outer Treasure-result category. Each repeated payload
+inside that category is resolved independently. For Enchant Books, pool, member, and level are
+rerolled independently for every repeated book rather than cloning one selected book payload.
+
+### 4. Multicatch and Multi Treasure Levels I-X use linear probability curves
+
+**Owner correction — CONFIRMED**
+
+Multicatch Level L, for L in 1..=10, uses double 1.0% x L, triple 0.30% x L, quadruple 0.10% x L,
+and quintuple 0.025% x L; single receives the remainder. Multi Treasure Level L uses double 0.60% x
+L and triple 0.15% x L; single receives the remainder. Parts-per-million are the canonical integer
+probability representation so 0.025% is exact. Level X reproduces the previously frozen anchor rows.
+
+### 5. Action-speed sources add in one shared bucket and cooldown rounds half-up
+
+**Owner correction — CONFIRMED**
+
+Eligible action-speed ratings add before the existing +33.33% shared cap. Manual Mine/Fish cooldown
+is base cooldown divided by one plus the capped rating, rounded half-up to the nearest millisecond,
+then clamped to the 7,500 ms minimum. Sources do not multiply one another.
+
+### 6. Deterministic Fishing fractional math remains a dedicated implementation slice
+
+**Owner correction — CONFIRMED**
+
+The future fish-weight/valuation/length and line-break kernels must use a versioned deterministic
+fixed-point contract rather than native floating-point gameplay authority. This decision removes the
+semantic blocker but does not make an arbitrary approximation acceptable; golden vectors and
+cross-platform deterministic tests are required when that numeric kernel is implemented.
