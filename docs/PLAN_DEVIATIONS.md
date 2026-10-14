@@ -1569,3 +1569,70 @@ requires no new dependency or language feature.
 **Final decision**
 
 Keep the existing toolchain and dependency pins unchanged.
+
+
+## Fishing active-bait persistence and cast consumption
+
+Branch: feat/fishing-active-bait-state
+
+### 1. Active bait selection is canonical persisted player state
+
+**Implementation finding — CONFIRMED**
+
+The pure bait-consumption planner could not be authoritative by itself because no persisted active-bait
+selection existed. The Master Spec requires a bounded active selection, missing-bait auto-detach and
+one-unit consumption per active category per cast.
+
+**Final decision**
+
+Persist active bait by canonical bait identity plus exact ItemDefinition version. Selection replacement
+locks the owning operation/player/current Rod, derives the authoritative Bait Rack capacity from the
+equipped Rod, and writes the complete replacement atomically. Request callers cannot provide arbitrary
+definition keys.
+
+Selection does not require current Item Bag possession. A missing selected bait is handled by the cast
+rule itself: it auto-detaches instead of making configuration state an inventory reservation.
+
+### 2. Per-cast bait consumption is a transaction-composable child mutation
+
+**Implementation finding — CONFIRMED**
+
+Bait is Item Bag stack state, so a cast owner must not decrement it through ad-hoc SQL or a second
+operation.
+
+**Final decision**
+
+The cast bait settler locks the active selection and exact-version Item Bag rows, delegates every
+one-unit decrement to the shared stack-consumption mutation primitive with stable per-bait mutation
+keys, removes missing selections in the same transaction, and records one replayable bait-settlement
+audit receipt. Multi Catch and Multi Treasure therefore cannot create extra bait consumption.
+
+Consuming the final available unit leaves the bait selected for that completed cast; the following cast
+observes zero stock and auto-detaches it. This preserves the existing planner contract and avoids
+retroactively removing an effect from the cast that consumed the last valid unit.
+
+### 3. Capacity shrink fails closed
+
+**Implementation decision — CONFIRMED**
+
+A player can change to a Rod with fewer active bait-category slots after configuring bait. The
+specification does not define an ordering for silently choosing which active effects to discard.
+
+**Final decision**
+
+If persisted active selection exceeds the currently equipped Rod's capacity, cast bait settlement fails
+closed. No bait is consumed or auto-pruned. A later configuration surface can ask the player to choose
+which categories remain; the backend does not invent that choice.
+
+### 4. Bait ItemDefinition v1 is pinned explicitly
+
+**Compatibility decision — CONFIRMED**
+
+The current Fishing bait policy and the payload ItemDefinitions introduced by migration 0023 are v1.
+Silently treating a future bait ItemDefinition version as equivalent could change gameplay effects
+without a policy-version decision.
+
+**Final decision**
+
+Persist and consume bait ItemDefinition version 1 explicitly in the current resolver. A future bait
+content version must add an explicit compatible resolver/migration rather than inheriting v1 semantics.

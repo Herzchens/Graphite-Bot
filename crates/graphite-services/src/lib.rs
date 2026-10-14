@@ -16,6 +16,7 @@ mod fishing_area;
 mod fishing_area_state;
 mod fishing_bait;
 mod fishing_bait_cast;
+mod fishing_bait_state;
 mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_capability_routing;
@@ -163,6 +164,11 @@ pub use fishing_bait_cast::{
     ActiveFishingBaitInventory, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
     FishingBaitCastConsumptionError, FishingBaitCastConsumptionPlan,
     plan_fishing_bait_cast_consumption,
+};
+pub use fishing_bait_state::{
+    FISHING_BAIT_ITEM_DEFINITION_VERSION, FishingBaitCastSettlementReceipt,
+    FishingBaitSelectionMutationReceipt, FishingBaitStateError, PersistedActiveFishingBait,
+    replace_active_fishing_baits, settle_active_fishing_baits_for_cast,
 };
 pub use fishing_book_pool::{
     DirectFishingBookLevelProfile, DirectFishingBookMemberPolicy, DirectFishingBookPolicyError,

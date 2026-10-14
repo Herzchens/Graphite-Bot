@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::fishing_droptable::{FishingCatchBranch, fishing_base_catch_branch_policy};
@@ -29,7 +29,7 @@ pub enum BaitRackPolicyError {
     LevelOutOfRange(u8),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingBait {
     School,
@@ -39,7 +39,7 @@ pub enum FishingBait {
     Sturdy,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingBaitCategory {
     Quantity,
