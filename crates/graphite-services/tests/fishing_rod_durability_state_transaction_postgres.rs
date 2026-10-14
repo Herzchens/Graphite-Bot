@@ -1,8 +1,140 @@
 use graphite_services::{
-    FishingArea, FishingRodDurabilityResolution, apply_resolved_equipped_fishing_rod_durability,
+    AppliedFishingRodDurabilityState, FishingArea, FishingRodDurabilityMutationError,
+    FishingRodDurabilityResolution, apply_operation_fishing_rod_durability_v1,
+    apply_resolved_equipped_fishing_rod_durability,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn operation_durability_receipt_replays_after_commit_and_rejects_changed_input() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    let rod_id = seed_ordinary_rod(&store, player_id, nonce, 5, 600).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "receipt").await;
+    let resolution = FishingRodDurabilityResolution::CompletedCastAttempt {
+        ordinary_event_prevented_by_unbreaking: false,
+    };
+
+    let mut tx = store.pool().begin().await.unwrap();
+    let first = apply_operation_fishing_rod_durability_v1(
+        &mut tx,
+        operation_id,
+        player_id,
+        FishingArea::River,
+        Some(5),
+        resolution,
+    )
+    .await
+    .unwrap();
+    let same_transaction_retry = apply_operation_fishing_rod_durability_v1(
+        &mut tx,
+        operation_id,
+        player_id,
+        FishingArea::River,
+        Some(5),
+        resolution,
+    )
+    .await
+    .unwrap();
+    assert_eq!(first, same_transaction_retry);
+    let AppliedFishingRodDurabilityState::Ordinary {
+        item_instance_id,
+        preview,
+        ..
+    } = &first.applied
+    else {
+        panic!("ordinary Rod cannot yield a Starter Basic receipt");
+    };
+    assert_eq!(*item_instance_id, rod_id);
+    assert_eq!(preview.resulting_durability, 4);
+    sqlx::query("UPDATE operations SET state = 'COMMITTED', committed_at = now() WHERE id = $1")
+        .bind(operation_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(rod_durability(&store, rod_id).await, (4, false));
+
+    let mut later = store.pool().begin().await.unwrap();
+    let committed_replay = apply_operation_fishing_rod_durability_v1(
+        &mut later,
+        operation_id,
+        player_id,
+        FishingArea::River,
+        Some(5),
+        resolution,
+    )
+    .await
+    .unwrap();
+    assert_eq!(first, committed_replay);
+    let conflict = apply_operation_fishing_rod_durability_v1(
+        &mut later,
+        operation_id,
+        player_id,
+        FishingArea::Lake,
+        Some(5),
+        resolution,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        conflict,
+        FishingRodDurabilityMutationError::MutationConflict
+    ));
+    later.rollback().await.unwrap();
+
+    assert_eq!(rod_durability(&store, rod_id).await, (4, false));
+    let events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:rod:durability'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(events, 1);
+}
+
+#[tokio::test]
+async fn operation_durability_ledger_and_rod_roll_back_together() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    let rod_id = seed_ordinary_rod(&store, player_id, nonce, 9, 600).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "receipt-rollback").await;
+
+    let mut tx = store.pool().begin().await.unwrap();
+    let line = apply_operation_fishing_rod_durability_v1(
+        &mut tx,
+        operation_id,
+        player_id,
+        FishingArea::River,
+        Some(9),
+        FishingRodDurabilityResolution::LineBreak,
+    )
+    .await
+    .unwrap();
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = line.applied else {
+        panic!("expected ordinary Rod");
+    };
+    assert_eq!(preview.resulting_durability, 0);
+    tx.rollback().await.unwrap();
+
+    assert_eq!(rod_durability(&store, rod_id).await, (9, false));
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:rod:durability'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(count, 0);
+}
 
 #[tokio::test]
 async fn durability_write_rolls_back_with_the_owning_cast_transaction() {

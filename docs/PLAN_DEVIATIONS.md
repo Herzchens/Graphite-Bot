@@ -2159,3 +2159,43 @@ state, as well as any first-area unlock. The final cast owner MUST provide persi
 operation-level replay/finalization before any transaction commit or public `/fish`
 command can expose Rod wear. A line-break terminal path must grant no successful
 Fish XP, and Mending/progression ordering remains a separate unfinished composition.
+
+
+## Fishing operation-keyed Rod durability replay ledger
+
+Branch: feat/fishing-rod-wear-replay-ledger
+
+### 1. Persisted operation-level replay prevents repeated Rod damage
+
+**Implementation finding — CONFIRMED**
+
+The existing authoritative Rod durability writer locks the operation, active player and
+equipped instance and composes changes inside a caller-owned PostgreSQL transaction,
+but it previously had no operation-keyed receipt and could not safely replay after
+a completed operation or a later Rod repair.
+
+**Final decision**
+
+Wrap the same authoritative state writer with a unique
+`(operation_id, mutation_key='fishing:rod:durability')` asset event. Lock the operation
+row first, then check a pinned versioned receipt: exact area, expected current durability,
+resolved consequence and player must match, including on COMMITTED retry. A mismatch or
+malformed stored event fails closed. Only if no receipt exists and the operation remains
+PENDING may the Rod be mutated, and the receipt is inserted in the same transaction.
+This applies to ordinary wear, line-break destruction and Starter Basic no-op events.
+
+### 2. Durable child event is not terminal cast finalization
+
+**Safety finding — CONFIRMED**
+
+Persisted receipt replay is necessary for idempotency but does not prove the branch
+and all other effects were correctly chosen. Its outer transaction still owns the
+responsibility to resolve the outcome, XP, Mending, final result, audit and outbox.
+
+**Final decision**
+
+Switch the pending cast's unmodified Rod staging to the operation-keyed child and
+keep its local receipt cache as a same-transaction optimization. If anything fails,
+the owning transaction must roll back both the Rod mutation and the asset event.
+Do not activate external `/fish` or claim full lifecycle completion because the
+durability child now supports persisted retries.

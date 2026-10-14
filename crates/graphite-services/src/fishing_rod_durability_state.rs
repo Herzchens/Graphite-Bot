@@ -1,5 +1,5 @@
 use graphite_items::ItemError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
@@ -12,7 +12,7 @@ use crate::{
     FishingRodDurabilityResolution, preview_fishing_rod_durability,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AppliedFishingRodDurabilityState {
     StarterBasicUnbreakable {
