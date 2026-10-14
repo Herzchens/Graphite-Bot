@@ -204,9 +204,10 @@ pub use fishing_droptable::{
     fishing_base_treasure_result_policy,
 };
 pub use fishing_fish_delivery::{
-    FISHING_FISH_ITEM_DEFINITION_VERSION, FishingFishDeliveryLocation,
+    FISHING_FISH_ITEM_DEFINITION_VERSION, FishingClaimedCatchV1, FishingFishDeliveryLocation,
     FishingFishInstanceDeliveryError, FishingFishInstanceDeliveryReceiptV1,
-    FishingFishInstanceDeliveryRequestV1, deliver_fishing_fish_instance_v1,
+    FishingFishInstanceDeliveryRequestV1, FishingPendingCatchClaimReceiptV1,
+    claim_pending_fishing_catches_v1, deliver_fishing_fish_instance_v1,
 };
 pub use fishing_gold_rod::{
     FishingRelativeWeightMultiplier, GOLD_ROD_ACTION_SPEED_RATING_PERCENT,

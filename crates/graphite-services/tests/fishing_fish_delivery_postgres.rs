@@ -2,8 +2,8 @@ use graphite_items::ItemService;
 use graphite_services::{
     FISHING_FISH_ITEM_DEFINITION_VERSION, FishingArea, FishingFishDeliveryLocation,
     FishingFishInstanceDeliveryError, FishingFishInstanceDeliveryRequestV1, FishingSpecies,
-    FishingVariant, deliver_fishing_fish_instance_v1, fishing_species_policy,
-    resolve_fish_instance_numeric_v1,
+    FishingVariant, claim_pending_fishing_catches_v1, deliver_fishing_fish_instance_v1,
+    fishing_species_policy, resolve_fish_instance_numeric_v1,
 };
 use graphite_store::PgStore;
 use serde_json::Value;
@@ -210,6 +210,68 @@ async fn full_catchbag_preserves_unique_fish_as_one_pending_overflow_asset() {
         Err(FishingFishInstanceDeliveryError::ExistingPendingCatchDelivery)
     ));
     blocked.rollback().await.unwrap();
+
+    sqlx::query(
+        "DELETE FROM item_instances WHERE owner_player_id = $1 AND state->>'provenance' = 'TEST_FILLER'",
+    )
+    .bind(player_id)
+    .execute(store.pool())
+    .await
+    .unwrap();
+
+    let claim_operation = seed_operation(&store, player_id, nonce, "claim-overflow").await;
+    let mut claim_tx = store.pool().begin().await.unwrap();
+    let claim = claim_pending_fishing_catches_v1(&mut claim_tx, claim_operation, player_id)
+        .await
+        .unwrap();
+    assert_eq!(claim.claimed.len(), 1);
+    assert_eq!(claim.claimed[0].pending_delivery_id, pending_id);
+    assert_eq!(claim.claimed[0].item_instance_id, receipt.item_instance_id);
+    assert_eq!(claim.blocked_pending_delivery_id, None);
+    assert_eq!(claim.used_grams_after, receipt.catch_weight_grams);
+    assert_eq!(
+        claim_pending_fishing_catches_v1(&mut claim_tx, claim_operation, player_id)
+            .await
+            .unwrap(),
+        claim
+    );
+    sqlx::query("UPDATE operations SET state = 'COMMITTED', committed_at = now() WHERE id = $1")
+        .bind(claim_operation)
+        .execute(&mut *claim_tx)
+        .await
+        .unwrap();
+    claim_tx.commit().await.unwrap();
+
+    let claimed_location: String =
+        sqlx::query_scalar("SELECT location FROM item_instances WHERE id = $1")
+            .bind(receipt.item_instance_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(claimed_location, "CATCH_BAG");
+    let pending_state: String =
+        sqlx::query_scalar("SELECT state FROM pending_asset_deliveries WHERE id = $1")
+            .bind(pending_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(pending_state, "CLAIMED");
+
+    let catch_bag_after_claim = ItemService::new(store.clone())
+        .catch_bag(u64::try_from(discord_user_id).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(catch_bag_after_claim.pending_deliveries, 0);
+    assert_eq!(catch_bag_after_claim.used_grams, receipt.catch_weight_grams);
+
+    let mut committed_claim_replay = store.pool().begin().await.unwrap();
+    assert_eq!(
+        claim_pending_fishing_catches_v1(&mut committed_claim_replay, claim_operation, player_id)
+            .await
+            .unwrap(),
+        claim
+    );
+    committed_claim_replay.rollback().await.unwrap();
 }
 
 #[tokio::test]

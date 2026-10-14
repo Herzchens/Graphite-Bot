@@ -1720,3 +1720,48 @@ CatchBag capacity/display remains whole grams.
 The delivery path locks current CatchBag instances, sums their existing whole-gram projections, and
 checks the new fish's one-time round-half-up projection against the persisted CatchBag capacity curve.
 It never feeds that rounded number back into FishTension, valuation or length math.
+
+
+## Fishing pending unique-catch claim
+
+Branch: feat/fishing-pending-catch-claim
+
+### 1. Pending unique fish are reclaimed FIFO, never recreated
+
+**Implementation finding — CONFIRMED**
+
+Fish overflow now preserves the original unique ItemInstance in TEMP_OVERFLOW. Resolving that overflow
+must therefore move the same identity rather than minting a replacement from definition/quantity fields.
+
+**Final decision**
+
+Add a transaction-composable pending-catch claim primitive. It selects item-linked PENDING CatchBag
+deliveries in created-order, validates each linked ItemInstance is the same player's unique FISH asset
+in TEMP_OVERFLOW, and moves the original ItemInstance into CatchBag while marking the pending row
+CLAIMED.
+
+### 2. Claim stops at the first fish that does not fit
+
+**Safety decision — CONFIRMED**
+
+Skipping a large older pending fish to admit smaller later fish would silently create a hidden
+reordering/fairness policy and make replay/capacity behavior depend on later outputs.
+
+**Final decision**
+
+Claim is strict FIFO. Current CatchBag usage is locked once, projected with checked integer arithmetic,
+and the pass stops at the first non-fitting pending fish. Later rows remain untouched. This makes
+capacity pressure deterministic and preserves pending order.
+
+### 3. Claim is a child mutation of the later owning operation
+
+**Lifecycle decision — CONFIRMED**
+
+The original catch operation is already the provenance owner of the FishInstance. A later capacity
+resolution must not reopen or rewrite that historical operation.
+
+**Final decision**
+
+Claim uses the current owning operation for mutation-key replay/audit while leaving the original
+FishInstance creation operation unchanged. Rollback restores ItemInstance location, pending state and
+claim audit together. A committed retry returns the stored claim receipt without moving the fish twice.
