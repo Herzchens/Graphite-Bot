@@ -9,10 +9,12 @@ use crate::{
     FishingCatchBranchPreCapWeightsV1, FishingFishInstanceDeliveryError,
     FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
     FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, ManualFishingCastPreflight,
-    ManualFishingCastPreflightError, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingCastPreflightError, ManualFishingUnmodifiedCapabilityError,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
     deliver_fishing_fish_instance_v1, fishing_catch_branch_pre_cap_weights_v1,
     lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
-    resolve_manual_fishing_non_fish_outcome_v1, settle_active_fishing_baits_for_cast,
+    preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_non_fish_outcome_v1,
+    settle_active_fishing_baits_for_cast,
 };
 
 #[derive(Debug, Error)]
@@ -31,6 +33,8 @@ pub enum ManualFishingCastOwnerError {
     FishDelivery(#[from] FishingFishInstanceDeliveryError),
     #[error("unmodified Starter Pool provisional fish delivery requires Starter Pool")]
     ProvisionalFishOutsideStarterPool,
+    #[error(transparent)]
+    UnmodifiedCapability(#[from] ManualFishingUnmodifiedCapabilityError),
 }
 
 /// Owns an uncommitted manual Fishing cast transaction.
@@ -128,6 +132,20 @@ impl PendingManualFishingCastV1<'_> {
         )?)
     }
 
+    /// Previews physical capability for a candidate generated from this same locked
+    /// unmodified operation. Over-cap stages remain unresolved and never sample RNG here.
+    pub fn preview_unmodified_fish_capability_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingCastOwnerError> {
+        let candidate = self.preview_unmodified_fish_candidate_v1(fish_slot)?;
+        Ok(preview_manual_unmodified_fish_capability_v1(
+            self.preflight.area_access.area,
+            self.preflight.rod.kind,
+            candidate.numeric,
+        )?)
+    }
+
     /// Stages the single unmodified Starter Pool Fish candidate in the *still uncommittable*
     /// cast transaction. Starter Pool Fish always lands at the capability stage, so the
     /// physical line-break stage is bypassed. This call does NOT choose the catch branch;
@@ -140,6 +158,11 @@ impl PendingManualFishingCastV1<'_> {
         &mut self,
     ) -> Result<FishingFishInstanceDeliveryReceiptV1, ManualFishingCastOwnerError> {
         if self.preflight.area_access.area != FishingArea::StarterPool {
+            return Err(ManualFishingCastOwnerError::ProvisionalFishOutsideStarterPool);
+        }
+        if self.preview_unmodified_fish_capability_v1(0)?
+            != ManualFishingUnmodifiedCapabilityPreviewV1::StarterPoolGuaranteedLanded
+        {
             return Err(ManualFishingCastOwnerError::ProvisionalFishOutsideStarterPool);
         }
         let request = self.preview_unmodified_fish_candidate_v1(0)?;
