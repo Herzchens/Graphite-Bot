@@ -31,6 +31,8 @@ impl RootSeed {
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum RngError {
+    #[error("uniform sample upper bound must be positive")]
+    ZeroUpperBound,
     #[error("weighted sample requires at least one positive weight")]
     EmptyDistribution,
     #[error("weight total overflow")]
@@ -51,6 +53,20 @@ impl DomainRng {
         Self(ChaCha12Rng::from_seed(seed))
     }
 
+    pub fn sample_uniform_below(&mut self, upper_exclusive: u64) -> Result<u64, RngError> {
+        if upper_exclusive == 0 {
+            return Err(RngError::ZeroUpperBound);
+        }
+
+        let rejection_threshold = u64::MAX - (u64::MAX % upper_exclusive);
+        loop {
+            let candidate = self.0.next_u64();
+            if candidate < rejection_threshold {
+                return Ok(candidate % upper_exclusive);
+            }
+        }
+    }
+
     pub fn sample_weighted(&mut self, weights: &[u64]) -> Result<usize, RngError> {
         let total = weights.iter().try_fold(0_u64, |acc, &weight| {
             acc.checked_add(weight).ok_or(RngError::WeightOverflow)
@@ -59,13 +75,7 @@ impl DomainRng {
             return Err(RngError::EmptyDistribution);
         }
 
-        let rejection_threshold = u64::MAX - (u64::MAX % total);
-        let draw = loop {
-            let candidate = self.0.next_u64();
-            if candidate < rejection_threshold {
-                break candidate % total;
-            }
-        };
+        let draw = self.sample_uniform_below(total)?;
 
         let mut remaining = draw;
         for (index, &weight) in weights.iter().enumerate() {
@@ -102,6 +112,19 @@ mod tests {
             .map(|_| b.sample_weighted(&weights).unwrap())
             .collect();
         assert_eq!(left, right);
+    }
+
+    #[test]
+    fn uniform_below_rejects_zero_without_advancing_valid_replay() {
+        let root = RootSeed::from_bytes([5; 32]);
+        let mut rng = DomainRng::derive(root, fixed_operation(), "uniform.test");
+        assert_eq!(rng.sample_uniform_below(0), Err(RngError::ZeroUpperBound));
+
+        let mut replay = DomainRng::derive(root, fixed_operation(), "uniform.test");
+        assert_eq!(
+            rng.sample_uniform_below(1_000_000),
+            replay.sample_uniform_below(1_000_000)
+        );
     }
 
     #[test]

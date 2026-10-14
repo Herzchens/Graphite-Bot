@@ -6,6 +6,7 @@ use crate::{
     fishing_bait::{
         FishingBait, FishingBaitEffect, FishingRarity, MAX_FISH_PER_CAST, fishing_bait_policy,
     },
+    fishing_weight_bridge::FISHING_CANONICAL_WEIGHT_SCALE,
 };
 
 pub const NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT: u8 = 1;
@@ -60,10 +61,30 @@ impl FishingTension {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct FishingScaledTension {
+    pub rarity: FishingRarity,
+    pub source_weight_scaled_grams: u64,
+    numerator_gram_tension: u128,
+    denominator: u128,
+}
+
+impl FishingScaledTension {
+    #[must_use]
+    pub const fn numerator_gram_tension(self) -> u128 {
+        self.numerator_gram_tension
+    }
+
+    #[must_use]
+    pub const fn denominator(self) -> u128 {
+        self.denominator
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct FishingCatchLoad {
     pub fish_count: u8,
     numerator_gram_tension: u128,
-    denominator: u16,
+    denominator: u128,
 }
 
 impl FishingCatchLoad {
@@ -73,7 +94,7 @@ impl FishingCatchLoad {
     }
 
     #[must_use]
-    pub const fn denominator(self) -> u16 {
+    pub const fn denominator(self) -> u128 {
         self.denominator
     }
 }
@@ -229,6 +250,84 @@ pub fn fishing_tension(
     })
 }
 
+/// Computes exact FishTension from canonical 10^12-scaled gram weight without quantizing to whole
+/// grams.
+///
+/// This is the authoritative path for sampled FishInstances. The whole-gram fishing_tension helper
+/// remains valid for exact whole-gram policy inputs and historical tests, but a sampled FishInstance
+/// must use this scaled path so CatchBag display/capacity rounding cannot change capability or
+/// line-break outcomes.
+pub fn fishing_tension_from_canonical_scaled_weight(
+    weight_scaled_grams: u64,
+    rarity: FishingRarity,
+) -> Result<FishingScaledTension, FishingCapabilityError> {
+    if weight_scaled_grams == 0 {
+        return Err(FishingCapabilityError::ZeroFishWeight);
+    }
+
+    let multiplier = fishing_rarity_tension_multiplier(rarity);
+    let numerator = u128::from(weight_scaled_grams)
+        .checked_mul(u128::from(multiplier.numerator()))
+        .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
+    let denominator = u128::from(FISHING_CANONICAL_WEIGHT_SCALE)
+        .checked_mul(u128::from(multiplier.denominator()))
+        .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
+    let divisor = gcd_u128(numerator, denominator);
+
+    Ok(FishingScaledTension {
+        rarity,
+        source_weight_scaled_grams: weight_scaled_grams,
+        numerator_gram_tension: numerator / divisor,
+        denominator: denominator / divisor,
+    })
+}
+
+/// Sums canonical scaled-weight fish tensions exactly under the shared one-to-five-fish cap.
+pub fn fishing_catch_load_from_scaled_tensions(
+    tensions: &[FishingScaledTension],
+) -> Result<FishingCatchLoad, FishingCapabilityError> {
+    if tensions.is_empty() || tensions.len() > usize::from(MAX_FISH_PER_CAST) {
+        return Err(FishingCapabilityError::FishCountOutOfRange(tensions.len()));
+    }
+
+    let mut numerator = 0_u128;
+    let mut denominator = 1_u128;
+
+    for tension in tensions {
+        let tension_denominator = tension.denominator();
+        let denominator_gcd = gcd_u128(denominator, tension_denominator);
+        let common_denominator = denominator
+            .checked_div(denominator_gcd)
+            .and_then(|value| value.checked_mul(tension_denominator))
+            .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
+        let left_scale = common_denominator / denominator;
+        let right_scale = common_denominator / tension_denominator;
+        let scaled_left = numerator
+            .checked_mul(left_scale)
+            .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
+        let scaled_right = tension
+            .numerator_gram_tension()
+            .checked_mul(right_scale)
+            .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
+
+        numerator = scaled_left
+            .checked_add(scaled_right)
+            .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
+        denominator = common_denominator;
+
+        let divisor = gcd_u128(numerator, denominator);
+        numerator /= divisor;
+        denominator /= divisor;
+    }
+
+    Ok(FishingCatchLoad {
+        fish_count: u8::try_from(tensions.len())
+            .map_err(|_| FishingCapabilityError::ArithmeticOverflow)?,
+        numerator_gram_tension: numerator,
+        denominator,
+    })
+}
+
 /// Sums all fish tensions in one candidate fish catch exactly.
 ///
 /// A fish branch must contain between one and five fish. Treasure and junk branches deliberately do
@@ -274,8 +373,7 @@ pub fn fishing_catch_load(
         fish_count: u8::try_from(tensions.len())
             .map_err(|_| FishingCapabilityError::ArithmeticOverflow)?,
         numerator_gram_tension: numerator,
-        denominator: u16::try_from(denominator)
-            .map_err(|_| FishingCapabilityError::ArithmeticOverflow)?,
+        denominator,
     })
 }
 
@@ -352,7 +450,8 @@ pub fn manual_fishing_capability_ratio(
         .numerator_gram_tension()
         .checked_mul(u128::from(line_strength.denominator()))
         .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
-    let denominator = u128::from(catch_load.denominator())
+    let denominator = catch_load
+        .denominator()
         .checked_mul(line_strength.numerator_gram_tension())
         .ok_or(FishingCapabilityError::ArithmeticOverflow)?;
     let divisor = gcd_u128(numerator, denominator);

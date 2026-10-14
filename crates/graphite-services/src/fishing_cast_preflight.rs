@@ -61,9 +61,10 @@ pub enum ManualFishingCastPreflightError {
 ///
 /// The returned Account XP and Activity EXP snapshots are deliberately not exposed here: PostgreSQL
 /// owns the locks, and future settlement must use the canonical progression mutation APIs rather than
-/// treating preflight balance snapshots as later authority. The RNG context likewise keeps the raw
-/// persisted root private and exposes no draw API; the future Services-owned cast composition must add
-/// domain derivation only alongside a canonical production consumer. Existing area access remains
+/// treating preflight balance snapshots as later authority. The RNG context keeps the raw persisted
+/// root private and exposes only the versioned typed semantic-domain draw contract; the future
+/// Services-owned cast composition must still decide stage eligibility from authoritative policy.
+/// Existing area access remains
 /// permanent and therefore does not re-check a lower current ordinary Rod tier; the one explicit
 /// per-cast exception is Starter Basic, which remains Pool-only. A consistently Broken ordinary Rod
 /// is a valid low-level Rod snapshot but is rejected here before a cast can proceed. Bait Rack capacity
@@ -75,9 +76,9 @@ pub enum ManualFishingCastPreflightError {
 /// error. On success the caller still owns discrete outcome composition, active-bait inventory and
 /// consumption, normal or line-break durability consequence, Mending, CatchBag output, Fishing Account
 /// XP/AEXP, cooldown, operation finalization, outbox/audit effects, and commit. FishInstance numeric
-/// transforms and additional-fish identity/quantity semantics are frozen separately, but the RNG
-/// context still does not define domain labels, draw indices, or operation-root-to-PPM mapping. This
-/// function does not expose `/fish` by itself.
+/// transforms, additional-fish identity/quantity semantics, stable RNG domains/slot indices, and
+/// scaled-weight bridging are frozen separately. This function still does not compose or settle the
+/// cast and does not expose `/fish` by itself.
 pub async fn lock_manual_fishing_cast_preflight(
     tx: &mut Transaction<'_, Postgres>,
     operation_id: Uuid,

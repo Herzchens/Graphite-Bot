@@ -34,6 +34,7 @@ mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_species;
 mod fishing_variant;
+mod fishing_weight_bridge;
 mod forge;
 mod grinding;
 mod master_enchant;
@@ -170,10 +171,12 @@ pub use fishing_book_pool::{
 };
 pub use fishing_capability::{
     FishingCapabilityClassification, FishingCapabilityError, FishingCapabilityRatio,
-    FishingCatchLoad, FishingRodBaseStats, FishingTension, FishingTensionRatio,
-    ManualFishingLineStrength, NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT,
-    STRENGTHEN_MAX_LEVEL, fishing_catch_load, fishing_rarity_tension_multiplier, fishing_tension,
-    manual_fishing_capability_ratio, manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
+    FishingCatchLoad, FishingRodBaseStats, FishingScaledTension, FishingTension,
+    FishingTensionRatio, ManualFishingLineStrength,
+    NORMAL_ROD_DURABILITY_PER_COMPLETED_CAST_ATTEMPT, STRENGTHEN_MAX_LEVEL, fishing_catch_load,
+    fishing_catch_load_from_scaled_tensions, fishing_rarity_tension_multiplier, fishing_tension,
+    fishing_tension_from_canonical_scaled_weight, manual_fishing_capability_ratio,
+    manual_fishing_line_strength, ordinary_fishing_rod_base_stats,
 };
 pub use fishing_capability_routing::{
     FishingCapabilityResolutionError, FishingCapabilityRoute, FishingCapabilityRoutingPolicy,
@@ -225,7 +228,9 @@ pub use fishing_over_cap::{
     SHARP_HOOK_PERCENTAGE_POINTS_PER_LEVEL, preview_over_cap_catch_chance,
 };
 pub use fishing_rng::{
-    ManualFishingRngContext, ManualFishingRngContextError, lock_manual_fishing_rng_context,
+    MANUAL_FISHING_RNG_POLICY_VERSION, MANUAL_FISHING_RNG_PPM_SCALE, ManualFishingPpmDrawV1,
+    ManualFishingRngContext, ManualFishingRngContextError, ManualFishingRngDrawError,
+    ManualFishingWeightedDrawV1, lock_manual_fishing_rng_context,
 };
 pub use fishing_rod_durability::{
     FishingRodDurabilityConsequence, FishingRodDurabilityPolicyError, FishingRodDurabilityPreview,
@@ -255,6 +260,10 @@ pub use fishing_variant::{
     CANONICAL_FISH_VARIANT_COUNT, FishingVariant, FishingVariantPolicy, FishingVariantRatio,
     QualityBaitVariantWeightPreview, fishing_variant_catalog, fishing_variant_policy,
     preview_quality_bait_variant_weight,
+};
+pub use fishing_weight_bridge::{
+    FISHING_CANONICAL_WEIGHT_SCALE, FISHING_WEIGHT_BRIDGE_POLICY_VERSION,
+    FishingCatchWeightBridgeV1, FishingWeightBridgeError, bridge_canonical_fish_weight_v1,
 };
 pub use forge::{
     AdvancedForgePromotion, AdvancedForgePromotionPolicy, AdvancedForgeStackPolicy,
