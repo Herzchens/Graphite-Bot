@@ -46,6 +46,7 @@ mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_school_bait;
+mod fishing_speed;
 mod fishing_species;
 mod fishing_unbreaking_x;
 mod fishing_unmodified_capability;
@@ -337,6 +338,10 @@ pub use fishing_rod_state::{
 pub use fishing_school_bait::{
     ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
     resolve_manual_fishing_school_bait_quantity_v1,
+};
+pub use fishing_speed::{
+    ManualFishingEquipmentSpeedSourcesV1, ManualFishingSpeedCompositionError,
+    manual_fishing_cooldown_with_speed_sources_v1, manual_fishing_equipment_speed_sources_v1,
 };
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,

@@ -7,7 +7,7 @@ use crate::fishing_unmodified_line_stage::{
 };
 
 use crate::{
-    ActionSpeedBonus, ActionSpeedPolicyError, AppliedFishingRodDurabilityState,
+    AppliedFishingRodDurabilityState,
     BAIT_RACK_MAX_LEVEL, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea,
     FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
     FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
@@ -16,8 +16,8 @@ use crate::{
     FishingFishInstanceDeliveryRequestV1, FishingNonFishOutcomeDeliveryReceiptV1,
     FishingNonFishPayloadDeliveryError, FishingNonFishRollError, FishingOverCapError,
     FishingResolvedNonFishOutcomeV1, FishingRodDurabilityMutationError,
-    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution, FishingRodEnchant,
-    FishingRodLevelXEffect, FishingRodLevelXPolicyError, MULTI_TREASURE_MAX_LEVEL,
+    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution,
+    FishingSpeedCompositionError, MULTI_TREASURE_MAX_LEVEL,
     MULTICATCH_MAX_LEVEL, ManualFishingCastPreflight, ManualFishingCastPreflightError,
     ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError,
     ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
@@ -30,8 +30,8 @@ use crate::{
     STRENGTHEN_MAX_LEVEL, apply_operation_fishing_rod_durability_v1,
     canonical_enchant_max_resulting_level, deliver_fishing_fish_instance_v1,
     deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
-    fishing_rod_level_x_policy, lock_manual_fishing_cast_preflight,
-    manual_mine_fish_cooldown_policy, preview_manual_fishing_unmodified_fish_candidate_v1,
+    lock_manual_fishing_cast_preflight, manual_fishing_cooldown_with_speed_sources_v1,
+    preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_school_bait_fish_capability_v1,
     preview_manual_strengthen_fish_capability_v1, preview_manual_sturdy_bait_fish_capability_v1,
     preview_manual_unmodified_fish_capability_v1, preview_over_cap_catch_chance,
@@ -116,15 +116,11 @@ pub enum ManualFishingCastOwnerError {
     )]
     BaitRackRequiresExactLoadout,
     #[error(transparent)]
-    ActionSpeed(#[from] ActionSpeedPolicyError),
-    #[error(transparent)]
-    RodLevelX(#[from] FishingRodLevelXPolicyError),
+    SpeedComposition(#[from] FishingSpeedCompositionError),
     #[error(
         "Lure X baseline path requires one ordinary non-Gold Rod with only Lure X and no consumed bait"
     )]
     LureXRequiresExactLoadout,
-    #[error("Lure X scalar policy is inconsistent with the shared Fishing speed bucket contract")]
-    LureXPolicyMismatch,
     #[error(transparent)]
     MulticatchRoll(#[from] ManualFishingMulticatchRollError),
     #[error(
@@ -855,19 +851,11 @@ impl PendingManualFishingCastV1<'_> {
         &self,
     ) -> Result<ManualMineFishCooldownPolicy, ManualFishingCastOwnerError> {
         self.ensure_lure_x_only_cast_v1()?;
-        let policy = fishing_rod_level_x_policy(FishingRodEnchant::Lure)?;
-        let FishingRodLevelXEffect::Lure {
-            action_speed_rating_percent,
-            uses_shared_fishing_speed_bucket,
-        } = policy.effect
-        else {
-            return Err(ManualFishingCastOwnerError::LureXPolicyMismatch);
-        };
-        if !uses_shared_fishing_speed_bucket {
-            return Err(ManualFishingCastOwnerError::LureXPolicyMismatch);
-        }
-        let bonus = ActionSpeedBonus::new(u64::from(action_speed_rating_percent), 100)?;
-        Ok(manual_mine_fish_cooldown_policy(&[bonus])?)
+        Ok(manual_fishing_cooldown_with_speed_sources_v1(
+            self.preflight.rod.kind,
+            &self.preflight.rod.embedded_enchants,
+            &[],
+        )?)
     }
 
     pub fn preview_lure_x_base_branch_v1(
