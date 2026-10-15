@@ -2744,9 +2744,21 @@ fn positive_snowflake(nonce: Uuid) -> i64 {
 }
 
 fn next_snowflake(nonce: Uuid, offset: u64) -> i64 {
-    let raw = u64::from_be_bytes(nonce.as_bytes()[..8].try_into().unwrap());
+    // UUIDv7's leading 64 bits are timestamp-heavy, so parallel tests created in
+    // the same millisecond can share that prefix. Use the random tail instead.
+    let raw = u64::from_be_bytes(nonce.as_bytes()[8..].try_into().unwrap());
     let value = (raw % 7_999_999_999_999_999_000_u64)
         .saturating_add(1)
         .saturating_add(offset);
     i64::try_from(value).unwrap()
+}
+
+#[test]
+fn synthetic_snowflakes_distinguish_uuid_v7_random_tails() {
+    let shared_prefix = 0x018f_1234_5678_7abc_u128 << 64;
+    let first = Uuid::from_u128(shared_prefix | 0x8000_0000_0000_0001);
+    let second = Uuid::from_u128(shared_prefix | 0x8000_0000_0000_0002);
+
+    assert_ne!(positive_snowflake(first), positive_snowflake(second));
+    assert_eq!(next_snowflake(first, 1), positive_snowflake(first) + 1);
 }
