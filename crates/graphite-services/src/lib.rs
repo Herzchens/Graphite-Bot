@@ -45,6 +45,7 @@ mod fishing_rod_durability_receipt;
 mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
 mod fishing_rod_state;
+mod fishing_school_bait;
 mod fishing_species;
 mod fishing_unbreaking_x;
 mod fishing_unmodified_capability;
@@ -213,6 +214,7 @@ pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, PendingManualFishingBaitRackSelectedOutcomeV1,
     PendingManualFishingCastV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
+    PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingSturdyBaitSelectedOutcomeV1,
@@ -331,6 +333,10 @@ pub use fishing_rod_state::{
     EquippedFishingRodEnchantState, EquippedFishingRodKind, EquippedFishingRodStateError,
     lock_equipped_fishing_rod_cast_snapshot,
 };
+pub use fishing_school_bait::{
+    ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
+    resolve_manual_fishing_school_bait_quantity_v1,
+};
 pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
     FishingSpecies, FishingSpeciesPolicy, RareBaitAreaSpeciesWeightPreview,
@@ -342,8 +348,9 @@ pub use fishing_unbreaking_x::{
 };
 pub use fishing_unmodified_capability::{
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    preview_manual_multicatch_fish_capability_v1, preview_manual_strengthen_fish_capability_v1,
-    preview_manual_sturdy_bait_fish_capability_v1, preview_manual_unmodified_fish_capability_v1,
+    preview_manual_multicatch_fish_capability_v1, preview_manual_school_bait_fish_capability_v1,
+    preview_manual_strengthen_fish_capability_v1, preview_manual_sturdy_bait_fish_capability_v1,
+    preview_manual_unmodified_fish_capability_v1,
 };
 pub use fishing_unmodified_line_stage::{
     ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,

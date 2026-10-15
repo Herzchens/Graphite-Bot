@@ -101,6 +101,19 @@ pub fn preview_manual_multicatch_fish_capability_v1(
     })
 }
 
+/// Previews aggregate capability for a School-Bait-only Fish result.
+///
+/// School Bait changes only quantity. Once the pinned School proc determines one
+/// or two independently rolled same-area Fish candidates, the physical CatchLoad
+/// is the same exact sum used by the existing multi-fish capability kernel.
+pub fn preview_manual_school_bait_fish_capability_v1(
+    area: FishingArea,
+    rod: EquippedFishingRodKind,
+    candidates: &[FishingFishInstanceNumericV1],
+) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
+    preview_manual_multicatch_fish_capability_v1(area, rod, candidates)
+}
+
 /// Previews the exact physical capability route of one unmodified manual Fish candidate.
 ///
 /// Requires a candidate already resolved in the same canonical Fishing area. Starter Pool Fish
