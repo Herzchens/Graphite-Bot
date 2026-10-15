@@ -213,7 +213,8 @@ pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, PendingManualFishingBaitRackSelectedOutcomeV1,
     PendingManualFishingCastV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
-    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingStrengthenSelectedOutcomeV1,
+    PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
+    PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
 };
