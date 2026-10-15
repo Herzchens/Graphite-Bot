@@ -47,6 +47,7 @@ mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_school_bait;
 mod fishing_species;
+mod fishing_treasure_x;
 mod fishing_unbreaking_x;
 mod fishing_unmodified_capability;
 mod fishing_unmodified_line_stage;
@@ -219,6 +220,7 @@ pub use fishing_cast_owner::{
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingSturdyBaitSelectedOutcomeV1,
+    PendingManualFishingTreasureXSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
 };
@@ -342,6 +344,9 @@ pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
     FishingSpecies, FishingSpeciesPolicy, RareBaitAreaSpeciesWeightPreview,
     fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
+};
+pub use fishing_treasure_x::{
+    ManualFishingTreasureXBranchError, resolve_manual_fishing_treasure_x_branch_v1,
 };
 pub use fishing_unbreaking_x::{
     ManualFishingUnbreakingXError, ManualFishingUnbreakingXWearPreviewV1,

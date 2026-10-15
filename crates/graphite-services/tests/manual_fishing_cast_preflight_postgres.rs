@@ -15,12 +15,13 @@ use graphite_services::{
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingSturdyBaitSelectedOutcomeV1,
+    PendingManualFishingTreasureXSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
     direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
     lock_manual_fishing_cast_preflight, manual_fishing_base_fish_cast_aexp,
     multi_treasure_count_policy, multicatch_count_policy, preview_over_cap_catch_chance,
-    resolve_manual_fishing_direct_book_candidate_v1,
+    resolve_manual_fishing_direct_book_candidate_v1, resolve_manual_fishing_treasure_x_branch_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -497,6 +498,24 @@ async fn selected_direct_book_is_reachable_and_replay_stable_in_starter_and_ordi
     }
 }
 
+fn find_treasure_x_non_book_treasure_root(operation_id: Uuid) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    for nonce in 0_u64..20_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut branch = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if branch.sample_weighted(&[880, 85, 63]).unwrap() != 2 {
+            continue;
+        }
+        let mut treasure = DomainRng::derive(root, operation, "fishing.manual.v1.treasure_result");
+        if treasure.sample_weighted(&[20, 15, 4, 4, 5, 2]).unwrap() != 2 {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find Treasure-X non-book Treasure seed");
+}
+
 fn find_multi_treasure_root(
     operation_id: Uuid,
     treasure_result_index: usize,
@@ -860,6 +879,131 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
             .unwrap();
     assert_eq!((assets, xp), (0, 0));
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn treasure_x_uses_modified_outer_branch_and_rolls_back_selected_outcome() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "treasure-x",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "FISHING_ROD_TREASURE", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "treasure-x").await;
+    let root = find_treasure_x_non_book_treasure_root(operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+    assert_eq!(
+        pending.preview_treasure_x_branch_v1().unwrap(),
+        FishingCatchBranch::Treasure
+    );
+    assert_eq!(
+        pending.preview_treasure_x_branch_v1().unwrap(),
+        resolve_manual_fishing_treasure_x_branch_v1(pending.preflight().rng).unwrap()
+    );
+
+    let first = pending
+        .stage_treasure_x_selected_outcome_v1()
+        .await
+        .unwrap();
+    let replay = pending
+        .stage_treasure_x_selected_outcome_v1()
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    let PendingManualFishingTreasureXSelectedOutcomeV1::NonFish { staged, durability } = first
+    else {
+        panic!("forced Treasure-X non-book Treasure must settle as NonFish");
+    };
+    assert!(matches!(
+        staged.outcome,
+        FishingResolvedNonFishOutcomeV1::Treasure { .. }
+    ));
+    assert_eq!(staged.progression.account_xp.granted_xp, 2);
+    assert!(matches!(
+        durability,
+        AppliedFishingRodDurabilityState::Ordinary { .. }
+    ));
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    let assets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((assets, xp), (0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn treasure_x_rejects_lower_level_and_gold_combinations() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    for (suffix, tier, level) in [
+        ("treasure-nine", "WOOD", 9_i16),
+        ("gold-treasure-x", "GOLD", 10_i16),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        seed_enchant(&store, rod_id, "FISHING_ROD_TREASURE", level).await;
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.preview_treasure_x_branch_v1(),
+            Err(ManualFishingCastOwnerError::TreasureXRequiresExactLoadout)
+        ));
+        pending.rollback().await.unwrap();
+    }
 }
 
 #[tokio::test]
