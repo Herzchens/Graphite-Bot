@@ -43,6 +43,64 @@ pub enum ManualFishingUnmodifiedCapabilityError {
     OverCap(#[from] FishingOverCapError),
 }
 
+/// Previews aggregate capability for independently rolled Multicatch fish when
+/// Multicatch is the only gameplay modifier on an ordinary Rod.
+///
+/// Every candidate must belong to the same canonical area. CatchLoad is the exact
+/// sum of all canonical scaled FishTensions under the shared five-fish ceiling.
+/// Multicatch changes only quantity, so line strength remains the ordinary
+/// unmodified Rod value and the existing line-break/over-cap policies consume the
+/// resulting aggregate capability ratio.
+pub fn preview_manual_multicatch_fish_capability_v1(
+    area: FishingArea,
+    rod: EquippedFishingRodKind,
+    candidates: &[FishingFishInstanceNumericV1],
+) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
+    for candidate in candidates {
+        if !fishing_area_species_pool(area)
+            .iter()
+            .any(|row| row.species == candidate.species)
+        {
+            return Err(ManualFishingUnmodifiedCapabilityError::SpeciesOutsideArea);
+        }
+    }
+
+    let mut tensions = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        let rarity = fishing_species_policy(candidate.species).rarity;
+        tensions.push(fishing_tension_from_canonical_scaled_weight(
+            candidate.weight_scaled_grams(),
+            rarity,
+        )?);
+    }
+    let load = fishing_catch_load_from_scaled_tensions(&tensions)?;
+
+    let route = fishing_capability_routing_policy(area, FishingCatchBranch::Fish);
+    if route.guaranteed_capability_outcome().is_some() {
+        return Ok(ManualFishingUnmodifiedCapabilityPreviewV1::StarterPoolGuaranteedLanded);
+    }
+
+    let EquippedFishingRodKind::Ordinary { tier } = rod else {
+        return Err(ManualFishingUnmodifiedCapabilityError::StarterRodOutsidePool);
+    };
+    let strength = manual_fishing_line_strength(tier, true, None, false)?;
+    let ratio = manual_fishing_capability_ratio(load, strength)?;
+
+    Ok(match resolve_routed_fish_capability_stage(route, ratio)? {
+        FishingRoutedFishCapabilityStage::LandedWithinRodCapability => {
+            ManualFishingUnmodifiedCapabilityPreviewV1::WithinRodCapability { ratio }
+        }
+        FishingRoutedFishCapabilityStage::ResolveOverCap(required) => {
+            let ratio = required.capability_ratio();
+            ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending {
+                ratio,
+                line_break: preview_manual_fishing_line_break_chance_v1(ratio, false)?,
+                catch_chance: preview_over_cap_catch_chance(ratio, None)?,
+            }
+        }
+    })
+}
+
 /// Previews the exact physical capability route of one unmodified manual Fish candidate.
 ///
 /// Requires a candidate already resolved in the same canonical Fishing area. Starter Pool Fish

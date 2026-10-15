@@ -6,13 +6,15 @@ use graphite_services::{
     FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
     ManualFishingCastPreflightError, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1,
+    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MulticatchCount,
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingStrengthenSelectedOutcomeV1,
+    PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
+    PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
     direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
-    lock_manual_fishing_cast_preflight, resolve_manual_fishing_direct_book_candidate_v1,
+    lock_manual_fishing_cast_preflight, manual_fishing_base_fish_cast_aexp,
+    multicatch_count_policy, resolve_manual_fishing_direct_book_candidate_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -489,6 +491,28 @@ async fn selected_direct_book_is_reachable_and_replay_stable_in_starter_and_ordi
     }
 }
 
+fn find_multicatch_fish_root(operation_id: Uuid, level: u8) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    let single_ppm = multicatch_count_policy(level, MulticatchCount::Single)
+        .unwrap()
+        .probability_ppm;
+    for nonce in 0_u64..20_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut branch = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if branch.sample_weighted(&[176, 17, 7]).unwrap() != 0 {
+            continue;
+        }
+        let mut count = DomainRng::derive(root, operation, "fishing.manual.v1.multicatch_count");
+        let draw = count.sample_uniform_below(1_000_000).unwrap();
+        if draw >= u64::from(single_ppm) {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find a deterministic multi-fish Multicatch seed");
+}
+
 fn find_selected_direct_book_root(operation_id: Uuid) -> [u8; 32] {
     let operation = OperationId::from_uuid(operation_id);
     // Deterministically exercise the real versioned branch and Treasure-result domains,
@@ -799,6 +823,165 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
             .unwrap();
     assert_eq!((assets, xp), (0, 0));
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn multicatch_selected_fish_rolls_independent_slots_and_one_rod_event() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "multicatch-only",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "MULTICATCH", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "multicatch-only").await;
+    let root = find_multicatch_fish_root(operation_id, 10);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    assert_eq!(
+        pending.preview_multicatch_base_branch_v1().unwrap(),
+        FishingCatchBranch::Fish
+    );
+    let count = pending.preview_multicatch_count_v1().unwrap();
+    assert!(count.fish_count > 1);
+    assert_eq!(count, pending.preview_multicatch_count_v1().unwrap());
+
+    let candidates = pending.preview_multicatch_fish_candidates_v1().unwrap();
+    assert_eq!(candidates.len(), usize::from(count.fish_count));
+    for (index, candidate) in candidates.iter().enumerate() {
+        assert_eq!(candidate.fish_slot, u8::try_from(index).unwrap());
+    }
+    assert_eq!(
+        pending.preview_multicatch_fish_capability_v1().unwrap(),
+        ManualFishingUnmodifiedCapabilityPreviewV1::StarterPoolGuaranteedLanded
+    );
+
+    let first = pending
+        .stage_multicatch_selected_outcome_v1()
+        .await
+        .unwrap();
+    let replay = pending
+        .stage_multicatch_selected_outcome_v1()
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    let PendingManualFishingMulticatchSelectedOutcomeV1::LandedFish {
+        count: staged_count,
+        deliveries,
+        progression,
+        durability,
+    } = first
+    else {
+        panic!("forced Starter Pool Multicatch Fish must land");
+    };
+    assert_eq!(staged_count, count);
+    assert_eq!(deliveries.len(), usize::from(count.fish_count));
+    let mut ids = deliveries
+        .iter()
+        .map(|delivery| delivery.item_instance_id)
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), deliveries.len());
+    let rarities = deliveries
+        .iter()
+        .map(|delivery| delivery.rarity)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        progression.base_activity_xp,
+        manual_fishing_base_fish_cast_aexp(&rarities).unwrap()
+    );
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = durability else {
+        panic!("Multicatch-only path uses ordinary Rod durability");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    let created: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM item_instances WHERE created_by_operation_id = $1",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let asset_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let progression_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((created, asset_events, progression_events), (0, 0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn multicatch_owner_rejects_gold_and_additional_enchant() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    for (suffix, tier, second_enchant) in [
+        ("multicatch-gold", "GOLD", None),
+        ("multicatch-plus", "WOOD", Some(("STRENGTHEN", 1_i16))),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        seed_enchant(&store, rod_id, "MULTICATCH", 10).await;
+        if let Some((key, level)) = second_enchant {
+            seed_enchant(&store, rod_id, key, level).await;
+        }
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.preview_multicatch_base_branch_v1(),
+            Err(ManualFishingCastOwnerError::MulticatchRequiresExactLoadout)
+        ));
+        pending.rollback().await.unwrap();
+    }
 }
 
 #[tokio::test]
