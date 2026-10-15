@@ -2458,3 +2458,56 @@ remains identity-only. Gold Rod, consumed bait, or an additional Rod enchant fai
 closed rather than borrowing baseline authority. Replay and rollback preserve the
 same transaction guarantees, and this still does not authorize cast commit or
 Discord `/fish`.
+
+
+## Fishing Multicatch I-X selected outcome
+
+Branch: feat/fishing-multicatch-owner
+
+### 1. Quantity uses the dedicated pinned PPM domain and independent Fish slots
+
+**Owner correction — CONFIRMED**
+
+Multicatch Level L uses the owner-approved linear I-X curve: double 1.0% x L,
+triple 0.30% x L, quadruple 0.10% x L and quintuple 0.025% x L, with the
+remainder assigned to one fish. Every additional fish is an independent full
+FishInstance roll in the same area, and the shared maximum is five fish.
+
+**Final decision**
+
+Resolve one `MulticatchCount` bucket from the existing
+`fishing.manual.v1.multicatch_count` semantic PPM domain. For deterministic
+v1 replay, assign contiguous intervals in the canonical enum order Single,
+Double, Triple, Quadruple, Quintuple after first proving their integer PPM
+weights sum exactly to 1,000,000. Each resulting fish slot 0..count-1 then uses
+its already-frozen independent species/variant/weight/biological-noise domains.
+
+The interval ordering is a versioned RNG implementation contract; changing it
+would require a new policy/RNG version even though aggregate probabilities are
+unchanged.
+
+### 2. Capability uses aggregate CatchLoad, while settlement stays one cast
+
+**Owner correction — CONFIRMED**
+
+Multicatch changes quantity only. Capability must sum FishTension across every
+candidate fish, successful Fishing AEXP sums landed fish rarity values but caps
+at three times the base fish's AEXP, and a completed cast still owns exactly one
+ordinary Rod durability event.
+
+**Final decision**
+
+For an ordinary non-Gold Rod with exactly one Multicatch I-X enchant and zero
+consumed bait, keep baseline Fish/Junk/Treasure branch weights. On a Fish branch,
+resolve all candidate identities first, sum their canonical scaled tensions,
+then feed the aggregate ratio into the existing line-break-first capability
+stage. A landed result delivers every unique FishInstance under its own fish-slot
+mutation key, settles one successful progression receipt using the ordered rarity
+vector, and stages one operation-keyed Rod wear receipt.
+
+A line break delivers no fish and no successful XP while destroying the Rod.
+A survived over-cap result remains catch/escape-pending. Junk and non-book
+Treasure retain baseline settlement because Multicatch never applies to them;
+direct Book remains identity-only. Gold Rod, consumed bait and additional Rod
+enchants fail closed. The owner remains rollback-only and does not expose
+`/fish`.

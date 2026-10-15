@@ -32,6 +32,7 @@ mod fishing_gold_rod;
 mod fishing_limits;
 mod fishing_multi_treasure;
 mod fishing_multicatch;
+mod fishing_multicatch_roll;
 mod fishing_numeric;
 mod fishing_over_cap;
 mod fishing_payload;
@@ -210,8 +211,9 @@ pub use fishing_capability_routing::{
 };
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingCastV1, PendingManualFishingNonFishReceiptV1,
-    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingStrengthenSelectedOutcomeV1,
+    PendingManualFishingCastV1, PendingManualFishingMulticatchSelectedOutcomeV1,
+    PendingManualFishingNonFishReceiptV1, PendingManualFishingStarterBaseOutcomeV1,
+    PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
 };
@@ -263,6 +265,10 @@ pub use fishing_multicatch::{
     MulticatchCountPolicy, MulticatchLevelXCount, MulticatchLevelXCountPolicy,
     MulticatchPolicyError, compose_multicatch_and_school_bait, multicatch_count_policy,
     multicatch_level_x_count_policy,
+};
+pub use fishing_multicatch_roll::{
+    ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError,
+    resolve_manual_fishing_multicatch_count_v1,
 };
 pub use fishing_numeric::{
     FISHING_FIXED_POINT_SCALE, FISHING_LINE_BREAK_PROBABILITY_SCALE_PPM,
@@ -333,7 +339,8 @@ pub use fishing_unbreaking_x::{
 };
 pub use fishing_unmodified_capability::{
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    preview_manual_strengthen_fish_capability_v1, preview_manual_unmodified_fish_capability_v1,
+    preview_manual_multicatch_fish_capability_v1, preview_manual_strengthen_fish_capability_v1,
+    preview_manual_unmodified_fish_capability_v1,
 };
 pub use fishing_unmodified_line_stage::{
     ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
