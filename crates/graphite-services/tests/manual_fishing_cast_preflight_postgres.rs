@@ -1,13 +1,15 @@
 use graphite_progression::account_total_xp_for_level;
 use graphite_services::{
     AppliedFishingRodDurabilityState, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind,
-    FishingArea, FishingAreaAccessOrigin, FishingCatchBranch, FishingResolvedNonFishOutcomeV1,
-    MAX_FISH_PER_CAST, ManualFishingCastOwnerError, ManualFishingCastPreflightError,
-    ManualFishingPpmDrawV1, ManualFishingRngDrawError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
-    ManualFishingWeightedDrawV1, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
-    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingUnmodifiedSelectedOutcomeV1,
-    begin_manual_fishing_cast_v1, lock_manual_fishing_cast_preflight,
+    FishingArea, FishingAreaAccessOrigin, FishingCatchBranch, FishingDirectBookRollError,
+    FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
+    ManualFishingCastPreflightError, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1,
+    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingStarterBaseOutcomeV1,
+    PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
+    direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
+    lock_manual_fishing_cast_preflight, resolve_manual_fishing_direct_book_candidate_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -158,6 +160,42 @@ async fn unmodified_starter_cast_previews_stable_canonical_fish_and_rolls_back()
             .sample_weighted_v1(ManualFishingWeightedDrawV1::CatchBranch, &[176, 17, 7])
             .unwrap()]
     );
+    let preview0 =
+        resolve_manual_fishing_direct_book_candidate_v1(pending.preflight().rng, 0).unwrap();
+    assert_eq!(
+        preview0,
+        resolve_manual_fishing_direct_book_candidate_v1(pending.preflight().rng, 0).unwrap()
+    );
+    assert_eq!(preview0.treasure_slot, 0);
+    assert_eq!(
+        direct_fishing_book_pool_membership(preview0.enchant),
+        Some(preview0.pool)
+    );
+    assert!(
+        direct_fishing_finished_book_level_weight(preview0.enchant, preview0.level).unwrap() > 0
+    );
+    let preview1 =
+        resolve_manual_fishing_direct_book_candidate_v1(pending.preflight().rng, 1).unwrap();
+    assert_eq!(preview1.treasure_slot, 1);
+    assert!(matches!(
+        resolve_manual_fishing_direct_book_candidate_v1(pending.preflight().rng, 3),
+        Err(FishingDirectBookRollError::Rng(
+            ManualFishingRngDrawError::TreasureSlotOutOfRange(3)
+        ))
+    ));
+    match pending.preview_unmodified_selected_direct_book_v1() {
+        Ok(selected) => {
+            assert_eq!(selected, preview0);
+            assert_eq!(chosen_branch, FishingCatchBranch::Treasure);
+        }
+        Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch) => {
+            assert_ne!(chosen_branch, FishingCatchBranch::Treasure);
+        }
+        Err(ManualFishingCastOwnerError::BookRequiresSelectedEnchantBook) => {
+            assert_eq!(chosen_branch, FishingCatchBranch::Treasure);
+        }
+        Err(other) => panic!("unexpected direct-book preview error: {other:?}"),
+    }
     let first = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     let replay = pending.preview_unmodified_fish_candidate_v1(0).unwrap();
     assert_eq!(first, replay);

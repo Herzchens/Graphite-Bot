@@ -2244,3 +2244,41 @@ continue to fail closed. The pending owner must never expose a transaction commi
 or Discord `/fish` adapter until these final boundaries and all terminal effects
 are completed atomically. Repeated child staging must replay the same item,
 progression and operation-keyed Rod receipts without duplicate economic output.
+
+
+## Fishing deterministic direct Enchant Book identity
+
+### 1. Direct Book identity is a three-stage pinned slot draw
+
+**Implementation finding — CONFIRMED**
+
+The existing frozen direct-Fishing Enchant Book tables define five weighted pools
+(58/24/12/4/2), catalog-derived members with explicit weights (including the
+Mythic 45/30/25 split), and exact finished-level distributions respecting each
+selected enchant's resulting-level ceiling. The versioned manual RNG context
+already reserves independent Pool, Member and Level domains for each Treasure slot.
+
+**Final decision**
+
+Use those exact table weights and three semantic draw domains in order:
+`EnchantBookPool {treasure_slot}`, `EnchantBookMember {treasure_slot}`, then
+`EnchantBookLevel {treasure_slot}`. The resulting `(pool, enchant, level)` is
+an immutable candidate preview with stable per-slot identity. Reject out-of-range
+slots and empty/invalid canonical pools rather than applying guessed fallback
+distribution. The unmodified pending cast can expose this preview only after its
+real baseline CatchBranch and TreasureResult draws select Treasure / Enchant Book.
+
+### 2. Book preview is not Book ItemInstance delivery
+
+**Safety boundary — CONFIRMED**
+
+A selected Enchant Book is not an ordinary stack-lot Fishing payload. Dedicated
+versioned Book ItemInstance creation, bounded Item Bag/pending delivery, durable
+mutation receipts and audit/outbox remain separate dependencies.
+
+**Final decision**
+
+Do not allow this pure identity resolver to mint Book assets or award progression.
+The existing selected-cast staging continues to fail closed on direct Enchant
+Books until the dedicated Book writer has been composed and tested under the
+single cast-owned PostgreSQL transaction. `/fish` remains unavailable.

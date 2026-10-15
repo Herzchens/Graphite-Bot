@@ -24,6 +24,7 @@ mod fishing_capability_routing;
 mod fishing_cast_owner;
 mod fishing_cast_preflight;
 mod fishing_catch_branch_composition;
+mod fishing_direct_book_roll;
 mod fishing_droptable;
 mod fishing_fish_candidate;
 mod fishing_fish_delivery;
@@ -217,6 +218,10 @@ pub use fishing_cast_preflight::{
 pub use fishing_catch_branch_composition::{
     FISHING_BRANCH_PRE_CAP_WEIGHT_DENOMINATOR_V1, FishingCatchBranchPreCapWeightsV1,
     fishing_catch_branch_pre_cap_weights_v1,
+};
+pub use fishing_direct_book_roll::{
+    FishingDirectBookCandidateV1, FishingDirectBookRollError,
+    resolve_manual_fishing_direct_book_candidate_v1,
 };
 pub use fishing_droptable::{
     FishingCatchBranch, FishingCatchBranchBasePolicy, FishingTreasureResult,

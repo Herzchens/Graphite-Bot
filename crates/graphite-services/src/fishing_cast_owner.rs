@@ -8,12 +8,12 @@ use crate::{
     AppliedFishingRodDurabilityState, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind,
     FishingArea, FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
     FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
-    FishingCatchBranchPreCapWeightsV1, FishingFishInstanceDeliveryError,
-    FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
-    FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
-    FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, FishingRodDurabilityMutationError,
-    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution,
-    ManualFishingCastPreflight, ManualFishingCastPreflightError,
+    FishingCatchBranchPreCapWeightsV1, FishingDirectBookCandidateV1, FishingDirectBookRollError,
+    FishingFishInstanceDeliveryError, FishingFishInstanceDeliveryReceiptV1,
+    FishingFishInstanceDeliveryRequestV1, FishingNonFishOutcomeDeliveryReceiptV1,
+    FishingNonFishPayloadDeliveryError, FishingNonFishRollError, FishingResolvedNonFishOutcomeV1,
+    FishingRodDurabilityMutationError, FishingRodDurabilityMutationReceiptV1,
+    FishingRodDurabilityResolution, ManualFishingCastPreflight, ManualFishingCastPreflightError,
     ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
     ManualFishingRngDrawError, ManualFishingSuccessfulProgressionOutcomeV1,
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
@@ -22,9 +22,9 @@ use crate::{
     deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
     fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
     preview_manual_fishing_unmodified_fish_candidate_v1,
-    preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_non_fish_outcome_v1,
-    resolve_manual_fishing_unmodified_base_branch_v1, settle_active_fishing_baits_for_cast,
-    settle_manual_fishing_successful_progression_v1,
+    preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_direct_book_candidate_v1,
+    resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_unmodified_base_branch_v1,
+    settle_active_fishing_baits_for_cast, settle_manual_fishing_successful_progression_v1,
 };
 
 #[derive(Debug, Error)]
@@ -35,6 +35,13 @@ pub enum ManualFishingCastOwnerError {
     Bait(#[from] FishingBaitStateError),
     #[error(transparent)]
     NonFishRoll(#[from] FishingNonFishRollError),
+    #[error(transparent)]
+    DirectBookRoll(#[from] FishingDirectBookRollError),
+    #[error("the actual cast branch is not Treasure")]
+    BookRequiresTreasureBranch,
+    #[error("the actual Treasure category is not Enchant Book")]
+    BookRequiresSelectedEnchantBook,
+
     #[error(transparent)]
     CatchBranchRng(#[from] ManualFishingRngDrawError),
     #[error(transparent)]
@@ -178,6 +185,29 @@ impl PendingManualFishingCastV1<'_> {
             candidate,
             multi_treasure_level,
         )?)
+    }
+
+    /// Previews a direct Enchant Book identity only if this *unmodified* operation's
+    /// actual CatchBranch and TreasureResult RNG have both selected Enchant Book.
+    ///
+    /// Only slot 0 is eligible with no Multi Treasure enchant. This does not
+    /// materialize a Book ItemInstance, grant rewards or authorize cast commit.
+    pub fn preview_unmodified_selected_direct_book_v1(
+        &self,
+    ) -> Result<FishingDirectBookCandidateV1, ManualFishingCastOwnerError> {
+        if self.preview_unmodified_base_branch_v1()? != FishingCatchBranch::Treasure {
+            return Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch);
+        }
+        match self.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure) {
+            Err(ManualFishingCastOwnerError::NonFishRoll(
+                FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+            )) => Ok(resolve_manual_fishing_direct_book_candidate_v1(
+                self.preflight.rng,
+                0,
+            )?),
+            Ok(_) => Err(ManualFishingCastOwnerError::BookRequiresSelectedEnchantBook),
+            Err(other) => Err(other),
+        }
     }
 
     /// Stages one provisional Junk/non-book Treasure candidate, its canonical stack
