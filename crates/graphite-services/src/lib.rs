@@ -315,6 +315,7 @@ pub use fishing_progression_settlement::{
     manual_fishing_successful_base_aexp_v1, settle_manual_fishing_successful_progression_v1,
 };
 pub use fishing_rng::{
+    MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION,
     MANUAL_FISHING_RNG_POLICY_VERSION, MANUAL_FISHING_RNG_PPM_SCALE, ManualFishingPpmDrawV1,
     ManualFishingRngContext, ManualFishingRngContextError, ManualFishingRngDrawError,
     ManualFishingWeightedDrawV1, lock_manual_fishing_rng_context,

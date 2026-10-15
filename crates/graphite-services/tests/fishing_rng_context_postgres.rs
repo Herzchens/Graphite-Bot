@@ -1,8 +1,9 @@
 use graphite_services::{
     FishingCatchBranch, FishingNonFishRollError, FishingResolvedNonFishOutcomeV1,
-    FishingTreasureResult, ManualFishingRngContextError, ManualFishingWeightedDrawV1,
-    fishing_base_treasure_result_policy, fishing_non_book_treasure_payloads,
-    lock_manual_fishing_rng_context, resolve_manual_fishing_non_fish_outcome_v1,
+    FishingTreasureResult, MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION,
+    ManualFishingRngContextError, ManualFishingWeightedDrawV1, fishing_base_treasure_result_policy,
+    fishing_non_book_treasure_payloads, lock_manual_fishing_rng_context,
+    resolve_manual_fishing_non_fish_outcome_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -130,6 +131,40 @@ async fn rng_context_fails_closed_for_player_and_terminal_operation_mismatches()
     ));
     wrong_player.rollback().await.unwrap();
 
+    let wrong_kind_operation =
+        seed_operation(&store, owner_id, nonce, "wrong-kind", [92; 32]).await;
+    sqlx::query("UPDATE operations SET kind = 'NOT_FISHING' WHERE id = $1")
+        .bind(wrong_kind_operation)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let mut wrong_kind = store.pool().begin().await.unwrap();
+    assert!(matches!(
+        lock_manual_fishing_rng_context(&mut wrong_kind, wrong_kind_operation, owner_id).await,
+        Err(ManualFishingRngContextError::OperationKindMismatch { actual, .. })
+            if actual == "NOT_FISHING"
+    ));
+    wrong_kind.rollback().await.unwrap();
+
+    let wrong_policy_operation =
+        seed_operation(&store, owner_id, nonce, "wrong-policy", [93; 32]).await;
+    sqlx::query("UPDATE operations SET policy_version = 2 WHERE id = $1")
+        .bind(wrong_policy_operation)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let mut wrong_policy = store.pool().begin().await.unwrap();
+    assert!(matches!(
+        lock_manual_fishing_rng_context(&mut wrong_policy, wrong_policy_operation, owner_id,).await,
+        Err(
+            ManualFishingRngContextError::OperationPolicyVersionMismatch {
+                expected: MANUAL_FISHING_OPERATION_POLICY_VERSION,
+                actual: 2,
+            }
+        )
+    ));
+    wrong_policy.rollback().await.unwrap();
+
     sqlx::query("UPDATE operations SET state = 'COMMITTED' WHERE id = $1")
         .bind(operation_id)
         .execute(store.pool())
@@ -180,12 +215,14 @@ async fn seed_operation(
             .await
             .unwrap();
     sqlx::query(
-        "INSERT INTO operations (id, external_request_key, actor_discord_user_id, player_id, kind, state, policy_version, request_hash, rng_root) VALUES ($1, $2, $3, $4, 'MANUAL_FISHING_RNG_CONTEXT_TEST', 'PENDING', 1, $5, $6)",
+        "INSERT INTO operations (id, external_request_key, actor_discord_user_id, player_id, kind, state, policy_version, request_hash, rng_root) VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7, $8)",
     )
     .bind(operation_id)
     .bind(format!("test:manual-fishing-rng:{nonce}:{suffix}:{operation_id}"))
     .bind(discord_user_id)
     .bind(player_id)
+    .bind(MANUAL_FISHING_OPERATION_KIND)
+    .bind(MANUAL_FISHING_OPERATION_POLICY_VERSION)
     .bind([79_u8; 32].as_slice())
     .bind(rng_root.as_slice())
     .execute(store.pool())
