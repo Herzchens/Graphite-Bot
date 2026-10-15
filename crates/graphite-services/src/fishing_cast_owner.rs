@@ -2,7 +2,9 @@ use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::fishing_unmodified_line_stage::resolve_manual_unmodified_line_stage_v1;
+use crate::fishing_unmodified_line_stage::{
+    resolve_manual_sturdy_bait_line_stage_v1, resolve_manual_unmodified_line_stage_v1,
+};
 
 use crate::{
     AppliedFishingRodDurabilityState, BAIT_RACK_MAX_LEVEL, CanonicalEnchant, EquipmentTier,
@@ -28,8 +30,8 @@ use crate::{
     fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
     preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_strengthen_fish_capability_v1,
-    preview_manual_unmodified_fish_capability_v1, preview_over_cap_catch_chance,
-    resolve_manual_fishing_direct_book_candidate_v1,
+    preview_manual_sturdy_bait_fish_capability_v1, preview_manual_unmodified_fish_capability_v1,
+    preview_over_cap_catch_chance, resolve_manual_fishing_direct_book_candidate_v1,
     resolve_manual_fishing_multi_treasure_count_v1, resolve_manual_fishing_multicatch_count_v1,
     resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_unbreaking_x_wear_v1,
     resolve_manual_fishing_unmodified_base_branch_v1, settle_active_fishing_baits_for_cast,
@@ -91,6 +93,10 @@ pub enum ManualFishingCastOwnerError {
         "SharpHook baseline path requires one ordinary non-Gold Rod with only SharpHook I-X and no consumed bait"
     )]
     SharpHookRequiresExactLoadout,
+    #[error(
+        "Sturdy Bait baseline path requires one ordinary non-Gold Rod with no enchants and exactly one consumed Sturdy Bait"
+    )]
+    SturdyBaitRequiresExactLoadout,
     #[error("SharpHook capability and line-stage resolution disagree")]
     SharpHookCapabilityStageMismatch,
     #[error(
@@ -215,6 +221,28 @@ pub enum PendingManualFishingMulticatchSelectedOutcomeV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PendingManualFishingBaitRackSelectedOutcomeV1 {
+    LandedFish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    NonFish {
+        staged: PendingManualFishingNonFishReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    LineBroken {
+        durability: AppliedFishingRodDurabilityState,
+    },
+    OverCapCatchPending {
+        line_stage: ManualFishingUnmodifiedLineStageV1,
+    },
+    DirectBookPending {
+        candidate: FishingDirectBookCandidateV1,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingManualFishingSturdyBaitSelectedOutcomeV1 {
     LandedFish {
         delivery: FishingFishInstanceDeliveryReceiptV1,
         progression: ManualFishingProgressionSettlementReceiptV1,
@@ -813,6 +841,126 @@ impl PendingManualFishingCastV1<'_> {
         let resolution = if branch == FishingCatchBranch::Fish
             && matches!(
                 self.preview_bait_rack_line_stage_v1(0)?,
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+            ) {
+            FishingRodDurabilityResolution::LineBreak
+        } else {
+            FishingRodDurabilityResolution::CompletedCastAttempt {
+                ordinary_event_prevented_by_unbreaking: false,
+            }
+        };
+        let receipt = apply_operation_fishing_rod_durability_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            self.preflight.area_access.area,
+            self.preflight.rod.current_durability,
+            resolution,
+        )
+        .await?;
+        let applied = receipt.applied.clone();
+        self.staged_durability = Some(receipt);
+        Ok(applied)
+    }
+
+    fn ensure_sturdy_bait_only_cast_v1(&self) -> Result<(), ManualFishingCastOwnerError> {
+        let EquippedFishingRodKind::Ordinary { tier } = self.preflight.rod.kind else {
+            return Err(ManualFishingCastOwnerError::SturdyBaitRequiresExactLoadout);
+        };
+        if tier == EquipmentTier::Gold || !self.preflight.rod.embedded_enchants.is_empty() {
+            return Err(ManualFishingCastOwnerError::SturdyBaitRequiresExactLoadout);
+        }
+        if self.bait.plan.consumed_bait_categories != 1 {
+            return Err(ManualFishingCastOwnerError::SturdyBaitRequiresExactLoadout);
+        }
+        let mut consumed = self
+            .bait
+            .plan
+            .entries
+            .iter()
+            .filter(|entry| entry.action == FishingBaitCastConsumptionAction::ConsumeForCast);
+        let Some(entry) = consumed.next() else {
+            return Err(ManualFishingCastOwnerError::SturdyBaitRequiresExactLoadout);
+        };
+        if entry.bait != FishingBait::Sturdy || consumed.next().is_some() {
+            return Err(ManualFishingCastOwnerError::SturdyBaitRequiresExactLoadout);
+        }
+        Ok(())
+    }
+
+    pub fn preview_sturdy_bait_base_branch_v1(
+        &self,
+    ) -> Result<FishingCatchBranch, ManualFishingCastOwnerError> {
+        self.ensure_sturdy_bait_only_cast_v1()?;
+        Ok(resolve_manual_fishing_unmodified_base_branch_v1(
+            self.preflight.rng,
+        )?)
+    }
+
+    fn preview_sturdy_bait_fish_candidate_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+        self.ensure_sturdy_bait_only_cast_v1()?;
+        Ok(preview_manual_fishing_unmodified_fish_candidate_v1(
+            self.preflight.rng,
+            self.preflight.area_access.area,
+            fish_slot,
+        )?)
+    }
+
+    pub fn preview_sturdy_bait_fish_capability_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingCastOwnerError> {
+        let candidate = self.preview_sturdy_bait_fish_candidate_v1(fish_slot)?;
+        Ok(preview_manual_sturdy_bait_fish_capability_v1(
+            self.preflight.area_access.area,
+            self.preflight.rod.kind,
+            candidate.numeric,
+        )?)
+    }
+
+    pub fn preview_sturdy_bait_line_stage_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingCastOwnerError> {
+        let capability = self.preview_sturdy_bait_fish_capability_v1(fish_slot)?;
+        Ok(resolve_manual_sturdy_bait_line_stage_v1(
+            self.preflight.rng,
+            capability,
+        )?)
+    }
+
+    pub fn preview_sturdy_bait_selected_direct_book_v1(
+        &self,
+    ) -> Result<FishingDirectBookCandidateV1, ManualFishingCastOwnerError> {
+        if self.preview_sturdy_bait_base_branch_v1()? != FishingCatchBranch::Treasure {
+            return Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch);
+        }
+        match self.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure) {
+            Err(ManualFishingCastOwnerError::NonFishRoll(
+                FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+            )) => Ok(resolve_manual_fishing_direct_book_candidate_v1(
+                self.preflight.rng,
+                0,
+            )?),
+            Ok(_) => Err(ManualFishingCastOwnerError::BookRequiresSelectedEnchantBook),
+            Err(other) => Err(other),
+        }
+    }
+
+    pub async fn stage_sturdy_bait_rod_durability_v1(
+        &mut self,
+    ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
+        self.ensure_sturdy_bait_only_cast_v1()?;
+        if let Some(staged) = &self.staged_durability {
+            return Ok(staged.applied.clone());
+        }
+        let branch = self.preview_sturdy_bait_base_branch_v1()?;
+        let resolution = if branch == FishingCatchBranch::Fish
+            && matches!(
+                self.preview_sturdy_bait_line_stage_v1(0)?,
                 ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
             ) {
             FishingRodDurabilityResolution::LineBreak
@@ -1651,6 +1799,73 @@ impl PendingManualFishingCastV1<'_> {
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
                     )) => Ok(PendingManualFishingBaitRackSelectedOutcomeV1::DirectBookPending {
                         candidate: self.preview_bait_rack_selected_direct_book_v1()?,
+                    }),
+                    Err(other) => Err(other),
+                }
+            }
+        }
+    }
+
+    /// Composes the selected baseline branch after exactly one Sturdy Bait was
+    /// consumed. Sturdy changes only physical capability and final line-break chance.
+    pub async fn stage_sturdy_bait_selected_outcome_v1(
+        &mut self,
+    ) -> Result<PendingManualFishingSturdyBaitSelectedOutcomeV1, ManualFishingCastOwnerError> {
+        let branch = self.preview_sturdy_bait_base_branch_v1()?;
+        match branch {
+            FishingCatchBranch::Fish => match self.preview_sturdy_bait_line_stage_v1(0)? {
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. } => {
+                    let durability = self.stage_sturdy_bait_rod_durability_v1().await?;
+                    Ok(PendingManualFishingSturdyBaitSelectedOutcomeV1::LineBroken {
+                        durability,
+                    })
+                }
+                line_stage @ ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending {
+                    ..
+                } => Ok(
+                    PendingManualFishingSturdyBaitSelectedOutcomeV1::OverCapCatchPending {
+                        line_stage,
+                    },
+                ),
+                ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk => {
+                    let request = self.preview_sturdy_bait_fish_candidate_v1(0)?;
+                    let delivery = deliver_fishing_fish_instance_v1(
+                        &mut self.tx,
+                        self.preflight.operation_id,
+                        self.preflight.player_id,
+                        request,
+                    )
+                    .await?;
+                    let progression = settle_manual_fishing_successful_progression_v1(
+                        &mut self.tx,
+                        self.preflight.operation_id,
+                        self.preflight.player_id,
+                        &ManualFishingSuccessfulProgressionOutcomeV1::Fish {
+                            landed_rarities: vec![delivery.rarity],
+                        },
+                    )
+                    .await?;
+                    let durability = self.stage_sturdy_bait_rod_durability_v1().await?;
+                    Ok(PendingManualFishingSturdyBaitSelectedOutcomeV1::LandedFish {
+                        delivery,
+                        progression,
+                        durability,
+                    })
+                }
+            },
+            FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
+                match self.stage_non_fish_candidate_v1(branch).await {
+                    Ok(staged) => {
+                        let durability = self.stage_sturdy_bait_rod_durability_v1().await?;
+                        Ok(PendingManualFishingSturdyBaitSelectedOutcomeV1::NonFish {
+                            staged,
+                            durability,
+                        })
+                    }
+                    Err(ManualFishingCastOwnerError::NonFishRoll(
+                        FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+                    )) => Ok(PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBookPending {
+                        candidate: self.preview_sturdy_bait_selected_direct_book_v1()?,
                     }),
                     Err(other) => Err(other),
                 }

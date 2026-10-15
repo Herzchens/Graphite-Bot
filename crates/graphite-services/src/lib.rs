@@ -215,6 +215,7 @@ pub use fishing_cast_owner::{
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
+    PendingManualFishingSturdyBaitSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
 };
@@ -342,7 +343,7 @@ pub use fishing_unbreaking_x::{
 pub use fishing_unmodified_capability::{
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_strengthen_fish_capability_v1,
-    preview_manual_unmodified_fish_capability_v1,
+    preview_manual_sturdy_bait_fish_capability_v1, preview_manual_unmodified_fish_capability_v1,
 };
 pub use fishing_unmodified_line_stage::{
     ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,

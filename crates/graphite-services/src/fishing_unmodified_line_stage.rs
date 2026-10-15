@@ -36,13 +36,31 @@ pub(crate) fn resolve_manual_unmodified_line_stage_v1(
     rng: ManualFishingRngContext,
     preview: ManualFishingUnmodifiedCapabilityPreviewV1,
 ) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedLineStageError> {
+    resolve_manual_line_stage_v1(rng, preview, false)
+}
+
+/// Resolves the first ordered over-cap line stage when Sturdy Bait is the only
+/// capability modifier. The exact Sturdy line-break preview is revalidated before
+/// the same pinned LineBreak PPM domain is interpreted.
+pub(crate) fn resolve_manual_sturdy_bait_line_stage_v1(
+    rng: ManualFishingRngContext,
+    preview: ManualFishingUnmodifiedCapabilityPreviewV1,
+) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedLineStageError> {
+    resolve_manual_line_stage_v1(rng, preview, true)
+}
+
+fn resolve_manual_line_stage_v1(
+    rng: ManualFishingRngContext,
+    preview: ManualFishingUnmodifiedCapabilityPreviewV1,
+    sturdy_bait_active: bool,
+) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedLineStageError> {
     let ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending {
         ratio, line_break, ..
     } = preview
     else {
         return Ok(ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk);
     };
-    if preview_manual_fishing_line_break_chance_v1(ratio, false)? != line_break {
+    if preview_manual_fishing_line_break_chance_v1(ratio, sturdy_bait_active)? != line_break {
         return Err(ManualFishingUnmodifiedLineStageError::MismatchedLineBreakPreview);
     }
     let draw_ppm = rng.sample_ppm_v1(ManualFishingPpmDrawV1::LineBreak)?;
