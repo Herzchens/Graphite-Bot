@@ -278,15 +278,28 @@ async fn pinned_baseline_starter_outcome_stages_only_the_selected_branch_and_rol
             .unwrap();
     let selected = pending.preview_unmodified_base_branch_v1().unwrap();
 
-    // A selected direct Enchant Book requires a dedicated ItemInstance writer.
-    // The current pending-only owner must fail closed before any asset or XP.
+    // A selected direct Book is a replayable pending identity, not a payout.
     if selected == FishingCatchBranch::Treasure
         && pending.preview_non_fish_candidate_v1(selected).is_err()
     {
-        assert!(matches!(
-            pending.stage_unmodified_starter_base_outcome_v1().await,
-            Err(ManualFishingCastOwnerError::NonFishRoll(_))
-        ));
+        let candidate = pending
+            .preview_unmodified_selected_direct_book_v1()
+            .unwrap();
+        let first = pending
+            .stage_unmodified_starter_base_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(
+            first,
+            PendingManualFishingStarterBaseOutcomeV1::DirectBookPending { candidate }
+        );
+        assert_eq!(
+            first,
+            pending
+                .stage_unmodified_starter_base_outcome_v1()
+                .await
+                .unwrap()
+        );
     } else {
         let first = pending
             .stage_unmodified_starter_base_outcome_v1()
@@ -532,10 +545,24 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
     if branch == FishingCatchBranch::Treasure
         && pending.preview_non_fish_candidate_v1(branch).is_err()
     {
-        assert!(matches!(
-            pending.stage_unmodified_selected_outcome_v1().await,
-            Err(ManualFishingCastOwnerError::NonFishRoll(_))
-        ));
+        let candidate = pending
+            .preview_unmodified_selected_direct_book_v1()
+            .unwrap();
+        let first = pending
+            .stage_unmodified_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(
+            first,
+            PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending { candidate }
+        );
+        assert_eq!(
+            first,
+            pending
+                .stage_unmodified_selected_outcome_v1()
+                .await
+                .unwrap()
+        );
     } else {
         let first = pending
             .stage_unmodified_selected_outcome_v1()
