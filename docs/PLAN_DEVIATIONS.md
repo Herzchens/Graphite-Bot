@@ -2719,3 +2719,48 @@ multiplying independently.
 Reject Lure I-IX, Gold Rod + Lure X, active bait and additional enchant combinations in this slice.
 The result remains rollback-only: cooldown persistence, terminal operation result/outbox and live
 `/fish` stay unavailable until the complete lifecycle is composed.
+
+
+## Fishing Treasure X selected-outcome owner
+
+Branch: feat/fishing-treasure-x-owner
+
+### 1. Standalone Treasure X has an exact branch-normalization contract
+
+**Normative alignment — CONFIRMED**
+
+The canonical Rod table freezes Treasure X at +80% relative Treasure-branch weight
+and explicitly says it does not alter the internal within-Treasure result table.
+The Master Spec also publishes standalone Treasure-X direct-book cadence, so the
+isolated Treasure-X effect is a complete relative branch transformation rather
+than a preview-only scalar awaiting another modifier.
+
+**Final decision**
+
+For an ordinary non-Gold Rod whose only embedded enchant is Treasure at its
+canonical Level X and whose cast consumed no bait, apply the existing exact 9/5
+Treasure relative multiplier to canonical base weights 176/17/7. Lift the three
+ratios onto the common integer scale 5, producing exact weighted-sampling inputs
+880/85/63 for Fish/Junk/Treasure on the already-versioned CatchBranch RNG domain.
+Do not convert these to rounded percentages before sampling.
+
+Fish identity, capability, line-break, internal Treasure-result weights,
+successful progression and ordinary Rod wear remain owned by their existing
+versioned children. Direct Enchant Book delivery and survived over-cap catch
+remain explicitly pending.
+
+### 2. Combined modifier and lower-level cases stay fail-closed
+
+**Safety finding — CONFIRMED**
+
+The shared Fishing modifier caps govern multi-source composition, and the current
+scalar Rod policy freezes only the final Level-X Treasure value. No Levels I-IX
+curve or Gold/Bait/Treasure-X cap ordering may be inferred from the standalone
+contract.
+
+**Final decision**
+
+Reject Treasure I-IX, Gold Rod + Treasure X, active bait and any additional Rod
+enchant in this slice. Those states continue through the future shared capped
+modifier owner. This selected-outcome path stays rollback-only and does not
+authorize operation commit or Discord `/fish`.
