@@ -8,6 +8,7 @@ use graphite_services::{
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
     ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1,
     NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingStarterBaseOutcomeV1,
+    PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
     direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
@@ -798,6 +799,191 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
             .unwrap();
     assert_eq!((assets, xp), (0, 0));
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn strengthen_only_selected_outcome_uses_exact_level_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "strengthen-only",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "STRENGTHEN", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "strengthen-only").await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+
+    let branch = pending.preview_strengthen_base_branch_v1().unwrap();
+    assert_eq!(branch, pending.preview_strengthen_base_branch_v1().unwrap());
+    let capability = pending.preview_strengthen_fish_capability_v1(0).unwrap();
+    assert_eq!(
+        capability,
+        pending.preview_strengthen_fish_capability_v1(0).unwrap()
+    );
+
+    if branch == FishingCatchBranch::Treasure
+        && pending.preview_non_fish_candidate_v1(branch).is_err()
+    {
+        let candidate = pending
+            .preview_strengthen_selected_direct_book_v1()
+            .unwrap();
+        let first = pending
+            .stage_strengthen_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(
+            first,
+            PendingManualFishingStrengthenSelectedOutcomeV1::DirectBookPending { candidate }
+        );
+        assert_eq!(
+            first,
+            pending
+                .stage_strengthen_selected_outcome_v1()
+                .await
+                .unwrap()
+        );
+    } else {
+        let first = pending
+            .stage_strengthen_selected_outcome_v1()
+            .await
+            .unwrap();
+        let replay = pending
+            .stage_strengthen_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(first, replay);
+        match (branch, first) {
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingStrengthenSelectedOutcomeV1::LandedFish {
+                    progression,
+                    durability,
+                    ..
+                },
+            ) => {
+                assert_eq!(progression.account_xp.granted_xp, 2);
+                assert!(matches!(
+                    durability,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                ));
+            }
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingStrengthenSelectedOutcomeV1::LineBroken { durability },
+            ) => {
+                let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = durability else {
+                    panic!("line break must resolve on ordinary Rod");
+                };
+                assert_eq!(preview.resulting_durability, 0);
+            }
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingStrengthenSelectedOutcomeV1::OverCapCatchPending { line_stage },
+            ) => {
+                assert!(matches!(
+                    line_stage,
+                    ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending { .. }
+                ));
+            }
+            (
+                FishingCatchBranch::Junk | FishingCatchBranch::Treasure,
+                PendingManualFishingStrengthenSelectedOutcomeV1::NonFish { staged, durability },
+            ) => {
+                assert_eq!(staged.progression.account_xp.granted_xp, 2);
+                assert!(matches!(
+                    durability,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                ));
+            }
+            (selected, staged) => {
+                panic!("Strengthen selected branch/result mismatch: {selected:?} {staged:?}")
+            }
+        }
+    }
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    let assets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((assets, xp), (0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn strengthen_owner_accepts_i_through_x_but_rejects_gold_and_extra_modifiers() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    for (suffix, tier, level, extra, accepted) in [
+        ("strengthen-i", "WOOD", 1_i16, false, true),
+        ("strengthen-x", "WOOD", 10_i16, false, true),
+        ("strengthen-gold", "GOLD", 10_i16, false, false),
+        ("strengthen-extra", "WOOD", 10_i16, true, false),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        seed_enchant(&store, rod_id, "STRENGTHEN", level).await;
+        if extra {
+            seed_enchant(&store, rod_id, "MENDING", 1).await;
+        }
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        if accepted {
+            assert!(pending.preview_strengthen_base_branch_v1().is_ok());
+            assert!(pending.preview_strengthen_fish_capability_v1(0).is_ok());
+        } else {
+            assert!(matches!(
+                pending.preview_strengthen_base_branch_v1(),
+                Err(ManualFishingCastOwnerError::StrengthenRequiresExactLoadout)
+            ));
+        }
+        pending.rollback().await.unwrap();
+    }
 }
 
 #[tokio::test]
