@@ -2350,3 +2350,29 @@ all fail closed in this slice. Do not infer a per-level prevention curve or bypa
 the shared modifier/cap composer. This durability composition remains rollback-only;
 it does not finalize the cast, settle Mending, resolve over-cap catch/escape or
 enable `/fish`.
+
+
+## Fishing Unbreaking X selected outcome
+
+Branch: feat/fishing-unbreaking-x-outcome
+
+**Normative alignment — CONFIRMED**
+
+Unbreaking X changes only the one ordinary durability event. It does not alter
+the baseline branch table, Fish identity, capability, Treasure category or
+successful-progression tables. The previous slice already proves the exact
+operation-pinned 20% prevention draw and line-break override.
+
+**Final decision**
+
+Compose the actual selected baseline branch under the same transaction for the
+exact Unbreaking-X-only loadout. Landed Fish receives its unique FishInstance,
+canonical successful Account XP/Fishing AEXP and the operation-keyed durability
+receipt. Junk/non-book Treasure receives its canonical payload/progression and
+the same durability child. Line break stages only Rod destruction. A survived
+over-cap Fish remains catch/escape-pending and a direct Book remains identity-only
+until their separate unresolved owners are complete.
+
+Same-operation repeated staging must replay all child receipts. Rollback removes
+Fish/payload delivery, progression events and Rod wear together. This still grants
+no transaction commit or Discord `/fish` exposure.

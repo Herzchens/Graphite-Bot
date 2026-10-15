@@ -132,6 +132,28 @@ pub enum PendingManualFishingUnmodifiedSelectedOutcomeV1 {
     },
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingManualFishingUnbreakingXSelectedOutcomeV1 {
+    LandedFish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    NonFish {
+        staged: PendingManualFishingNonFishReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    LineBroken {
+        durability: AppliedFishingRodDurabilityState,
+    },
+    OverCapCatchPending {
+        line_stage: ManualFishingUnmodifiedLineStageV1,
+    },
+    DirectBookPending {
+        candidate: FishingDirectBookCandidateV1,
+    },
+}
+
 /// Owns an uncommitted manual Fishing cast transaction.
 ///
 /// There is intentionally no commit or transaction-extraction method until the entire cast
@@ -210,6 +232,26 @@ impl PendingManualFishingCastV1<'_> {
         &self,
     ) -> Result<FishingDirectBookCandidateV1, ManualFishingCastOwnerError> {
         if self.preview_unmodified_base_branch_v1()? != FishingCatchBranch::Treasure {
+            return Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch);
+        }
+        match self.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure) {
+            Err(ManualFishingCastOwnerError::NonFishRoll(
+                FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+            )) => Ok(resolve_manual_fishing_direct_book_candidate_v1(
+                self.preflight.rng,
+                0,
+            )?),
+            Ok(_) => Err(ManualFishingCastOwnerError::BookRequiresSelectedEnchantBook),
+            Err(other) => Err(other),
+        }
+    }
+
+    /// Previews a direct Enchant Book identity for the narrow Unbreaking-X-only
+    /// baseline when the actual branch and Treasure result select a Book.
+    pub fn preview_unbreaking_x_selected_direct_book_v1(
+        &self,
+    ) -> Result<FishingDirectBookCandidateV1, ManualFishingCastOwnerError> {
+        if self.preview_unbreaking_x_base_branch_v1()? != FishingCatchBranch::Treasure {
             return Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch);
         }
         match self.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure) {
@@ -640,6 +682,79 @@ impl PendingManualFishingCastV1<'_> {
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
                     )) => Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending {
                         candidate: self.preview_unmodified_selected_direct_book_v1()?,
+                    }),
+                    Err(other) => Err(other),
+                }
+            }
+        }
+    }
+
+    /// Composes the selected branch for the exact Unbreaking-X-only baseline path.
+    ///
+    /// Catch identity/capability remain the baseline kernels because Unbreaking X is
+    /// branch-neutral. Landed Fish and non-Fish outcomes stage the same asset/XP
+    /// children as the zero-enchant baseline, while ordinary Rod wear is resolved
+    /// through the independent pinned Unbreaking domain. Line break still destroys
+    /// the Rod with zero successful XP. Over-cap catch and direct Book delivery stay
+    /// explicitly pending. The transaction remains non-committable.
+    pub async fn stage_unbreaking_x_selected_outcome_v1(
+        &mut self,
+    ) -> Result<PendingManualFishingUnbreakingXSelectedOutcomeV1, ManualFishingCastOwnerError> {
+        let branch = self.preview_unbreaking_x_base_branch_v1()?;
+        match branch {
+            FishingCatchBranch::Fish => {
+                match self.preview_unbreaking_x_line_stage_v1(0)? {
+                    ManualFishingUnmodifiedLineStageV1::LineBroken { .. } => {
+                        let durability = self.stage_unbreaking_x_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::LineBroken {
+                            durability,
+                        })
+                    }
+                    line_stage @ ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending { .. } => {
+                        Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::OverCapCatchPending {
+                            line_stage,
+                        })
+                    }
+                    ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk => {
+                        let request = self.preview_unbreaking_x_fish_candidate_v1(0)?;
+                        let delivery = deliver_fishing_fish_instance_v1(
+                            &mut self.tx,
+                            self.preflight.operation_id,
+                            self.preflight.player_id,
+                            request,
+                        )
+                        .await?;
+                        let progression = settle_manual_fishing_successful_progression_v1(
+                            &mut self.tx,
+                            self.preflight.operation_id,
+                            self.preflight.player_id,
+                            &ManualFishingSuccessfulProgressionOutcomeV1::Fish {
+                                landed_rarities: vec![delivery.rarity],
+                            },
+                        )
+                        .await?;
+                        let durability = self.stage_unbreaking_x_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::LandedFish {
+                            delivery,
+                            progression,
+                            durability,
+                        })
+                    }
+                }
+            }
+            FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
+                match self.stage_non_fish_candidate_v1(branch).await {
+                    Ok(staged) => {
+                        let durability = self.stage_unbreaking_x_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::NonFish {
+                            staged,
+                            durability,
+                        })
+                    }
+                    Err(ManualFishingCastOwnerError::NonFishRoll(
+                        FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+                    )) => Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBookPending {
+                        candidate: self.preview_unbreaking_x_selected_direct_book_v1()?,
                     }),
                     Err(other) => Err(other),
                 }
