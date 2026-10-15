@@ -211,9 +211,9 @@ pub use fishing_capability_routing::{
 };
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingCastV1, PendingManualFishingMulticatchSelectedOutcomeV1,
-    PendingManualFishingNonFishReceiptV1, PendingManualFishingStarterBaseOutcomeV1,
-    PendingManualFishingStrengthenSelectedOutcomeV1,
+    PendingManualFishingCastV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
+    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
 };
@@ -293,7 +293,8 @@ pub use fishing_payload_delivery::{
     deliver_fishing_non_fish_outcome_v1, deliver_fishing_non_fish_payload_v1,
 };
 pub use fishing_payload_roll::{
-    FishingNonFishRollError, resolve_manual_fishing_non_fish_outcome_v1,
+    FishingNonFishRollError, resolve_manual_fishing_multi_treasure_count_v1,
+    resolve_manual_fishing_non_fish_outcome_v1,
 };
 pub use fishing_progression_settlement::{
     MANUAL_FISHING_ACCOUNT_XP_REWARD, ManualFishingProgressionSettlementError,

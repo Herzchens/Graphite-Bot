@@ -6,15 +6,18 @@ use graphite_services::{
     FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
     ManualFishingCastPreflightError, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MulticatchCount,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
+    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MultiTreasureCount,
+    MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    PendingManualFishingBaitRackSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
     direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
     lock_manual_fishing_cast_preflight, manual_fishing_base_fish_cast_aexp,
-    multicatch_count_policy, resolve_manual_fishing_direct_book_candidate_v1,
+    multi_treasure_count_policy, multicatch_count_policy,
+    resolve_manual_fishing_direct_book_candidate_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
@@ -491,6 +494,37 @@ async fn selected_direct_book_is_reachable_and_replay_stable_in_starter_and_ordi
     }
 }
 
+fn find_multi_treasure_root(
+    operation_id: Uuid,
+    treasure_result_index: usize,
+    level: u8,
+) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    let single_ppm = multi_treasure_count_policy(level, MultiTreasureCount::Single)
+        .unwrap()
+        .probability_ppm;
+    for nonce in 0_u64..200_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut branch = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if branch.sample_weighted(&[176, 17, 7]).unwrap() != 2 {
+            continue;
+        }
+        let mut treasure = DomainRng::derive(root, operation, "fishing.manual.v1.treasure_result");
+        if treasure.sample_weighted(&[20, 15, 4, 4, 5, 2]).unwrap() != treasure_result_index {
+            continue;
+        }
+        let mut count =
+            DomainRng::derive(root, operation, "fishing.manual.v1.multi_treasure_count");
+        let draw = count.sample_uniform_below(1_000_000).unwrap();
+        if draw >= u64::from(single_ppm) {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find a deterministic repeated Multi Treasure seed");
+}
+
 fn find_multicatch_fish_root(operation_id: Uuid, level: u8) -> [u8; 32] {
     let operation = OperationId::from_uuid(operation_id);
     let single_ppm = multicatch_count_policy(level, MulticatchCount::Single)
@@ -809,6 +843,209 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
             .await
             .unwrap();
     assert_eq!(rod_durability, 200);
+    let assets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((assets, xp), (0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn multi_treasure_non_book_repeats_payloads_and_one_rod_event() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "multi-treasure-nonbook",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "MULTI_TREASURE", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "multi-treasure-nonbook").await;
+    let root = find_multi_treasure_root(operation_id, 0, 10);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    assert_eq!(
+        pending.preview_multi_treasure_base_branch_v1().unwrap(),
+        FishingCatchBranch::Treasure
+    );
+    let preview = pending
+        .preview_non_fish_candidate_v1(FishingCatchBranch::Treasure)
+        .unwrap();
+    let FishingResolvedNonFishOutcomeV1::Treasure { payloads, .. } = &preview else {
+        panic!("forced Treasure result must stay Treasure");
+    };
+    assert!(payloads.len() > 1);
+
+    let first = pending
+        .stage_multi_treasure_selected_outcome_v1()
+        .await
+        .unwrap();
+    let replay = pending
+        .stage_multi_treasure_selected_outcome_v1()
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    let PendingManualFishingMultiTreasureSelectedOutcomeV1::NonFish { staged, durability } = first
+    else {
+        panic!("forced non-book Multi Treasure must settle as NonFish");
+    };
+    assert_eq!(staged.outcome, preview);
+    assert_eq!(staged.delivery.deliveries.len(), payloads.len());
+    assert_eq!(staged.progression.base_activity_xp, 10);
+    assert_eq!(staged.progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = durability else {
+        panic!("Multi Treasure-only path uses ordinary Rod durability");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    pending.rollback().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        200
+    );
+    let assets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((assets, xp), (0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn multi_treasure_direct_books_keep_independent_pending_identities() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "multi-treasure-books",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "MULTI_TREASURE", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "multi-treasure-books").await;
+    let root = find_multi_treasure_root(operation_id, 2, 10);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    assert_eq!(
+        pending.preview_multi_treasure_base_branch_v1().unwrap(),
+        FishingCatchBranch::Treasure
+    );
+    assert!(matches!(
+        pending.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure),
+        Err(ManualFishingCastOwnerError::NonFishRoll(
+            graphite_services::FishingNonFishRollError::EnchantBookRequiresDedicatedResolver
+        ))
+    ));
+
+    let (count, candidates) = pending
+        .preview_multi_treasure_selected_direct_books_v1()
+        .unwrap();
+    assert!(count > 1);
+    assert_eq!(candidates.len(), usize::from(count));
+    for (slot, candidate) in candidates.iter().enumerate() {
+        assert_eq!(candidate.treasure_slot, u8::try_from(slot).unwrap());
+        assert_eq!(
+            *candidate,
+            resolve_manual_fishing_direct_book_candidate_v1(
+                pending.preflight().rng,
+                u8::try_from(slot).unwrap(),
+            )
+            .unwrap()
+        );
+    }
+
+    let first = pending
+        .stage_multi_treasure_selected_outcome_v1()
+        .await
+        .unwrap();
+    assert_eq!(
+        first,
+        PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBooksPending {
+            count,
+            candidates: candidates.clone(),
+        }
+    );
+    assert_eq!(
+        first,
+        pending
+            .stage_multi_treasure_selected_outcome_v1()
+            .await
+            .unwrap()
+    );
+
+    pending.rollback().await.unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        200
+    );
     let assets: i64 =
         sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
             .bind(operation_id)

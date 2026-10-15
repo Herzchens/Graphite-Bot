@@ -88,23 +88,38 @@ pub fn resolve_manual_fishing_non_fish_outcome_v1(
     }
 }
 
-fn resolve_treasure_count(
+/// Resolves the owner-approved Multi Treasure I-X repetition count from the
+/// operation-pinned semantic PPM domain.
+///
+/// The v1 interval order is Single, Double, Triple, matching the existing
+/// non-book payload resolver. Repeated direct Enchant Books may call this same
+/// owner so Book and non-book Treasure cannot disagree on quantity or replay.
+pub fn resolve_manual_fishing_multi_treasure_count_v1(
     rng: ManualFishingRngContext,
-    level: Option<u8>,
+    level: u8,
 ) -> Result<u8, FishingNonFishRollError> {
-    let Some(level) = level else {
-        return Ok(1);
-    };
     let bucket = rng.sample_ppm_v1(ManualFishingPpmDrawV1::MultiTreasureCount)?;
     let mut threshold = 0_u32;
     for candidate in MULTI_TREASURE_COUNTS {
         let policy = multi_treasure_count_policy(level, candidate)?;
-        threshold += policy.probability_ppm;
+        threshold = threshold
+            .checked_add(policy.probability_ppm)
+            .ok_or(FishingNonFishRollError::InvalidMultiTreasureDistribution)?;
         if bucket < threshold {
             return Ok(policy.treasure_count);
         }
     }
     Err(FishingNonFishRollError::InvalidMultiTreasureDistribution)
+}
+
+fn resolve_treasure_count(
+    rng: ManualFishingRngContext,
+    level: Option<u8>,
+) -> Result<u8, FishingNonFishRollError> {
+    match level {
+        None => Ok(1),
+        Some(level) => resolve_manual_fishing_multi_treasure_count_v1(rng, level),
+    }
 }
 
 fn select_weighted_payload(
