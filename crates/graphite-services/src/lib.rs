@@ -30,6 +30,7 @@ mod fishing_fish_candidate;
 mod fishing_fish_delivery;
 mod fishing_gold_rod;
 mod fishing_limits;
+mod fishing_luck_sea_x;
 mod fishing_multi_treasure;
 mod fishing_multicatch;
 mod fishing_multicatch_roll;
@@ -259,6 +260,11 @@ pub use fishing_gold_rod::{
     preview_gold_fishing_rod_species_weight,
 };
 pub use fishing_limits::MAX_FISH_PER_CAST;
+pub use fishing_luck_sea_x::{
+    LuckOfSeaXBranchWeightPreviewV1, LuckOfSeaXSpeciesWeightPreviewV1,
+    ManualFishingLuckOfSeaXError, preview_luck_of_sea_x_branch_weight_v1,
+    preview_luck_of_sea_x_species_weight_v1,
+};
 pub use fishing_multi_treasure::{
     MULTI_TREASURE_MAX_ITEMS, MULTI_TREASURE_MAX_LEVEL, MULTI_TREASURE_PROBABILITY_BASIS_POINTS,
     MULTI_TREASURE_PROBABILITY_SCALE_PPM, MultiTreasureCount, MultiTreasureCountPolicy,

@@ -2764,3 +2764,41 @@ Reject Treasure I-IX, Gold Rod + Treasure X, active bait and any additional Rod
 enchant in this slice. Those states continue through the future shared capped
 modifier owner. This selected-outcome path stays rollback-only and does not
 authorize operation commit or Discord `/fish`.
+
+
+## Fishing Luck of the Sea X pre-cap composition
+
+Branch: feat/fishing-luck-sea-x-precap
+
+### 1. The two scalar axes can be represented exactly before shared caps
+
+**Normative alignment — CONFIRMED**
+
+The canonical Level-X scalar policy freezes Luck of the Sea X at +60% relative
+weight for Rare/Epic/Legendary/Mythic species and -30% relative Junk-branch
+weight, both before immutable FishInstance creation. It does not alter Fish or
+Treasure branch weights and does not define a lower-level curve.
+
+**Final decision**
+
+Expose exact pre-cap previews only. Junk uses factor 70/100; Fish/Treasure remain
+1/1. Rare-or-better canonical area species rows use 160/100; Common/Uncommon
+remain 1/1. Every area/species base weight is re-derived from the canonical pool,
+so callers cannot inject fabricated rows. These rational forms intentionally
+preserve the scalar policy without normalizing or drawing RNG.
+
+### 2. No selected outcome until shared cap/normalization authority exists
+
+**Safety finding — CONFIRMED**
+
+Luck of the Sea changes both outer catch and inner species distributions, while
+the broader Fishing design routes multi-source effects through shared modifier
+caps. The current source does not freeze the final cap composition/ordering for
+Gold Rod, bait, events and other simultaneous sources.
+
+**Final decision**
+
+Do not add a Luck-of-the-Sea selected-cast owner in this slice. Levels I-IX and
+all final normalized weights remain fail-closed. The pre-cap previews are inputs
+for the future shared modifier owner only and do not authorize assets, XP, Rod
+wear, operation commit or Discord `/fish`.
