@@ -209,7 +209,8 @@ pub use fishing_capability_routing::{
     resolve_fishing_over_cap_sequence, resolve_routed_fish_capability_stage,
 };
 pub use fishing_cast_owner::{
-    ManualFishingCastOwnerError, PendingManualFishingCastV1, PendingManualFishingNonFishReceiptV1,
+    ManualFishingCastOwnerError, PendingManualFishingBaitRackSelectedOutcomeV1,
+    PendingManualFishingCastV1, PendingManualFishingNonFishReceiptV1,
     PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,

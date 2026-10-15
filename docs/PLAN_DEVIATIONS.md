@@ -2417,3 +2417,44 @@ remains unresolved catch/escape, and direct Book remains identity-only.
 Gold + Strengthen, Strengthen plus another enchant, and bait combinations fail
 closed. Replays must return the same child receipts and rollback removes all
 provisional effects. No cast commit or `/fish` exposure is authorized.
+
+
+## Fishing Bait Rack-only selected outcome
+
+Branch: feat/fishing-bait-rack-owner
+
+### 1. Capacity-only Bait Rack does not change catch semantics when no bait is consumed
+
+**Normative alignment — CONFIRMED**
+
+Bait Rack I-III owns only active bait-category capacity: the native three slots
+become four, five or six. It does not change Fish/Junk/Treasure branch weights,
+Fish identity, capability, line-break math, Treasure result weights or ordinary
+Rod wear by itself.
+
+**Final decision**
+
+For a locked ordinary non-Gold Rod with exactly one Bait Rack enchant at canonical
+Level I-III and zero consumed bait categories, retain the canonical baseline branch,
+Fish candidate, capability and line-break kernels. The preflight's authoritative
+Bait Rack capacity remains visible and validated, but capacity alone cannot become
+a hidden catch modifier.
+
+### 2. Selected outcomes reuse baseline settlement only in the zero-bait state
+
+**Safety boundary — CONFIRMED**
+
+Once any bait is actually consumed, its category-specific effect may alter quantity,
+quality/species, Treasure branch weights or line safety. Gold Rod and any additional
+Rod enchant likewise require their own composition rules.
+
+**Final decision**
+
+In the exact Bait-Rack-only / zero-consumed-bait state, landed Fish and
+Junk/non-book Treasure may reuse existing unique asset/progression children plus
+the one operation-keyed ordinary Rod durability event. Line break stages only Rod
+destruction, survived over-cap Fish remains catch/escape-pending, and direct Book
+remains identity-only. Gold Rod, consumed bait, or an additional Rod enchant fails
+closed rather than borrowing baseline authority. Replay and rollback preserve the
+same transaction guarantees, and this still does not authorize cast commit or
+Discord `/fish`.
