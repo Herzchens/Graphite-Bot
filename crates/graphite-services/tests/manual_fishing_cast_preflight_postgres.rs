@@ -10,13 +10,14 @@ use graphite_services::{
     MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
     PendingManualFishingBaitRackSelectedOutcomeV1,
     PendingManualFishingMultiTreasureSelectedOutcomeV1,
-    PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
+    PendingManualFishingMulticatchSelectedOutcomeV1,
+    PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
     direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
     lock_manual_fishing_cast_preflight, manual_fishing_base_fish_cast_aexp,
-    multi_treasure_count_policy, multicatch_count_policy,
+    multi_treasure_count_policy, multicatch_count_policy, preview_over_cap_catch_chance,
     resolve_manual_fishing_direct_book_candidate_v1,
 };
 use graphite_store::PgStore;
@@ -1378,6 +1379,215 @@ async fn bait_rack_only_owner_rejects_gold_and_additional_enchant() {
             pending.preview_bait_rack_base_branch_v1(),
             Err(ManualFishingCastOwnerError::BaitRackRequiresExactLoadout)
         ));
+        pending.rollback().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn sharp_hook_only_selected_outcome_preserves_exact_pending_catch_chance() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "sharp-hook-only",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "SHARP_HOOK", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "sharp-hook-only").await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+
+    let branch = pending.preview_sharp_hook_base_branch_v1().unwrap();
+    assert_eq!(branch, pending.preview_sharp_hook_base_branch_v1().unwrap());
+    let capability = pending.preview_sharp_hook_fish_capability_v1(0).unwrap();
+    assert_eq!(
+        capability,
+        pending.preview_sharp_hook_fish_capability_v1(0).unwrap()
+    );
+    if let ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending {
+        ratio,
+        catch_chance,
+        ..
+    } = capability
+    {
+        assert_eq!(catch_chance.sharp_hook_level, Some(10));
+        assert_eq!(
+            catch_chance,
+            preview_over_cap_catch_chance(ratio, Some(10)).unwrap()
+        );
+    }
+
+    if branch == FishingCatchBranch::Treasure
+        && pending.preview_non_fish_candidate_v1(branch).is_err()
+    {
+        let candidate = pending
+            .preview_sharp_hook_selected_direct_book_v1()
+            .unwrap();
+        let first = pending
+            .stage_sharp_hook_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(
+            first,
+            PendingManualFishingSharpHookSelectedOutcomeV1::DirectBookPending { candidate }
+        );
+        assert_eq!(
+            first,
+            pending
+                .stage_sharp_hook_selected_outcome_v1()
+                .await
+                .unwrap()
+        );
+    } else {
+        let first = pending
+            .stage_sharp_hook_selected_outcome_v1()
+            .await
+            .unwrap();
+        let replay = pending
+            .stage_sharp_hook_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(first, replay);
+        match (branch, first) {
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingSharpHookSelectedOutcomeV1::LandedFish {
+                    progression,
+                    durability,
+                    ..
+                },
+            ) => {
+                assert_eq!(progression.account_xp.granted_xp, 2);
+                assert!(matches!(
+                    durability,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                ));
+            }
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingSharpHookSelectedOutcomeV1::LineBroken { durability },
+            ) => {
+                let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = durability else {
+                    panic!("line break must resolve on ordinary Rod");
+                };
+                assert_eq!(preview.resulting_durability, 0);
+            }
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingSharpHookSelectedOutcomeV1::OverCapCatchPending {
+                    line_stage,
+                    catch_chance,
+                },
+            ) => {
+                assert!(matches!(
+                    line_stage,
+                    ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending { .. }
+                ));
+                let ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending { ratio, .. } =
+                    capability
+                else {
+                    panic!("pending SharpHook catch requires over-cap capability");
+                };
+                assert_eq!(
+                    catch_chance,
+                    preview_over_cap_catch_chance(ratio, Some(10)).unwrap()
+                );
+            }
+            (
+                FishingCatchBranch::Junk | FishingCatchBranch::Treasure,
+                PendingManualFishingSharpHookSelectedOutcomeV1::NonFish { staged, durability },
+            ) => {
+                assert_eq!(staged.progression.account_xp.granted_xp, 2);
+                assert!(matches!(
+                    durability,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                ));
+            }
+            (selected, staged) => {
+                panic!("SharpHook selected branch/result mismatch: {selected:?} {staged:?}")
+            }
+        }
+    }
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    let assets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((assets, xp), (0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn sharp_hook_owner_accepts_i_through_x_but_rejects_gold_and_extra_modifiers() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    for (suffix, tier, level, extra, accepted) in [
+        ("sharp-hook-i", "WOOD", 1_i16, false, true),
+        ("sharp-hook-x", "WOOD", 10_i16, false, true),
+        ("sharp-hook-gold", "GOLD", 10_i16, false, false),
+        ("sharp-hook-extra", "WOOD", 10_i16, true, false),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        seed_enchant(&store, rod_id, "SHARP_HOOK", level).await;
+        if extra {
+            seed_enchant(&store, rod_id, "MENDING", 1).await;
+        }
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        if accepted {
+            assert!(pending.preview_sharp_hook_base_branch_v1().is_ok());
+            assert!(pending.preview_sharp_hook_fish_capability_v1(0).is_ok());
+        } else {
+            assert!(matches!(
+                pending.preview_sharp_hook_base_branch_v1(),
+                Err(ManualFishingCastOwnerError::SharpHookRequiresExactLoadout)
+            ));
+        }
         pending.rollback().await.unwrap();
     }
 }

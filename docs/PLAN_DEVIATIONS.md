@@ -2558,3 +2558,40 @@ rerolled Book candidates without issuing Book assets, progression or Rod wear.
 Line-break/over-cap behavior on a Fish branch remains the baseline ordered
 capability path. Gold Rod, consumed bait and additional enchants fail closed.
 No cast commit or Discord `/fish` exposure is authorized.
+
+
+## Fishing SharpHook I-X selected-outcome owner
+
+### 1. SharpHook modifies only post-line-break over-cap catch chance
+
+**Normative alignment — CONFIRMED**
+
+The frozen SharpHook formula is
+`clamp(0.85 - 0.25 × (R - 1) + 0.02 × level, 0.15, 0.95)`
+for Levels I-X. It does not alter catch-branch weights, Fish identity, Rod line
+strength, line-break probability, successful progression or ordinary Rod wear.
+
+**Final decision**
+
+For an ordinary non-Gold Rod with exactly one SharpHook I-X enchant and no consumed
+bait, reuse baseline branch/Fish resolution and the existing exact capability plus
+line-break owners. Only the over-cap catch-chance field is recomputed with
+`preview_over_cap_catch_chance(ratio, Some(level))`. Within-capability Fish,
+Junk/non-book Treasure, Direct-Book pending identity and the one operation-keyed
+Rod event keep their existing owners.
+
+### 2. Exact rational catch chance remains pending until RNG mapping is frozen
+
+**Unresolved boundary — CONFIRMED**
+
+The over-cap policy returns reduced rational probabilities whose denominators are not
+guaranteed to map exactly onto the existing 1,000,000-PPM `OverCapCatch` domain.
+No canonical floor/ceil/nearest conversion or alternate weighted-domain rule is frozen.
+
+**Final decision**
+
+After a SharpHook over-cap Fish survives line break, return the exact
+`OverCapCatchChancePolicy` with the pending line stage. Do not round or sample it.
+A line break still stages only Rod destruction; within-capability Fish and non-Fish
+outcomes can stage existing rollback-only asset/XP/wear children. Gold, bait and
+additional enchants fail closed. This slice does not authorize `/fish`.
