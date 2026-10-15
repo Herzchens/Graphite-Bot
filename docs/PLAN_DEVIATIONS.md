@@ -2682,3 +2682,40 @@ share the same rollback-owned transaction. This does not authorize `/fish`.
 School Bait combined with Multicatch remains outside this slice because the existing
 quantity policy intentionally does not freeze ordering between those independent
 stages; no ordering is inferred here.
+
+
+## Fishing Lure X selected-outcome composition
+
+Branch: feat/fishing-lure-x-owner
+
+### 1. Lure X uses the existing shared action-speed owner and leaves catch identity unchanged
+
+**Normative alignment — CONFIRMED**
+
+The canonical Fishing Rod table freezes Lure X at +15% fishing action-speed rating and explicitly
+places it in the shared speed bucket. The shared manual Mine/Fish speed policy already owns additive
+composition, the +33.33% cap, half-up millisecond rounding and the 7.5-second cooldown floor. Lure
+does not alter branch weights, Fish identity, capability, over-cap chance or Rod durability.
+
+**Final decision**
+
+For a locked ordinary non-Gold Rod whose only embedded enchant is canonical Lure X and whose cast
+consumed no bait, reuse the baseline branch/Fish/capability/Rod children. Feed the exact 15/100
+speed bonus into the existing shared action-speed owner; the single-source result is 8,696 ms and
+does not hit either the shared cap or floor. Carry that cooldown preview alongside every selected
+outcome variant so later command/cooldown wiring cannot reinterpret Lure as a direct duration
+multiplier.
+
+### 2. No downward Lure curve or combined speed policy is inferred
+
+**Safety finding — CONFIRMED**
+
+The current scalar Fishing policy freezes only the final Level-X Lure value. It does not define
+Levels I-IX, and Gold Rod/Event/Partner speed sources share the same cap bucket rather than
+multiplying independently.
+
+**Final decision**
+
+Reject Lure I-IX, Gold Rod + Lure X, active bait and additional enchant combinations in this slice.
+The result remains rollback-only: cooldown persistence, terminal operation result/outbox and live
+`/fish` stay unavailable until the complete lifecycle is composed.
