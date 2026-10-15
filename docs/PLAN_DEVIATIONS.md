@@ -2511,3 +2511,50 @@ Treasure retain baseline settlement because Multicatch never applies to them;
 direct Book remains identity-only. Gold Rod, consumed bait and additional Rod
 enchants fail closed. The owner remains rollback-only and does not expose
 `/fish`.
+
+
+## Fishing Multi Treasure I-X selected outcome
+
+Branch: feat/fishing-multi-treasure-owner
+
+### 1. Book and non-book Treasure share one pinned repetition count
+
+**Owner correction — CONFIRMED**
+
+Multi Treasure Level L uses double 0.60% x L and triple 0.15% x L, with the
+remainder single. It preserves the already-selected outer Treasure category.
+Each repeated payload is independently resolved; repeated Enchant Books
+independently reroll pool, member and finished level rather than cloning slot 0.
+
+**Final decision**
+
+Expose the existing operation-pinned Multi Treasure count resolver so direct Book
+handling and non-book payload handling use exactly the same
+`fishing.manual.v1.multi_treasure_count` result. Keep the existing stable v1
+Single/Double/Triple interval order. Non-book categories continue to use their
+per-treasure-slot payload domains. If the outer category is Enchant Book, resolve
+one independent `(pool, enchant, level)` candidate for every slot 0..count-1.
+
+### 2. Quantity changes only the Treasure branch and still owns one cast settlement
+
+**Normative alignment — CONFIRMED**
+
+Multi Treasure does not alter Fish/Junk/Treasure branch weights, Fish identity,
+Fish capability or ordinary Rod durability. Successful Treasure Activity EXP is
+5 base AEXP per landed result with the already-frozen 10-AEXP cast cap, while a
+completed cast still has one ordinary Rod durability event.
+
+**Final decision**
+
+For an ordinary non-Gold Rod with exactly one Multi Treasure I-X enchant and zero
+consumed bait, retain the baseline outer branch. Fish remains one FishInstance;
+Junk remains one Junk result. A non-book Treasure may deliver one to three
+independently rerolled payloads, then settle one progression receipt using the
+landed payload count and one operation-keyed ordinary Rod wear receipt.
+
+Direct Enchant Books remain identity-only because finished Book ItemInstance
+persistence/delivery is still absent. The owner therefore returns all independently
+rerolled Book candidates without issuing Book assets, progression or Rod wear.
+Line-break/over-cap behavior on a Fish branch remains the baseline ordered
+capability path. Gold Rod, consumed bait and additional enchants fail closed.
+No cast commit or Discord `/fish` exposure is authorized.

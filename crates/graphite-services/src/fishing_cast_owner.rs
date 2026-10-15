@@ -13,8 +13,9 @@ use crate::{
     FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
     FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
     FishingNonFishRollError, FishingResolvedNonFishOutcomeV1, FishingRodDurabilityMutationError,
-    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution, MULTICATCH_MAX_LEVEL,
-    ManualFishingCastPreflight, ManualFishingCastPreflightError, ManualFishingMulticatchCountV1,
+    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution,
+    MULTI_TREASURE_MAX_LEVEL, MULTICATCH_MAX_LEVEL, ManualFishingCastPreflight,
+    ManualFishingCastPreflightError, ManualFishingMulticatchCountV1,
     ManualFishingMulticatchRollError, ManualFishingProgressionSettlementError,
     ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
     ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingUnbreakingXError,
@@ -27,9 +28,10 @@ use crate::{
     lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_strengthen_fish_capability_v1,
     preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_direct_book_candidate_v1,
-    resolve_manual_fishing_multicatch_count_v1, resolve_manual_fishing_non_fish_outcome_v1,
-    resolve_manual_fishing_unbreaking_x_wear_v1, resolve_manual_fishing_unmodified_base_branch_v1,
-    settle_active_fishing_baits_for_cast, settle_manual_fishing_successful_progression_v1,
+    resolve_manual_fishing_multi_treasure_count_v1, resolve_manual_fishing_multicatch_count_v1,
+    resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_unbreaking_x_wear_v1,
+    resolve_manual_fishing_unmodified_base_branch_v1, settle_active_fishing_baits_for_cast,
+    settle_manual_fishing_successful_progression_v1,
 };
 
 #[derive(Debug, Error)]
@@ -91,6 +93,10 @@ pub enum ManualFishingCastOwnerError {
         "Multicatch baseline path requires one ordinary non-Gold Rod with only Multicatch I-X and no consumed bait"
     )]
     MulticatchRequiresExactLoadout,
+    #[error(
+        "Multi Treasure baseline path requires one ordinary non-Gold Rod with only Multi Treasure I-X and no consumed bait"
+    )]
+    MultiTreasureRequiresExactLoadout,
 }
 
 /// Provisional Junk or non-book Treasure delivery and reward children in a single
@@ -146,6 +152,29 @@ pub enum PendingManualFishingUnmodifiedSelectedOutcomeV1 {
     },
     DirectBookPending {
         candidate: FishingDirectBookCandidateV1,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingManualFishingMultiTreasureSelectedOutcomeV1 {
+    LandedFish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    NonFish {
+        staged: PendingManualFishingNonFishReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+    },
+    LineBroken {
+        durability: AppliedFishingRodDurabilityState,
+    },
+    OverCapCatchPending {
+        line_stage: ManualFishingUnmodifiedLineStageV1,
+    },
+    DirectBooksPending {
+        count: u8,
+        candidates: Vec<FishingDirectBookCandidateV1>,
     },
 }
 
@@ -424,6 +453,119 @@ impl PendingManualFishingCastV1<'_> {
             return Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer);
         }
         Ok(())
+    }
+
+    fn multi_treasure_only_level_v1(&self) -> Result<u8, ManualFishingCastOwnerError> {
+        let EquippedFishingRodKind::Ordinary { tier } = self.preflight.rod.kind else {
+            return Err(ManualFishingCastOwnerError::MultiTreasureRequiresExactLoadout);
+        };
+        if tier == EquipmentTier::Gold || self.bait.plan.consumed_bait_categories != 0 {
+            return Err(ManualFishingCastOwnerError::MultiTreasureRequiresExactLoadout);
+        }
+        let [embedded] = self.preflight.rod.embedded_enchants.as_slice() else {
+            return Err(ManualFishingCastOwnerError::MultiTreasureRequiresExactLoadout);
+        };
+        if embedded.enchant != CanonicalEnchant::MultiTreasure
+            || !(1..=MULTI_TREASURE_MAX_LEVEL).contains(&embedded.level)
+        {
+            return Err(ManualFishingCastOwnerError::MultiTreasureRequiresExactLoadout);
+        }
+        Ok(embedded.level)
+    }
+
+    pub fn preview_multi_treasure_base_branch_v1(
+        &self,
+    ) -> Result<FishingCatchBranch, ManualFishingCastOwnerError> {
+        self.multi_treasure_only_level_v1()?;
+        Ok(resolve_manual_fishing_unmodified_base_branch_v1(
+            self.preflight.rng,
+        )?)
+    }
+
+    fn preview_multi_treasure_fish_candidate_v1(
+        &self,
+    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+        self.multi_treasure_only_level_v1()?;
+        Ok(preview_manual_fishing_unmodified_fish_candidate_v1(
+            self.preflight.rng,
+            self.preflight.area_access.area,
+            0,
+        )?)
+    }
+
+    pub fn preview_multi_treasure_line_stage_v1(
+        &self,
+    ) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingCastOwnerError> {
+        let candidate = self.preview_multi_treasure_fish_candidate_v1()?;
+        let capability = preview_manual_unmodified_fish_capability_v1(
+            self.preflight.area_access.area,
+            self.preflight.rod.kind,
+            candidate.numeric,
+        )?;
+        Ok(resolve_manual_unmodified_line_stage_v1(
+            self.preflight.rng,
+            capability,
+        )?)
+    }
+
+    pub fn preview_multi_treasure_selected_direct_books_v1(
+        &self,
+    ) -> Result<(u8, Vec<FishingDirectBookCandidateV1>), ManualFishingCastOwnerError> {
+        let level = self.multi_treasure_only_level_v1()?;
+        if self.preview_multi_treasure_base_branch_v1()? != FishingCatchBranch::Treasure {
+            return Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch);
+        }
+        match self.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure) {
+            Err(ManualFishingCastOwnerError::NonFishRoll(
+                FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+            )) => {
+                let count =
+                    resolve_manual_fishing_multi_treasure_count_v1(self.preflight.rng, level)?;
+                let mut candidates = Vec::with_capacity(usize::from(count));
+                for treasure_slot in 0..count {
+                    candidates.push(resolve_manual_fishing_direct_book_candidate_v1(
+                        self.preflight.rng,
+                        treasure_slot,
+                    )?);
+                }
+                Ok((count, candidates))
+            }
+            Ok(_) => Err(ManualFishingCastOwnerError::BookRequiresSelectedEnchantBook),
+            Err(other) => Err(other),
+        }
+    }
+
+    pub async fn stage_multi_treasure_rod_durability_v1(
+        &mut self,
+    ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
+        self.multi_treasure_only_level_v1()?;
+        if let Some(staged) = &self.staged_durability {
+            return Ok(staged.applied.clone());
+        }
+        let branch = self.preview_multi_treasure_base_branch_v1()?;
+        let resolution = if branch == FishingCatchBranch::Fish
+            && matches!(
+                self.preview_multi_treasure_line_stage_v1()?,
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+            ) {
+            FishingRodDurabilityResolution::LineBreak
+        } else {
+            FishingRodDurabilityResolution::CompletedCastAttempt {
+                ordinary_event_prevented_by_unbreaking: false,
+            }
+        };
+        let receipt = apply_operation_fishing_rod_durability_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            self.preflight.area_access.area,
+            self.preflight.rod.current_durability,
+            resolution,
+        )
+        .await?;
+        let applied = receipt.applied.clone();
+        self.staged_durability = Some(receipt);
+        Ok(applied)
     }
 
     fn multicatch_only_level_v1(&self) -> Result<u8, ManualFishingCastOwnerError> {
@@ -1130,6 +1272,81 @@ impl PendingManualFishingCastV1<'_> {
     /// non-Fish payloads, successful progression and ordinary wear remain their
     /// canonical baseline owners. A line break stages only Rod destruction; survived
     /// over-cap catch and direct Book delivery remain explicitly pending.
+    /// Composes the selected baseline branch for the exact Multi-Treasure-only loadout.
+    ///
+    /// Multi Treasure never changes the outer branch or Fish identity. Non-book
+    /// Treasure repetition is already resolved by the shared payload owner. When
+    /// the selected category is Enchant Book, this path retains independently
+    /// rerolled identity candidates for every repeated slot but issues no Book yet.
+    pub async fn stage_multi_treasure_selected_outcome_v1(
+        &mut self,
+    ) -> Result<PendingManualFishingMultiTreasureSelectedOutcomeV1, ManualFishingCastOwnerError>
+    {
+        let branch = self.preview_multi_treasure_base_branch_v1()?;
+        match branch {
+            FishingCatchBranch::Fish => match self.preview_multi_treasure_line_stage_v1()? {
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. } => {
+                    let durability = self.stage_multi_treasure_rod_durability_v1().await?;
+                    Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::LineBroken {
+                        durability,
+                    })
+                }
+                line_stage @ ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending { .. } => {
+                    Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::OverCapCatchPending {
+                        line_stage,
+                    })
+                }
+                ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk => {
+                    let request = self.preview_multi_treasure_fish_candidate_v1()?;
+                    let delivery = deliver_fishing_fish_instance_v1(
+                        &mut self.tx,
+                        self.preflight.operation_id,
+                        self.preflight.player_id,
+                        request,
+                    )
+                    .await?;
+                    let progression = settle_manual_fishing_successful_progression_v1(
+                        &mut self.tx,
+                        self.preflight.operation_id,
+                        self.preflight.player_id,
+                        &ManualFishingSuccessfulProgressionOutcomeV1::Fish {
+                            landed_rarities: vec![delivery.rarity],
+                        },
+                    )
+                    .await?;
+                    let durability = self.stage_multi_treasure_rod_durability_v1().await?;
+                    Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::LandedFish {
+                        delivery,
+                        progression,
+                        durability,
+                    })
+                }
+            },
+            FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
+                match self.stage_non_fish_candidate_v1(branch).await {
+                    Ok(staged) => {
+                        let durability = self.stage_multi_treasure_rod_durability_v1().await?;
+                        Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::NonFish {
+                            staged,
+                            durability,
+                        })
+                    }
+                    Err(ManualFishingCastOwnerError::NonFishRoll(
+                        FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+                    )) => {
+                        let (count, candidates) =
+                            self.preview_multi_treasure_selected_direct_books_v1()?;
+                        Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBooksPending {
+                            count,
+                            candidates,
+                        })
+                    }
+                    Err(other) => Err(other),
+                }
+            }
+        }
+    }
+
     /// Composes the selected baseline branch for the exact Multicatch-only loadout.
     ///
     /// Multicatch count is operation-pinned and every fish slot independently rolls
