@@ -7,29 +7,31 @@ use crate::fishing_unmodified_line_stage::{
 };
 
 use crate::{
-    AppliedFishingRodDurabilityState, BAIT_RACK_MAX_LEVEL, CanonicalEnchant, EquipmentTier,
-    EquippedFishingRodKind, FishingArea, FishingBait, FishingBaitCastConsumptionAction,
-    FishingBaitCastConsumptionEntry, FishingBaitCastSettlementReceipt, FishingBaitStateError,
-    FishingCatchBranch, FishingCatchBranchPreCapWeightsV1, FishingDirectBookCandidateV1,
-    FishingDirectBookRollError, FishingFishInstanceDeliveryError,
-    FishingFishInstanceDeliveryReceiptV1, FishingFishInstanceDeliveryRequestV1,
-    FishingNonFishOutcomeDeliveryReceiptV1, FishingNonFishPayloadDeliveryError,
-    FishingNonFishRollError, FishingOverCapError, FishingResolvedNonFishOutcomeV1,
-    FishingRodDurabilityMutationError, FishingRodDurabilityMutationReceiptV1,
-    FishingRodDurabilityResolution, MULTI_TREASURE_MAX_LEVEL, MULTICATCH_MAX_LEVEL,
-    ManualFishingCastPreflight, ManualFishingCastPreflightError, ManualFishingMulticatchCountV1,
-    ManualFishingMulticatchRollError, ManualFishingProgressionSettlementError,
-    ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
-    ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
+    ActionSpeedBonus, ActionSpeedPolicyError, AppliedFishingRodDurabilityState,
+    BAIT_RACK_MAX_LEVEL, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea,
+    FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
+    FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
+    FishingCatchBranchPreCapWeightsV1, FishingDirectBookCandidateV1, FishingDirectBookRollError,
+    FishingFishInstanceDeliveryError, FishingFishInstanceDeliveryReceiptV1,
+    FishingFishInstanceDeliveryRequestV1, FishingNonFishOutcomeDeliveryReceiptV1,
+    FishingNonFishPayloadDeliveryError, FishingNonFishRollError, FishingOverCapError,
+    FishingResolvedNonFishOutcomeV1, FishingRodDurabilityMutationError,
+    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution, FishingRodEnchant,
+    FishingRodLevelXEffect, FishingRodLevelXPolicyError, MULTI_TREASURE_MAX_LEVEL,
+    MULTICATCH_MAX_LEVEL, ManualFishingCastPreflight, ManualFishingCastPreflightError,
+    ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError,
+    ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
+    ManualFishingRngDrawError, ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
     ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingUnbreakingXError,
     ManualFishingUnbreakingXWearPreviewV1, ManualFishingUnmodifiedCapabilityError,
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
     ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
-    OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL,
-    apply_operation_fishing_rod_durability_v1, canonical_enchant_max_resulting_level,
-    deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
-    fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
-    preview_manual_fishing_unmodified_fish_candidate_v1,
+    ManualMineFishCooldownPolicy, OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL,
+    STRENGTHEN_MAX_LEVEL, apply_operation_fishing_rod_durability_v1,
+    canonical_enchant_max_resulting_level, deliver_fishing_fish_instance_v1,
+    deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
+    fishing_rod_level_x_policy, lock_manual_fishing_cast_preflight,
+    manual_mine_fish_cooldown_policy, preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_school_bait_fish_capability_v1,
     preview_manual_strengthen_fish_capability_v1, preview_manual_sturdy_bait_fish_capability_v1,
     preview_manual_unmodified_fish_capability_v1, preview_over_cap_catch_chance,
@@ -113,6 +115,16 @@ pub enum ManualFishingCastOwnerError {
         "Bait Rack baseline path requires one ordinary non-Gold Rod with only Bait Rack I-III and no consumed bait"
     )]
     BaitRackRequiresExactLoadout,
+    #[error(transparent)]
+    ActionSpeed(#[from] ActionSpeedPolicyError),
+    #[error(transparent)]
+    RodLevelX(#[from] FishingRodLevelXPolicyError),
+    #[error(
+        "Lure X baseline path requires one ordinary non-Gold Rod with only Lure X and no consumed bait"
+    )]
+    LureXRequiresExactLoadout,
+    #[error("Lure X scalar policy is inconsistent with the shared Fishing speed bucket contract")]
+    LureXPolicyMismatch,
     #[error(transparent)]
     MulticatchRoll(#[from] ManualFishingMulticatchRollError),
     #[error(
@@ -248,6 +260,33 @@ pub enum PendingManualFishingBaitRackSelectedOutcomeV1 {
     },
     DirectBookPending {
         candidate: FishingDirectBookCandidateV1,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingManualFishingLureXSelectedOutcomeV1 {
+    LandedFish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+        cooldown: ManualMineFishCooldownPolicy,
+    },
+    NonFish {
+        staged: PendingManualFishingNonFishReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
+        cooldown: ManualMineFishCooldownPolicy,
+    },
+    LineBroken {
+        durability: AppliedFishingRodDurabilityState,
+        cooldown: ManualMineFishCooldownPolicy,
+    },
+    OverCapCatchPending {
+        line_stage: ManualFishingUnmodifiedLineStageV1,
+        cooldown: ManualMineFishCooldownPolicy,
+    },
+    DirectBookPending {
+        candidate: FishingDirectBookCandidateV1,
+        cooldown: ManualMineFishCooldownPolicy,
     },
 }
 
@@ -770,6 +809,133 @@ impl PendingManualFishingCastV1<'_> {
         let resolution = if branch == FishingCatchBranch::Fish
             && matches!(
                 self.preview_multicatch_line_stage_v1()?,
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+            ) {
+            FishingRodDurabilityResolution::LineBreak
+        } else {
+            FishingRodDurabilityResolution::CompletedCastAttempt {
+                ordinary_event_prevented_by_unbreaking: false,
+            }
+        };
+        let receipt = apply_operation_fishing_rod_durability_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            self.preflight.area_access.area,
+            self.preflight.rod.current_durability,
+            resolution,
+        )
+        .await?;
+        let applied = receipt.applied.clone();
+        self.staged_durability = Some(receipt);
+        Ok(applied)
+    }
+
+    fn ensure_lure_x_only_cast_v1(&self) -> Result<(), ManualFishingCastOwnerError> {
+        let EquippedFishingRodKind::Ordinary { tier } = self.preflight.rod.kind else {
+            return Err(ManualFishingCastOwnerError::LureXRequiresExactLoadout);
+        };
+        if tier == EquipmentTier::Gold || self.bait.plan.consumed_bait_categories != 0 {
+            return Err(ManualFishingCastOwnerError::LureXRequiresExactLoadout);
+        }
+        let [embedded] = self.preflight.rod.embedded_enchants.as_slice() else {
+            return Err(ManualFishingCastOwnerError::LureXRequiresExactLoadout);
+        };
+        if embedded.enchant != CanonicalEnchant::Lure
+            || embedded.level != canonical_enchant_max_resulting_level(CanonicalEnchant::Lure)
+        {
+            return Err(ManualFishingCastOwnerError::LureXRequiresExactLoadout);
+        }
+        Ok(())
+    }
+
+    /// Resolves the exact Lure-X-only manual Fishing cooldown through the existing
+    /// shared action-speed bucket and canonical Mine/Fish floor.
+    pub fn preview_lure_x_cooldown_v1(
+        &self,
+    ) -> Result<ManualMineFishCooldownPolicy, ManualFishingCastOwnerError> {
+        self.ensure_lure_x_only_cast_v1()?;
+        let policy = fishing_rod_level_x_policy(FishingRodEnchant::Lure)?;
+        let FishingRodLevelXEffect::Lure {
+            action_speed_rating_percent,
+            uses_shared_fishing_speed_bucket,
+        } = policy.effect
+        else {
+            return Err(ManualFishingCastOwnerError::LureXPolicyMismatch);
+        };
+        if !uses_shared_fishing_speed_bucket {
+            return Err(ManualFishingCastOwnerError::LureXPolicyMismatch);
+        }
+        let bonus = ActionSpeedBonus::new(u64::from(action_speed_rating_percent), 100)?;
+        Ok(manual_mine_fish_cooldown_policy(&[bonus])?)
+    }
+
+    pub fn preview_lure_x_base_branch_v1(
+        &self,
+    ) -> Result<FishingCatchBranch, ManualFishingCastOwnerError> {
+        self.ensure_lure_x_only_cast_v1()?;
+        Ok(resolve_manual_fishing_unmodified_base_branch_v1(
+            self.preflight.rng,
+        )?)
+    }
+
+    fn preview_lure_x_fish_candidate_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+        self.ensure_lure_x_only_cast_v1()?;
+        Ok(preview_manual_fishing_unmodified_fish_candidate_v1(
+            self.preflight.rng,
+            self.preflight.area_access.area,
+            fish_slot,
+        )?)
+    }
+
+    pub fn preview_lure_x_line_stage_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingCastOwnerError> {
+        let candidate = self.preview_lure_x_fish_candidate_v1(fish_slot)?;
+        let capability = preview_manual_unmodified_fish_capability_v1(
+            self.preflight.area_access.area,
+            self.preflight.rod.kind,
+            candidate.numeric,
+        )?;
+        Ok(resolve_manual_unmodified_line_stage_v1(
+            self.preflight.rng,
+            capability,
+        )?)
+    }
+
+    pub fn preview_lure_x_selected_direct_book_v1(
+        &self,
+    ) -> Result<FishingDirectBookCandidateV1, ManualFishingCastOwnerError> {
+        if self.preview_lure_x_base_branch_v1()? != FishingCatchBranch::Treasure {
+            return Err(ManualFishingCastOwnerError::BookRequiresTreasureBranch);
+        }
+        match self.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure) {
+            Err(ManualFishingCastOwnerError::NonFishRoll(
+                FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+            )) => Ok(resolve_manual_fishing_direct_book_candidate_v1(
+                self.preflight.rng,
+                0,
+            )?),
+            Ok(_) => Err(ManualFishingCastOwnerError::BookRequiresSelectedEnchantBook),
+            Err(other) => Err(other),
+        }
+    }
+
+    pub async fn stage_lure_x_rod_durability_v1(
+        &mut self,
+    ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
+        self.ensure_lure_x_only_cast_v1()?;
+        if let Some(staged) = &self.staged_durability {
+            return Ok(staged.applied.clone());
+        }
+        let branch = self.preview_lure_x_base_branch_v1()?;
+        let resolution = if branch == FishingCatchBranch::Fish
+            && matches!(
+                self.preview_lure_x_line_stage_v1(0)?,
                 ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
             ) {
             FishingRodDurabilityResolution::LineBreak
@@ -1905,6 +2071,80 @@ impl PendingManualFishingCastV1<'_> {
                             candidate: self.preview_multicatch_selected_direct_book_v1()?,
                         },
                     ),
+                    Err(other) => Err(other),
+                }
+            }
+        }
+    }
+
+    /// Composes the selected baseline catch for the exact Lure-X-only loadout.
+    ///
+    /// Lure changes only the shared action-speed rating, so branch/Fish identity,
+    /// capability and durability remain baseline. The returned cooldown is a pure
+    /// exact projection; this still-uncommittable owner does not persist cooldown.
+    pub async fn stage_lure_x_selected_outcome_v1(
+        &mut self,
+    ) -> Result<PendingManualFishingLureXSelectedOutcomeV1, ManualFishingCastOwnerError> {
+        let cooldown = self.preview_lure_x_cooldown_v1()?;
+        let branch = self.preview_lure_x_base_branch_v1()?;
+        match branch {
+            FishingCatchBranch::Fish => match self.preview_lure_x_line_stage_v1(0)? {
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. } => {
+                    let durability = self.stage_lure_x_rod_durability_v1().await?;
+                    Ok(PendingManualFishingLureXSelectedOutcomeV1::LineBroken {
+                        durability,
+                        cooldown,
+                    })
+                }
+                line_stage @ ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending {
+                    ..
+                } => Ok(PendingManualFishingLureXSelectedOutcomeV1::OverCapCatchPending {
+                    line_stage,
+                    cooldown,
+                }),
+                ManualFishingUnmodifiedLineStageV1::LandedWithoutLineRisk => {
+                    let request = self.preview_lure_x_fish_candidate_v1(0)?;
+                    let delivery = deliver_fishing_fish_instance_v1(
+                        &mut self.tx,
+                        self.preflight.operation_id,
+                        self.preflight.player_id,
+                        request,
+                    )
+                    .await?;
+                    let progression = settle_manual_fishing_successful_progression_v1(
+                        &mut self.tx,
+                        self.preflight.operation_id,
+                        self.preflight.player_id,
+                        &ManualFishingSuccessfulProgressionOutcomeV1::Fish {
+                            landed_rarities: vec![delivery.rarity],
+                        },
+                    )
+                    .await?;
+                    let durability = self.stage_lure_x_rod_durability_v1().await?;
+                    Ok(PendingManualFishingLureXSelectedOutcomeV1::LandedFish {
+                        delivery,
+                        progression,
+                        durability,
+                        cooldown,
+                    })
+                }
+            },
+            FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
+                match self.stage_non_fish_candidate_v1(branch).await {
+                    Ok(staged) => {
+                        let durability = self.stage_lure_x_rod_durability_v1().await?;
+                        Ok(PendingManualFishingLureXSelectedOutcomeV1::NonFish {
+                            staged,
+                            durability,
+                            cooldown,
+                        })
+                    }
+                    Err(ManualFishingCastOwnerError::NonFishRoll(
+                        FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+                    )) => Ok(PendingManualFishingLureXSelectedOutcomeV1::DirectBookPending {
+                        candidate: self.preview_lure_x_selected_direct_book_v1()?,
+                        cooldown,
+                    }),
                     Err(other) => Err(other),
                 }
             }

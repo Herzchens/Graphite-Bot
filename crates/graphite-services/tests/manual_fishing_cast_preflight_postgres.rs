@@ -8,7 +8,7 @@ use graphite_services::{
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
     ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MultiTreasureCount,
     MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
-    PendingManualFishingBaitRackSelectedOutcomeV1,
+    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
     PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
@@ -2533,6 +2533,100 @@ async fn unbreaking_x_owner_rejects_lower_level_and_other_branch_modifiers() {
         assert!(matches!(
             pending.preview_unbreaking_x_base_branch_v1(),
             Err(ManualFishingCastOwnerError::UnbreakingXRequiresExactLoadout)
+        ));
+        pending.rollback().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn lure_x_uses_shared_speed_bucket_without_changing_baseline_catch_semantics() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store, player_id, nonce, "lure-x", "WOOD", 200, 600, false, 4, 3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "LURE", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "lure-x").await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+
+    let cooldown = pending.preview_lure_x_cooldown_v1().unwrap();
+    assert_eq!(cooldown.cooldown_millis, 8_696);
+    assert_eq!(
+        (
+            cooldown.speed_policy.applied_bonus.numerator(),
+            cooldown.speed_policy.applied_bonus.denominator(),
+        ),
+        (3, 20)
+    );
+    assert!(!cooldown.speed_policy.cap_applied);
+    assert!(!cooldown.minimum_clamp_applied);
+
+    let branch = pending.preview_lure_x_base_branch_v1().unwrap();
+    assert_eq!(branch, pending.preview_lure_x_base_branch_v1().unwrap());
+    let first = pending.stage_lure_x_selected_outcome_v1().await.unwrap();
+    let replay = pending.stage_lure_x_selected_outcome_v1().await.unwrap();
+    assert_eq!(first, replay);
+
+    let staged_cooldown = match first {
+        PendingManualFishingLureXSelectedOutcomeV1::LandedFish { cooldown, .. }
+        | PendingManualFishingLureXSelectedOutcomeV1::NonFish { cooldown, .. }
+        | PendingManualFishingLureXSelectedOutcomeV1::LineBroken { cooldown, .. }
+        | PendingManualFishingLureXSelectedOutcomeV1::OverCapCatchPending { cooldown, .. }
+        | PendingManualFishingLureXSelectedOutcomeV1::DirectBookPending { cooldown, .. } => {
+            cooldown
+        }
+    };
+    assert_eq!(staged_cooldown, cooldown);
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn lure_x_owner_rejects_lower_level_and_gold_combinations() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    for (suffix, tier, level) in [
+        ("lure-nine", "WOOD", 9_i16),
+        ("gold-lure-x", "GOLD", 10_i16),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        seed_enchant(&store, rod_id, "LURE", level).await;
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.preview_lure_x_cooldown_v1(),
+            Err(ManualFishingCastOwnerError::LureXRequiresExactLoadout)
         ));
         pending.rollback().await.unwrap();
     }
