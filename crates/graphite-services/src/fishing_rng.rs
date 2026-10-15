@@ -11,6 +11,8 @@ use crate::{FISHING_NUMERIC_DRAW_SCALE_PPM, MAX_FISH_PER_CAST, MULTI_TREASURE_MA
 const RNG_ROOT_BYTES: usize = 32;
 
 pub const MANUAL_FISHING_RNG_POLICY_VERSION: u16 = 1;
+pub const MANUAL_FISHING_OPERATION_KIND: &str = "MANUAL_FISHING_CAST";
+pub const MANUAL_FISHING_OPERATION_POLICY_VERSION: i32 = 1;
 pub const MANUAL_FISHING_RNG_PPM_SCALE: u32 = FISHING_NUMERIC_DRAW_SCALE_PPM;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -113,6 +115,13 @@ pub enum ManualFishingRngContextError {
     OperationNotFound,
     #[error("owning operation targets a different player")]
     OperationPlayerMismatch,
+    #[error("owning operation kind {actual} does not match {expected}")]
+    OperationKindMismatch {
+        expected: &'static str,
+        actual: String,
+    },
+    #[error("owning operation policy version {actual} does not match {expected}")]
+    OperationPolicyVersionMismatch { expected: i32, actual: i32 },
     #[error("owning operation cannot resolve new Fishing RNG in state {0}")]
     OperationTerminal(String),
     #[error("stored owning-operation RNG root is not exactly 32 bytes")]
@@ -143,7 +152,9 @@ pub async fn lock_manual_fishing_rng_context(
     player_id: Uuid,
 ) -> Result<ManualFishingRngContext, ManualFishingRngContextError> {
     let row =
-        sqlx::query("SELECT player_id, state, rng_root FROM operations WHERE id = $1 FOR UPDATE")
+        sqlx::query(
+            "SELECT player_id, kind, state, policy_version, rng_root FROM operations WHERE id = $1 FOR UPDATE",
+        )
             .bind(operation_id)
             .fetch_optional(&mut **tx)
             .await?
@@ -152,6 +163,23 @@ pub async fn lock_manual_fishing_rng_context(
     let stored_player_id: Option<Uuid> = row.try_get("player_id")?;
     if stored_player_id != Some(player_id) {
         return Err(ManualFishingRngContextError::OperationPlayerMismatch);
+    }
+
+    let kind: String = row.try_get("kind")?;
+    if kind != MANUAL_FISHING_OPERATION_KIND {
+        return Err(ManualFishingRngContextError::OperationKindMismatch {
+            expected: MANUAL_FISHING_OPERATION_KIND,
+            actual: kind,
+        });
+    }
+    let policy_version: i32 = row.try_get("policy_version")?;
+    if policy_version != MANUAL_FISHING_OPERATION_POLICY_VERSION {
+        return Err(
+            ManualFishingRngContextError::OperationPolicyVersionMismatch {
+                expected: MANUAL_FISHING_OPERATION_POLICY_VERSION,
+                actual: policy_version,
+            },
+        );
     }
 
     let state: String = row.try_get("state")?;

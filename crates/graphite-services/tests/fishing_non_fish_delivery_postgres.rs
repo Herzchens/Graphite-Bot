@@ -1,6 +1,7 @@
 use graphite_services::{
     FishingCatchBranch, FishingNonFishPayloadDeliveryError, FishingPayload,
     FishingResolvedNonFishOutcomeV1, FishingResolvedNonFishPayloadV1, FishingTreasureResult,
+    MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION,
     deliver_fishing_non_fish_outcome_v1, deliver_fishing_non_fish_payload_v1,
     lock_manual_fishing_rng_context, resolve_manual_fishing_non_fish_outcome_v1,
 };
@@ -253,13 +254,15 @@ async fn create_operation(store: &PgStore, player_id: Uuid, actor: i64) -> Uuid 
             id, external_request_key, actor_discord_user_id, player_id, kind, state,
             policy_version, request_hash, rng_root
         )
-        VALUES ($1, $2, $3, $4, 'FISHING_PAYLOAD_TEST', 'PENDING', 1, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7, $8)
         "#,
     )
     .bind(operation_id)
     .bind(format!("test:fishing-non-fish-payload:{operation_id}"))
     .bind(actor)
     .bind(player_id)
+    .bind(MANUAL_FISHING_OPERATION_KIND)
+    .bind(MANUAL_FISHING_OPERATION_POLICY_VERSION)
     .bind([11_u8; 32].as_slice())
     .bind([13_u8; 32].as_slice())
     .execute(store.pool())

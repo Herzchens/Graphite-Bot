@@ -2802,3 +2802,31 @@ Do not add a Luck-of-the-Sea selected-cast owner in this slice. Levels I-IX and
 all final normalized weights remain fail-closed. The pre-cap previews are inputs
 for the future shared modifier owner only and do not authorize assets, XP, Rod
 wear, operation commit or Discord `/fish`.
+
+
+## Fishing operation-domain contract
+
+Branch: feat/fishing-operation-contract
+
+### 1. Pinned Fishing RNG must belong to a Fishing operation
+
+**Integrity finding — CONFIRMED**
+
+Manual Fishing already treats the persisted operation RNG root as the only authority
+for retry-stable draws, but the RNG lock previously validated only operation id,
+player binding and PENDING state. A pending operation created for another domain
+could therefore be passed into Fishing preflight and acquire Fishing semantic RNG
+domains despite having unrelated request provenance.
+
+**Final decision**
+
+Version the internal manual-Fishing operation contract as kind
+`MANUAL_FISHING_CAST`, policy version `1`. The RNG-context lock checks both
+persisted fields while it owns the operation row, before exposing any typed Fishing
+draw. Wrong kind or policy version fails closed with an explicit integrity error.
+Existing player/state/RNG-root checks remain unchanged.
+
+This is protocol hardening, not live command activation. It creates no operation,
+does not commit it, changes no probability, and does not make a provisional cast
+terminal. Future operation creation/finalization must use the same exported contract
+rather than accepting adapter-defined kinds or versions.

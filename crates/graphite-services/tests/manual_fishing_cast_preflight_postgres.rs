@@ -3,7 +3,8 @@ use graphite_progression::account_total_xp_for_level;
 use graphite_services::{
     AppliedFishingRodDurabilityState, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind,
     FishingArea, FishingAreaAccessOrigin, FishingCatchBranch, FishingDirectBookRollError,
-    FishingResolvedNonFishOutcomeV1, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
+    FishingResolvedNonFishOutcomeV1, MANUAL_FISHING_OPERATION_KIND,
+    MANUAL_FISHING_OPERATION_POLICY_VERSION, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
     ManualFishingCastPreflightError, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
     ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MultiTreasureCount,
@@ -3041,12 +3042,14 @@ async fn seed_operation(store: &PgStore, player_id: Uuid, nonce: Uuid, suffix: &
             .await
             .unwrap();
     sqlx::query(
-        "INSERT INTO operations (id, external_request_key, actor_discord_user_id, player_id, kind, state, policy_version, request_hash, rng_root) VALUES ($1, $2, $3, $4, 'MANUAL_FISHING_CAST_PREFLIGHT_TEST', 'PENDING', 1, $5, $6)",
+        "INSERT INTO operations (id, external_request_key, actor_discord_user_id, player_id, kind, state, policy_version, request_hash, rng_root) VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7, $8)",
     )
     .bind(operation_id)
     .bind(format!("test:manual-fishing-cast-preflight:{nonce}:{suffix}:{operation_id}"))
     .bind(discord_user_id)
     .bind(player_id)
+    .bind(MANUAL_FISHING_OPERATION_KIND)
+    .bind(MANUAL_FISHING_OPERATION_POLICY_VERSION)
     .bind([79_u8; 32].as_slice())
     .bind([83_u8; 32].as_slice())
     .execute(store.pool())
