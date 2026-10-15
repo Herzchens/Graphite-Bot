@@ -91,6 +91,9 @@ pub enum PendingManualFishingStarterBaseOutcomeV1 {
     NonFish {
         staged: PendingManualFishingNonFishReceiptV1,
     },
+    DirectBookPending {
+        candidate: FishingDirectBookCandidateV1,
+    },
 }
 
 /// Rollback-only selected baseline cast outcome with its associated Rod consequence.
@@ -115,6 +118,9 @@ pub enum PendingManualFishingUnmodifiedSelectedOutcomeV1 {
     },
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
+    },
+    DirectBookPending {
+        candidate: FishingDirectBookCandidateV1,
     },
 }
 
@@ -363,8 +369,8 @@ impl PendingManualFishingCastV1<'_> {
     ///
     /// This path is deliberately restricted to the unbreakable Starter Basic Rod
     /// in Starter Pool, where Fish physically lands without line risk, and to casts
-    /// with no active bait or enchants. Direct Enchant Book results fail closed
-    /// until the separate canonical book-item settlement is composed.
+    /// with no active bait or enchants. Direct Enchant Book outcomes return a pending identity without issuing
+    /// any asset, XP or Rod wear until the separate Book settlement is composed.
     ///
     /// A same-operation repeated call replays the original item/XP child receipts.
     /// The pending owner has no commit method: these staged effects roll back unless
@@ -396,8 +402,17 @@ impl PendingManualFishingCastV1<'_> {
                 })
             }
             FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
-                let staged = self.stage_non_fish_candidate_v1(selected).await?;
-                Ok(PendingManualFishingStarterBaseOutcomeV1::NonFish { staged })
+                match self.stage_non_fish_candidate_v1(selected).await {
+                    Ok(staged) => Ok(PendingManualFishingStarterBaseOutcomeV1::NonFish { staged }),
+                    Err(ManualFishingCastOwnerError::NonFishRoll(
+                        FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+                    )) => Ok(
+                        PendingManualFishingStarterBaseOutcomeV1::DirectBookPending {
+                            candidate: self.preview_unmodified_selected_direct_book_v1()?,
+                        },
+                    ),
+                    Err(other) => Err(other),
+                }
             }
         }
     }
@@ -449,7 +464,7 @@ impl PendingManualFishingCastV1<'_> {
     /// The line-break path destroys the Rod without issuing Fish or successful XP.
     /// A survived over-cap Fish stays pending with no output/durability/XP until
     /// the rational catch/escape RNG stage has an approved versioned mapping.
-    /// Direct Enchant Book Treasure still fails closed before issuing assets.
+    /// Direct Enchant Book Treasure remains identity-only, without assets or XP.
     ///
     /// This transaction-owned staging method cannot commit the operation or
     /// expose an application adapter; repeated calls replay the same child receipts.
@@ -499,12 +514,21 @@ impl PendingManualFishingCastV1<'_> {
                 }
             }
             FishingCatchBranch::Junk | FishingCatchBranch::Treasure => {
-                let staged = self.stage_non_fish_candidate_v1(branch).await?;
-                let durability = self.stage_unmodified_rod_durability_v1().await?;
-                Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::NonFish {
-                    staged,
-                    durability,
-                })
+                match self.stage_non_fish_candidate_v1(branch).await {
+                    Ok(staged) => {
+                        let durability = self.stage_unmodified_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::NonFish {
+                            staged,
+                            durability,
+                        })
+                    }
+                    Err(ManualFishingCastOwnerError::NonFishRoll(
+                        FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
+                    )) => Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending {
+                        candidate: self.preview_unmodified_selected_direct_book_v1()?,
+                    }),
+                    Err(other) => Err(other),
+                }
             }
         }
     }

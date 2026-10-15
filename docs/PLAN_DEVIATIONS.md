@@ -2282,3 +2282,25 @@ Do not allow this pure identity resolver to mint Book assets or award progressio
 The existing selected-cast staging continues to fail closed on direct Enchant
 Books until the dedicated Book writer has been composed and tested under the
 single cast-owned PostgreSQL transaction. `/fish` remains unavailable.
+
+
+## Fishing selected direct Book pending outcome
+
+**Implementation finding — CONFIRMED**
+
+The selected unmodified cast already has a deterministic Book identity preview,
+but its non-Fish staging child correctly rejects Book as a stack payload. Treating
+this as an undifferentiated failed non-Fish draw obscures a valid RNG outcome.
+
+**Final decision**
+
+Return a typed `DirectBookPending { candidate }` result when the operation's
+baseline CatchBranch and TreasureResult select a direct Enchant Book. Both
+Starter Basic and ordinary unmodified cast owners preserve the same pinned
+candidate on replay and deliberately stage no Book ItemInstance, successful
+progression or Rod wear until the dedicated Book delivery writer exists.
+Any unrelated non-Fish error continues to propagate, not become a Book.
+
+This is an in-transaction, uncommittable resolver state, not a delivered or
+claimable outcome. Book identity, XP and Rod consequences must be composed under
+one complete operation and audit/outbox boundary before enabling `/fish`.
