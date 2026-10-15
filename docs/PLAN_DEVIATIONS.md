@@ -2304,3 +2304,49 @@ Any unrelated non-Fish error continues to propagate, not become a Book.
 This is an in-transaction, uncommittable resolver state, not a delivered or
 claimable outcome. Book identity, XP and Rod consequences must be composed under
 one complete operation and audit/outbox boundary before enabling `/fish`.
+
+
+## Fishing Unbreaking X owner composition
+
+Branch: feat/fishing-unbreaking-x-owner
+
+### 1. Unbreaking X is branch-neutral but durability-active
+
+**Normative alignment — CONFIRMED**
+
+The frozen Level X Rod policy assigns Unbreaking exactly a 20% chance to ignore the
+one ordinary durability event. It does not alter Fish/Junk/Treasure branch weights,
+Fish identity, capability or line-break probability. The manual Fishing RNG owner
+already reserves the independent `UnbreakingOrdinaryWear` 1,000,000-PPM domain,
+and the durability policy explicitly says Unbreaking never prevents line-break
+destruction.
+
+**Final decision**
+
+Permit a narrow baseline path only when the locked Rod is ordinary, non-Gold, has
+exactly one embedded enchant, that enchant is Unbreaking at its canonical Level X,
+and no bait was consumed. Reuse the canonical baseline branch/Fish/capability kernels
+because Unbreaking cannot affect them. Convert the frozen exact 1/5 probability to
+200,000 PPM only after proving exact divisibility by the versioned manual Fishing
+PPM scale, then compare the independent pinned draw using `draw < chance`.
+
+For a line break, do not sample or consult Unbreaking; stage the existing line-break
+destruction receipt. For every other completed attempt, pass the exact prevention
+result to the operation-keyed Rod durability child. Replay returns the same receipt,
+and rollback removes the provisional Rod mutation/event.
+
+### 2. Level X cannot be extrapolated downward
+
+**Safety finding — CONFIRMED**
+
+The scalar policy is explicitly a final-Level-X contract. It does not freeze an
+interpolation formula for Levels I-IX. Gold Rod also changes Treasure branch weight,
+so combining Gold with Unbreaking X would no longer be the baseline distribution.
+
+**Final decision**
+
+Unbreaking I-IX, Gold Rod + Unbreaking X, additional Rod enchants and active bait
+all fail closed in this slice. Do not infer a per-level prevention curve or bypass
+the shared modifier/cap composer. This durability composition remains rollback-only;
+it does not finalize the cast, settle Mending, resolve over-cap catch/escape or
+enable `/fish`.

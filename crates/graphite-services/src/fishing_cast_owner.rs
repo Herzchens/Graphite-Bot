@@ -16,15 +16,17 @@ use crate::{
     FishingRodDurabilityResolution, ManualFishingCastPreflight, ManualFishingCastPreflightError,
     ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
     ManualFishingRngDrawError, ManualFishingSuccessfulProgressionOutcomeV1,
+    ManualFishingUnbreakingXError, ManualFishingUnbreakingXWearPreviewV1,
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
     ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
     ManualFishingUnmodifiedLineStageV1, apply_operation_fishing_rod_durability_v1,
-    deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
-    fishing_catch_branch_pre_cap_weights_v1, lock_manual_fishing_cast_preflight,
-    preview_manual_fishing_unmodified_fish_candidate_v1,
+    canonical_enchant_max_resulting_level, deliver_fishing_fish_instance_v1,
+    deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
+    lock_manual_fishing_cast_preflight, preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_unmodified_fish_capability_v1, resolve_manual_fishing_direct_book_candidate_v1,
-    resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_unmodified_base_branch_v1,
-    settle_active_fishing_baits_for_cast, settle_manual_fishing_successful_progression_v1,
+    resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_unbreaking_x_wear_v1,
+    resolve_manual_fishing_unmodified_base_branch_v1, settle_active_fishing_baits_for_cast,
+    settle_manual_fishing_successful_progression_v1,
 };
 
 #[derive(Debug, Error)]
@@ -66,6 +68,12 @@ pub enum ManualFishingCastOwnerError {
     UnmodifiedLineStage(#[from] ManualFishingUnmodifiedLineStageError),
     #[error(transparent)]
     RodDurability(#[from] FishingRodDurabilityMutationError),
+    #[error(transparent)]
+    UnbreakingX(#[from] ManualFishingUnbreakingXError),
+    #[error(
+        "Unbreaking X baseline path requires one ordinary non-Gold Rod with only Unbreaking X and no consumed bait"
+    )]
+    UnbreakingXRequiresExactLoadout,
 }
 
 /// Provisional Junk or non-book Treasure delivery and reward children in a single
@@ -290,6 +298,75 @@ impl PendingManualFishingCastV1<'_> {
         Ok(())
     }
 
+    fn ensure_unbreaking_x_only_cast_v1(&self) -> Result<(), ManualFishingCastOwnerError> {
+        let EquippedFishingRodKind::Ordinary { tier } = self.preflight.rod.kind else {
+            return Err(ManualFishingCastOwnerError::UnbreakingXRequiresExactLoadout);
+        };
+        if tier == EquipmentTier::Gold || self.bait.plan.consumed_bait_categories != 0 {
+            return Err(ManualFishingCastOwnerError::UnbreakingXRequiresExactLoadout);
+        }
+        let [embedded] = self.preflight.rod.embedded_enchants.as_slice() else {
+            return Err(ManualFishingCastOwnerError::UnbreakingXRequiresExactLoadout);
+        };
+        if embedded.enchant != CanonicalEnchant::Unbreaking
+            || embedded.level != canonical_enchant_max_resulting_level(CanonicalEnchant::Unbreaking)
+        {
+            return Err(ManualFishingCastOwnerError::UnbreakingXRequiresExactLoadout);
+        }
+        Ok(())
+    }
+
+    /// Resolves the base Fish/Junk/Treasure branch for the narrow Unbreaking-X-only
+    /// loadout. Unbreaking X affects only the ordinary Rod wear event, never branch
+    /// weights or Fish identity, so the canonical 176/17/7 branch draw remains exact.
+    pub fn preview_unbreaking_x_base_branch_v1(
+        &self,
+    ) -> Result<FishingCatchBranch, ManualFishingCastOwnerError> {
+        self.ensure_unbreaking_x_only_cast_v1()?;
+        Ok(resolve_manual_fishing_unmodified_base_branch_v1(
+            self.preflight.rng,
+        )?)
+    }
+
+    fn preview_unbreaking_x_fish_candidate_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<FishingFishInstanceDeliveryRequestV1, ManualFishingCastOwnerError> {
+        self.ensure_unbreaking_x_only_cast_v1()?;
+        Ok(preview_manual_fishing_unmodified_fish_candidate_v1(
+            self.preflight.rng,
+            self.preflight.area_access.area,
+            fish_slot,
+        )?)
+    }
+
+    pub fn preview_unbreaking_x_line_stage_v1(
+        &self,
+        fish_slot: u8,
+    ) -> Result<ManualFishingUnmodifiedLineStageV1, ManualFishingCastOwnerError> {
+        let candidate = self.preview_unbreaking_x_fish_candidate_v1(fish_slot)?;
+        let capability = preview_manual_unmodified_fish_capability_v1(
+            self.preflight.area_access.area,
+            self.preflight.rod.kind,
+            candidate.numeric,
+        )?;
+        Ok(resolve_manual_unmodified_line_stage_v1(
+            self.preflight.rng,
+            capability,
+        )?)
+    }
+
+    /// Resolves the exact operation-pinned 20% Unbreaking X prevention draw for the
+    /// one normal durability event. This is never consulted for a line break.
+    pub fn preview_unbreaking_x_ordinary_wear_v1(
+        &self,
+    ) -> Result<ManualFishingUnbreakingXWearPreviewV1, ManualFishingCastOwnerError> {
+        self.ensure_unbreaking_x_only_cast_v1()?;
+        Ok(resolve_manual_fishing_unbreaking_x_wear_v1(
+            self.preflight.rng,
+        )?)
+    }
+
     /// Deterministically previews one base FishInstance candidate from an unmodified cast.
     ///
     /// An active bait, Gold side-grade or any embedded Rod enchant requires later shared
@@ -442,6 +519,43 @@ impl PendingManualFishingCastV1<'_> {
         } else {
             FishingRodDurabilityResolution::CompletedCastAttempt {
                 ordinary_event_prevented_by_unbreaking: false,
+            }
+        };
+        let receipt = apply_operation_fishing_rod_durability_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            self.preflight.area_access.area,
+            self.preflight.rod.current_durability,
+            resolution,
+        )
+        .await?;
+        let applied = receipt.applied.clone();
+        self.staged_durability = Some(receipt);
+        Ok(applied)
+    }
+
+    /// Stages exactly one durability consequence for the narrow Unbreaking-X-only
+    /// baseline path. Line-break destruction bypasses Unbreaking entirely; every
+    /// other completed attempt uses the versioned Unbreaking wear domain.
+    pub async fn stage_unbreaking_x_rod_durability_v1(
+        &mut self,
+    ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
+        self.ensure_unbreaking_x_only_cast_v1()?;
+        if let Some(staged) = &self.staged_durability {
+            return Ok(staged.applied.clone());
+        }
+        let branch = self.preview_unbreaking_x_base_branch_v1()?;
+        let resolution = if branch == FishingCatchBranch::Fish
+            && matches!(
+                self.preview_unbreaking_x_line_stage_v1(0)?,
+                ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+            ) {
+            FishingRodDurabilityResolution::LineBreak
+        } else {
+            let wear = self.preview_unbreaking_x_ordinary_wear_v1()?;
+            FishingRodDurabilityResolution::CompletedCastAttempt {
+                ordinary_event_prevented_by_unbreaking: wear.prevented,
             }
         };
         let receipt = apply_operation_fishing_rod_durability_v1(

@@ -221,6 +221,7 @@ The following must not be inferred from nearby policy code:
 - live +N attempts are unavailable until attempt cost/RNG/modifier settlement is complete; no `N^1.55` approximation may be invented.
 - `/forge`, `/repair`, and `/smelt` remain unavailable until their owning atomic lifecycles are complete.
 - `/fish` is unavailable despite substantial Fishing policy, permanent area-access state, progression settlement prelocks, pinned operation RNG context, and transaction-composable Rod-durability state work.
+- The narrow ordinary non-Gold Rod + Unbreaking X-only path can now keep canonical baseline catch odds while resolving the exact operation-pinned 20% normal-wear prevention draw. Lower Unbreaking levels, Gold Rod and any other modifier remain fail-closed; line-break destruction bypasses Unbreaking.
 - `/discard` / Trash Recovery remains unavailable while recovery/expiry lifecycle semantics are insufficiently frozen.
 - generic storage-capacity purchase commands remain pending.
 - resources without authoritative production ItemDefinition stack caps must not be activated merely because content/policy keys exist.

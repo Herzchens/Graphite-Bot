@@ -800,6 +800,129 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
 }
 
 #[tokio::test]
+async fn unbreaking_x_uses_independent_pinned_wear_rng_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "unbreaking-x",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "UNBREAKING", 10).await;
+    let operation_id = seed_operation(&store, player_id, nonce, "unbreaking-x").await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+
+    let branch = pending.preview_unbreaking_x_base_branch_v1().unwrap();
+    assert_eq!(
+        branch,
+        pending.preview_unbreaking_x_base_branch_v1().unwrap()
+    );
+    let wear = pending.preview_unbreaking_x_ordinary_wear_v1().unwrap();
+    assert_eq!(wear.chance_ppm, 200_000);
+    assert_eq!(wear.prevented, wear.draw_ppm < wear.chance_ppm);
+    assert_eq!(
+        wear,
+        pending.preview_unbreaking_x_ordinary_wear_v1().unwrap()
+    );
+
+    let line_broken = branch == FishingCatchBranch::Fish
+        && matches!(
+            pending.preview_unbreaking_x_line_stage_v1(0).unwrap(),
+            ManualFishingUnmodifiedLineStageV1::LineBroken { .. }
+        );
+    let first = pending
+        .stage_unbreaking_x_rod_durability_v1()
+        .await
+        .unwrap();
+    let replay = pending
+        .stage_unbreaking_x_rod_durability_v1()
+        .await
+        .unwrap();
+    assert_eq!(first, replay);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = first else {
+        panic!("Unbreaking X path requires an ordinary Rod");
+    };
+    assert_eq!(
+        preview.resulting_durability,
+        if line_broken {
+            0
+        } else if wear.prevented {
+            200
+        } else {
+            199
+        }
+    );
+
+    pending.rollback().await.unwrap();
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    let events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(events, 0);
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn unbreaking_x_owner_rejects_lower_level_and_other_branch_modifiers() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+
+    for (suffix, tier, level) in [
+        ("unbreaking-nine", "WOOD", 9_i16),
+        ("gold-unbreaking-x", "GOLD", 10_i16),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        seed_enchant(&store, rod_id, "UNBREAKING", level).await;
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.preview_unbreaking_x_base_branch_v1(),
+            Err(ManualFishingCastOwnerError::UnbreakingXRequiresExactLoadout)
+        ));
+        pending.rollback().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn starter_pool_preflight_accepts_starter_basic_and_uses_native_bait_capacity() {
     let Some(store) = test_store().await else {
         return;

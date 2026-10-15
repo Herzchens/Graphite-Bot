@@ -45,6 +45,7 @@ mod fishing_rod_durability_state;
 mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_species;
+mod fishing_unbreaking_x;
 mod fishing_unmodified_capability;
 mod fishing_unmodified_line_stage;
 mod fishing_variant;
@@ -323,6 +324,10 @@ pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
     FishingSpecies, FishingSpeciesPolicy, RareBaitAreaSpeciesWeightPreview,
     fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
+};
+pub use fishing_unbreaking_x::{
+    ManualFishingUnbreakingXError, ManualFishingUnbreakingXWearPreviewV1,
+    resolve_manual_fishing_unbreaking_x_wear_v1,
 };
 pub use fishing_unmodified_capability::{
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
