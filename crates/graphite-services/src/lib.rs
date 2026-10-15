@@ -35,6 +35,7 @@ mod fishing_multi_treasure;
 mod fishing_multicatch;
 mod fishing_multicatch_roll;
 mod fishing_numeric;
+mod fishing_operation;
 mod fishing_over_cap;
 mod fishing_payload;
 mod fishing_payload_delivery;
@@ -288,6 +289,10 @@ pub use fishing_numeric::{
     FISHING_NUMERIC_DRAW_SCALE_PPM, FISHING_NUMERIC_POLICY_VERSION, FishingFishInstanceNumericV1,
     FishingNumericError, ManualFishingLineBreakChanceV1,
     preview_manual_fishing_line_break_chance_v1, resolve_fish_instance_numeric_v1,
+};
+pub use fishing_operation::{
+    ManualFishingOperationError, ManualFishingOperationV1,
+    lock_or_create_manual_fishing_operation_v1, manual_fishing_request_hash_v1,
 };
 pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,

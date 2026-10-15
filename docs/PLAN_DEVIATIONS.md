@@ -2830,3 +2830,48 @@ This is protocol hardening, not live command activation. It creates no operation
 does not commit it, changes no probability, and does not make a provisional cast
 terminal. Future operation creation/finalization must use the same exported contract
 rather than accepting adapter-defined kinds or versions.
+
+
+## Fishing request-key operation resolver
+
+Branch: feat/fishing-operation-resolver
+
+### 1. External request idempotency now owns the operation root
+
+**Integrity finding — CONFIRMED**
+
+After binding manual Fishing RNG to `MANUAL_FISHING_CAST` v1, adapters still
+could have hand-built the operation row, request hash and RNG root. That would
+split idempotency provenance between application code and the Services-owned
+Fishing transaction.
+
+**Final decision**
+
+Add a caller-transaction-owned operation resolver. The stable external request
+key is unique retry identity; actor, bound player, operation kind/version and a
+domain-separated request hash are independently validated. The v1 request hash
+covers the selected canonical Fishing area using an explicit protocol byte, so
+reusing one key for a different area or actor fails closed. The RNG root is
+generated only when the operation row wins insertion and is never regenerated
+when a matching PENDING request is resumed.
+
+Player lookup does not take a later-domain lock; the existing Fishing preflight
+retains authoritative operation -> player/progression -> Rod lock ownership.
+
+### 2. COMMITTED replay waits for a typed Fishing terminal receipt
+
+**Lifecycle finding — CONFIRMED**
+
+There is not yet a complete terminal Fishing result schema because direct Book
+delivery, over-cap catch/escape, Mending and combined shared-cap modifiers remain
+unfinished. Returning an opaque `operations.result` JSON value would weaken
+replay integrity and let the adapter interpret an unversioned payload.
+
+**Final decision**
+
+This resolver accepts only a matching PENDING operation. COMMITTED and other
+terminal states return an explicit terminal error until the future lifecycle
+owner can deserialize and validate a typed Fishing receipt. Operation creation
+does not commit independently; preflight/settlement failure rolls the newly
+inserted row back with the owning SQL transaction. This slice does not enable
+`/fish`.
