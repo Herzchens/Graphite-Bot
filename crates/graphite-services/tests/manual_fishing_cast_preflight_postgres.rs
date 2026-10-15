@@ -1,3 +1,4 @@
+use graphite_core::{DomainRng, OperationId, RootSeed};
 use graphite_progression::account_total_xp_for_level;
 use graphite_services::{
     AppliedFishingRodDurabilityState, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind,
@@ -361,6 +362,149 @@ async fn pinned_baseline_starter_outcome_stages_only_the_selected_branch_and_rol
             .await
             .unwrap();
     assert_eq!((asset_events, xp_events), (0, 0));
+}
+
+#[tokio::test]
+async fn selected_direct_book_is_reachable_and_replay_stable_in_starter_and_ordinary_casts() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    for (area, starter) in [
+        (FishingArea::StarterPool, true),
+        (FishingArea::River, false),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        let rod_id = if starter {
+            seed_starter_basic_rod(&store, player_id, nonce, "book-positive").await
+        } else {
+            set_account_level(&store, player_id, 10).await;
+            seed_ordinary_rod(
+                &store,
+                player_id,
+                nonce,
+                "book-positive",
+                "WOOD",
+                200,
+                600,
+                false,
+                4,
+                3,
+            )
+            .await
+        };
+        let operation_id = seed_operation(&store, player_id, nonce, "book-positive").await;
+        let root = find_selected_direct_book_root(operation_id);
+        sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+            .bind(root.as_slice())
+            .bind(operation_id)
+            .execute(store.pool())
+            .await
+            .unwrap();
+
+        let mut previous = None;
+        for _ in 0..2 {
+            let tx = store.pool().begin().await.unwrap();
+            let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, area)
+                .await
+                .unwrap();
+            assert_eq!(
+                pending.preview_unmodified_base_branch_v1().unwrap(),
+                FishingCatchBranch::Treasure
+            );
+            assert!(matches!(
+                pending.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure),
+                Err(ManualFishingCastOwnerError::NonFishRoll(
+                    graphite_services::FishingNonFishRollError::EnchantBookRequiresDedicatedResolver
+                ))
+            ));
+            let candidate = pending
+                .preview_unmodified_selected_direct_book_v1()
+                .unwrap();
+            let actual = if starter {
+                let outcome = pending
+                    .stage_unmodified_starter_base_outcome_v1()
+                    .await
+                    .unwrap();
+                let PendingManualFishingStarterBaseOutcomeV1::DirectBookPending {
+                    candidate: selected,
+                } = outcome
+                else {
+                    panic!("Starter Basic must keep selected direct Book pending");
+                };
+                selected
+            } else {
+                let outcome = pending
+                    .stage_unmodified_selected_outcome_v1()
+                    .await
+                    .unwrap();
+                let PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending {
+                    candidate: selected,
+                } = outcome
+                else {
+                    panic!("ordinary Rod must keep selected direct Book pending");
+                };
+                selected
+            };
+            assert_eq!(actual, candidate);
+            assert_eq!(candidate.treasure_slot, 0);
+            if let Some(previous_candidate) = previous {
+                assert_eq!(candidate, previous_candidate);
+            }
+            previous = Some(candidate);
+            pending.rollback().await.unwrap();
+        }
+        let new_items: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM item_instances WHERE created_by_operation_id = $1",
+        )
+        .bind(operation_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+        let asset_events: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+                .bind(operation_id)
+                .fetch_one(store.pool())
+                .await
+                .unwrap();
+        let xp_events: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+                .bind(operation_id)
+                .fetch_one(store.pool())
+                .await
+                .unwrap();
+        assert_eq!((new_items, asset_events, xp_events), (0, 0, 0));
+        if !starter {
+            let durability: i64 =
+                sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+                    .bind(rod_id)
+                    .fetch_one(store.pool())
+                    .await
+                    .unwrap();
+            assert_eq!(durability, 200);
+        }
+        assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+    }
+}
+
+fn find_selected_direct_book_root(operation_id: Uuid) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    // Deterministically exercise the real versioned branch and Treasure-result domains,
+    // not a mocked Book branch. This search changes no gameplay probabilities.
+    for nonce in 0_u64..20_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut branch = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if branch.sample_weighted(&[176, 17, 7]).unwrap() != 2 {
+            continue;
+        }
+        let mut treasure = DomainRng::derive(root, operation, "fishing.manual.v1.treasure_result");
+        if treasure.sample_weighted(&[20, 15, 4, 4, 5, 2]).unwrap() == 2 {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find a deterministic direct Book seed");
 }
 
 #[tokio::test]
