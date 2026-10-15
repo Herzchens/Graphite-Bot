@@ -11,6 +11,7 @@ use graphite_services::{
     PendingManualFishingBaitRackSelectedOutcomeV1,
     PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
+    PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
     PendingManualFishingStrengthenSelectedOutcomeV1,
     PendingManualFishingSturdyBaitSelectedOutcomeV1,
@@ -1379,6 +1380,270 @@ async fn bait_rack_only_owner_rejects_gold_and_additional_enchant() {
         assert!(matches!(
             pending.preview_bait_rack_base_branch_v1(),
             Err(ManualFishingCastOwnerError::BaitRackRequiresExactLoadout)
+        ));
+        pending.rollback().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn school_bait_only_selected_outcome_uses_pinned_quantity_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "school-only",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let operation_id = seed_operation(&store, player_id, nonce, "school-only").await;
+    seed_active_fishing_bait(
+        &store,
+        player_id,
+        operation_id,
+        "SCHOOL",
+        "fishing.bait.school",
+        2,
+    )
+    .await;
+
+    let tx = store.pool().begin().await.unwrap();
+    let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+        .await
+        .unwrap();
+    assert_eq!(pending.bait_settlement().plan.consumed_bait_categories, 1);
+    assert_eq!(pending.bait_settlement().plan.entries.len(), 1);
+    let bait = pending.bait_settlement().plan.entries[0];
+    assert_eq!(bait.units_consumed, 1);
+    assert_eq!(bait.available_units_before, 2);
+    assert_eq!(bait.available_units_after, 1);
+    assert!(matches!(
+        pending.preview_unmodified_base_branch_v1(),
+        Err(ManualFishingCastOwnerError::ModifiedFishRequiresSharedComposer)
+    ));
+    let weights = pending.pre_cap_branch_weights();
+    assert_eq!(
+        (weights.fish, weights.junk, weights.treasure),
+        (70_400, 6_800, 2_800)
+    );
+
+    let branch = pending.preview_school_bait_base_branch_v1().unwrap();
+    assert_eq!(
+        branch,
+        pending.preview_school_bait_base_branch_v1().unwrap()
+    );
+    if branch == FishingCatchBranch::Fish {
+        let quantity = pending.preview_school_bait_quantity_v1().unwrap();
+        assert_eq!(quantity.chance_ppm, 80_000);
+        assert_eq!(quantity, pending.preview_school_bait_quantity_v1().unwrap());
+        let expected_count = if quantity.draw_ppm < quantity.chance_ppm {
+            2
+        } else {
+            1
+        };
+        assert_eq!(quantity.quantity.final_fish_count(), expected_count);
+        let candidates = pending.preview_school_bait_fish_candidates_v1().unwrap();
+        assert_eq!(candidates.len(), usize::from(expected_count));
+        for (slot, candidate) in candidates.iter().enumerate() {
+            assert_eq!(usize::from(candidate.fish_slot), slot);
+            assert_eq!(candidate.area, FishingArea::River);
+        }
+        assert_eq!(
+            pending.preview_school_bait_fish_capability_v1().unwrap(),
+            pending.preview_school_bait_fish_capability_v1().unwrap()
+        );
+    } else {
+        assert!(matches!(
+            pending.preview_school_bait_quantity_v1(),
+            Err(ManualFishingCastOwnerError::SchoolBaitRequiresFishBranch)
+        ));
+    }
+
+    if branch == FishingCatchBranch::Treasure
+        && pending.preview_non_fish_candidate_v1(branch).is_err()
+    {
+        let candidate = pending
+            .preview_school_bait_selected_direct_book_v1()
+            .unwrap();
+        let first = pending
+            .stage_school_bait_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(
+            first,
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBookPending { candidate }
+        );
+        assert_eq!(
+            first,
+            pending
+                .stage_school_bait_selected_outcome_v1()
+                .await
+                .unwrap()
+        );
+    } else {
+        let first = pending
+            .stage_school_bait_selected_outcome_v1()
+            .await
+            .unwrap();
+        let replay = pending
+            .stage_school_bait_selected_outcome_v1()
+            .await
+            .unwrap();
+        assert_eq!(first, replay);
+        match (branch, first) {
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingSchoolBaitSelectedOutcomeV1::LandedFish {
+                    quantity,
+                    deliveries,
+                    progression,
+                    durability,
+                },
+            ) => {
+                assert_eq!(
+                    deliveries.len(),
+                    usize::from(quantity.quantity.final_fish_count())
+                );
+                assert_eq!(progression.account_xp.granted_xp, 2);
+                assert!(matches!(
+                    durability,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                ));
+            }
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingSchoolBaitSelectedOutcomeV1::LineBroken {
+                    quantity,
+                    durability,
+                },
+            ) => {
+                assert!((1..=2).contains(&quantity.quantity.final_fish_count()));
+                let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = durability else {
+                    panic!("line break must resolve on ordinary Rod");
+                };
+                assert_eq!(preview.resulting_durability, 0);
+            }
+            (
+                FishingCatchBranch::Fish,
+                PendingManualFishingSchoolBaitSelectedOutcomeV1::OverCapCatchPending {
+                    quantity,
+                    line_stage,
+                },
+            ) => {
+                assert!((1..=2).contains(&quantity.quantity.final_fish_count()));
+                assert!(matches!(
+                    line_stage,
+                    ManualFishingUnmodifiedLineStageV1::LineSurvivedOverCapCatchPending { .. }
+                ));
+            }
+            (
+                FishingCatchBranch::Junk | FishingCatchBranch::Treasure,
+                PendingManualFishingSchoolBaitSelectedOutcomeV1::NonFish { staged, durability },
+            ) => {
+                assert_eq!(staged.progression.account_xp.granted_xp, 2);
+                assert!(matches!(
+                    durability,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                ));
+            }
+            (selected, staged) => {
+                panic!("School selected branch/result mismatch: {selected:?} {staged:?}")
+            }
+        }
+    }
+
+    pending.rollback().await.unwrap();
+    let bait_quantity: i64 = sqlx::query_scalar(
+        "SELECT quantity FROM item_stacks WHERE player_id = $1 AND definition_key = 'fishing.bait.school' AND definition_version = 1 AND location = 'ITEM_BAG'",
+    )
+    .bind(player_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(bait_quantity, 2);
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 200);
+    let assets: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let xp: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!((assets, xp), (0, 0));
+    assert_eq!(operation_state(&store, operation_id).await, "PENDING");
+}
+
+#[tokio::test]
+async fn school_bait_owner_rejects_gold_enchants_and_additional_consumed_bait() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+
+    for (suffix, tier, extra_enchant, extra_bait) in [
+        ("school-gold", "GOLD", false, false),
+        ("school-enchant", "WOOD", true, false),
+        ("school-plus-bait", "WOOD", false, true),
+    ] {
+        let nonce = Uuid::now_v7();
+        let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
+        let rod_id = seed_ordinary_rod(
+            &store, player_id, nonce, suffix, tier, 200, 600, false, 4, 3,
+        )
+        .await;
+        if extra_enchant {
+            seed_enchant(&store, rod_id, "STRENGTHEN", 1).await;
+        }
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
+        seed_active_fishing_bait(
+            &store,
+            player_id,
+            operation_id,
+            "SCHOOL",
+            "fishing.bait.school",
+            2,
+        )
+        .await;
+        if extra_bait {
+            seed_active_fishing_bait(
+                &store,
+                player_id,
+                operation_id,
+                "STURDY",
+                "fishing.bait.sturdy",
+                2,
+            )
+            .await;
+        }
+
+        let tx = store.pool().begin().await.unwrap();
+        let pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::River)
+            .await
+            .unwrap();
+        assert!(matches!(
+            pending.preview_school_bait_base_branch_v1(),
+            Err(ManualFishingCastOwnerError::SchoolBaitRequiresExactLoadout)
         ));
         pending.rollback().await.unwrap();
     }

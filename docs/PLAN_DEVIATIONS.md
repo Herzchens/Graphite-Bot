@@ -2635,3 +2635,50 @@ children; a line break stages only Rod destruction; a survived over-cap Fish rem
 pending the unresolved catch/escape mapping. Direct Book stays identity-only. On
 rollback, the Sturdy unit, Rod state, asset/progression events and operation remain
 unchanged outside the transaction. This does not authorize `/fish`.
+
+
+## Fishing School Bait selected-outcome owner
+
+### 1. School Bait has an exact independent quantity proc
+
+**Normative alignment — CONFIRMED**
+
+School Bait applies only after a Fish branch, has frozen proc probability 2/25,
+adds exactly one same-area fish when triggered, is non-recursive, and remains
+under the shared five-fish ceiling. It does not alter branch weights, species
+weights, Fish numeric distributions, line strength, line-break chance, over-cap
+catch chance or Rod wear. Its reserved `SchoolBaitProc` manual Fishing RNG domain
+is a 1,000,000-PPM bucket, and 2/25 maps exactly to 80,000 PPM.
+
+**Final decision**
+
+For an ordinary non-Gold Rod with no embedded enchants and exactly one consumed
+School Bait category, keep the baseline CatchBranch draw. Only if that branch is
+Fish, compare the operation-pinned SchoolBaitProc bucket with the exact 80,000
+threshold and feed Triggered/NotTriggered into the existing School quantity
+policy starting from one baseline fish. Resolve every resulting fish slot
+independently using the normal same-area FishInstance domains.
+
+### 2. Aggregate capability and progression are cast-level, not per extra fish
+
+**Lifecycle finding — CONFIRMED**
+
+The physical CatchLoad must include every fish in a multi-fish result, while the
+Rod still receives exactly one durability event for the cast attempt. Successful
+Fishing progression already accepts the full landed-rarity list and settles one
+Account-XP/activity receipt.
+
+**Final decision**
+
+Sum all one-or-two School-result Fish tensions through the existing multi-fish
+capability kernel before line-break resolution. On landed success, deliver every
+FishInstance first, then settle one successful progression receipt from all landed
+rarities and one operation-keyed Rod wear event. On line break, stage only Rod
+destruction; on survived over-cap, keep catch/escape pending. Non-Fish branches do
+not sample SchoolBaitProc and follow their existing payload/XP/wear path. Direct
+Book remains identity-only. Bait consumption, output, progression and Rod state
+share the same rollback-owned transaction. This does not authorize `/fish`.
+
+School Bait combined with Multicatch remains outside this slice because the existing
+quantity policy intentionally does not freeze ordering between those independent
+stages; no ordering is inferred here.
