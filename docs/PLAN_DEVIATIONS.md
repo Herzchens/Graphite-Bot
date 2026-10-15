@@ -2376,3 +2376,44 @@ until their separate unresolved owners are complete.
 Same-operation repeated staging must replay all child receipts. Rollback removes
 Fish/payload delivery, progression events and Rod wear together. This still grants
 no transaction commit or Discord `/fish` exposure.
+
+
+## Fishing Strengthen I-X selected outcome
+
+Branch: feat/fishing-strengthen-owner
+
+### 1. Strengthen is branch-neutral and fully defined for I-X
+
+**Normative alignment — CONFIRMED**
+
+The capability kernel already freezes Strengthen at +4% effective line strength
+per canonical level I-X and evaluates the multiplier as exact rational arithmetic.
+Strengthen changes neither Fish/Junk/Treasure branch weights nor Fish
+species/variant/weight identity. It changes only the capability ratio that later
+feeds line-break and over-cap catch policy.
+
+**Final decision**
+
+For a locked ordinary non-Gold Rod with exactly one embedded Strengthen enchant
+at level I-X and no consumed bait, retain the canonical baseline branch and Fish
+candidate RNG domains. Compute capability with
+`manual_fishing_line_strength(..., Some(level), false)`, then preserve the
+existing line-break-first stage. Non-Fish branches bypass capability as before.
+
+### 2. Selected outcomes preserve baseline settlement and fail closed on combinations
+
+**Safety boundary — CONFIRMED**
+
+Ordinary wear itself is unchanged by Strengthen. Gold Rod changes branch odds,
+and any additional Rod enchant or active bait could change another stage that
+requires shared modifier composition.
+
+**Final decision**
+
+Landed Fish and Junk/non-book Treasure may reuse their existing unique
+asset/progression children and the operation-keyed ordinary Rod wear receipt.
+Line break stages only destruction with no successful XP. Survived over-cap Fish
+remains unresolved catch/escape, and direct Book remains identity-only.
+Gold + Strengthen, Strengthen plus another enchant, and bait combinations fail
+closed. Replays must return the same child receipts and rollback removes all
+provisional effects. No cast commit or `/fish` exposure is authorized.

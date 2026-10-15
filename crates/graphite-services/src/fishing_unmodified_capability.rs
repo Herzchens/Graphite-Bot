@@ -58,6 +58,38 @@ pub fn preview_manual_unmodified_fish_capability_v1(
     rod: EquippedFishingRodKind,
     candidate: FishingFishInstanceNumericV1,
 ) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
+    preview_manual_fish_capability_with_strengthen_v1(area, rod, candidate, None)
+}
+
+/// Previews the exact physical capability route when Strengthen is the only
+/// gameplay modifier on the Rod.
+///
+/// Strengthen affects only effective line strength (+4% per canonical level I-X).
+/// It does not change species, variant, Fish numeric identity, branch weights,
+/// line-break formula or the over-cap catch formula. SharpHook and Sturdy Bait
+/// remain absent in this narrow helper.
+pub fn preview_manual_strengthen_fish_capability_v1(
+    area: FishingArea,
+    rod: EquippedFishingRodKind,
+    candidate: FishingFishInstanceNumericV1,
+    strengthen_level: u8,
+) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
+    preview_manual_fish_capability_with_strengthen_v1(area, rod, candidate, Some(strengthen_level))
+}
+
+fn preview_manual_fish_capability_with_strengthen_v1(
+    area: FishingArea,
+    rod: EquippedFishingRodKind,
+    candidate: FishingFishInstanceNumericV1,
+    strengthen_level: Option<u8>,
+) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
+    if let Some(level) = strengthen_level
+        && !(1..=crate::STRENGTHEN_MAX_LEVEL).contains(&level)
+    {
+        return Err(ManualFishingUnmodifiedCapabilityError::Capability(
+            FishingCapabilityError::StrengthenLevelOutOfRange(level),
+        ));
+    }
     if !fishing_area_species_pool(area)
         .iter()
         .any(|row| row.species == candidate.species)
@@ -77,7 +109,7 @@ pub fn preview_manual_unmodified_fish_capability_v1(
     let tension =
         fishing_tension_from_canonical_scaled_weight(candidate.weight_scaled_grams(), rarity)?;
     let load = fishing_catch_load_from_scaled_tensions(&[tension])?;
-    let strength = manual_fishing_line_strength(tier, true, None, false)?;
+    let strength = manual_fishing_line_strength(tier, true, strengthen_level, false)?;
     let ratio = manual_fishing_capability_ratio(load, strength)?;
 
     Ok(match resolve_routed_fish_capability_stage(route, ratio)? {

@@ -210,7 +210,8 @@ pub use fishing_capability_routing::{
 };
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, PendingManualFishingCastV1, PendingManualFishingNonFishReceiptV1,
-    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingUnbreakingXSelectedOutcomeV1,
+    PendingManualFishingStarterBaseOutcomeV1, PendingManualFishingStrengthenSelectedOutcomeV1,
+    PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
 };
 pub use fishing_cast_preflight::{
@@ -331,7 +332,7 @@ pub use fishing_unbreaking_x::{
 };
 pub use fishing_unmodified_capability::{
     ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    preview_manual_unmodified_fish_capability_v1,
+    preview_manual_strengthen_fish_capability_v1, preview_manual_unmodified_fish_capability_v1,
 };
 pub use fishing_unmodified_line_stage::{
     ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
