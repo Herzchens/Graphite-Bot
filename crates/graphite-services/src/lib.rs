@@ -224,7 +224,8 @@ pub use fishing_cast_owner::{
     PendingManualFishingSturdyBaitSelectedOutcomeV1,
     PendingManualFishingTreasureXSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
-    PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
+    PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_request_v1,
+    begin_manual_fishing_cast_v1,
 };
 pub use fishing_cast_preflight::{
     ManualFishingCastPreflight, ManualFishingCastPreflightError, lock_manual_fishing_cast_preflight,

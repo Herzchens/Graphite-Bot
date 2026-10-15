@@ -18,14 +18,108 @@ use graphite_services::{
     PendingManualFishingSturdyBaitSelectedOutcomeV1,
     PendingManualFishingTreasureXSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
-    PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_v1,
-    direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
-    lock_manual_fishing_cast_preflight, manual_fishing_base_fish_cast_aexp,
-    multi_treasure_count_policy, multicatch_count_policy, preview_over_cap_catch_chance,
-    resolve_manual_fishing_direct_book_candidate_v1, resolve_manual_fishing_treasure_x_branch_v1,
+    PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_request_v1,
+    begin_manual_fishing_cast_v1, direct_fishing_book_pool_membership,
+    direct_fishing_finished_book_level_weight, lock_manual_fishing_cast_preflight,
+    manual_fishing_base_fish_cast_aexp, multi_treasure_count_policy, multicatch_count_policy,
+    preview_over_cap_catch_chance, resolve_manual_fishing_direct_book_candidate_v1,
+    resolve_manual_fishing_treasure_x_branch_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn request_owned_entrypoint_creates_preflights_and_rolls_back_operation_together() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "request-owned").await;
+    let key = format!("test:manual-fishing-request:{nonce}");
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.preflight().player_id, player_id);
+    assert_eq!(
+        pending.preflight().area_access.area,
+        FishingArea::StarterPool
+    );
+    let operation_id = pending.preflight().operation_id;
+    pending.rollback().await.unwrap();
+
+    let operation_count: i64 = sqlx::query_scalar("SELECT count(*) FROM operations WHERE id = $1")
+        .bind(operation_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(operation_count, 0);
+}
+
+#[tokio::test]
+async fn request_owned_entrypoint_resumes_existing_pending_operation_without_rerolling_root() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "request-resume").await;
+    let key = format!("test:manual-fishing-request:{nonce}:resume");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let original_root: Vec<u8> =
+        sqlx::query_scalar("SELECT rng_root FROM operations WHERE id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    assert_eq!(pending.preflight().operation_id, operation.operation_id);
+    let replay_root = pending.preflight().rng;
+    assert_eq!(replay_root.operation_id(), operation.operation_id);
+    pending.rollback().await.unwrap();
+
+    let stored_root: Vec<u8> = sqlx::query_scalar("SELECT rng_root FROM operations WHERE id = $1")
+        .bind(operation.operation_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    assert_eq!(stored_root, original_root);
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "PENDING"
+    );
+}
 
 #[tokio::test]
 async fn pending_cast_owner_rolls_back_consumed_bait_and_retains_operation_identity() {
