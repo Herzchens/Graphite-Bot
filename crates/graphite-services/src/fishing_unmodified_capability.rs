@@ -116,7 +116,7 @@ pub fn preview_manual_unmodified_fish_capability_v1(
     rod: EquippedFishingRodKind,
     candidate: FishingFishInstanceNumericV1,
 ) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
-    preview_manual_fish_capability_with_strengthen_v1(area, rod, candidate, None)
+    preview_manual_fish_capability_v1(area, rod, candidate, None, false)
 }
 
 /// Previews the exact physical capability route when Strengthen is the only
@@ -132,14 +132,29 @@ pub fn preview_manual_strengthen_fish_capability_v1(
     candidate: FishingFishInstanceNumericV1,
     strengthen_level: u8,
 ) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
-    preview_manual_fish_capability_with_strengthen_v1(area, rod, candidate, Some(strengthen_level))
+    preview_manual_fish_capability_v1(area, rod, candidate, Some(strengthen_level), false)
 }
 
-fn preview_manual_fish_capability_with_strengthen_v1(
+/// Previews the exact physical capability route when consumed Sturdy Bait is
+/// the only gameplay modifier.
+///
+/// Sturdy contributes x1.10 effective line strength and x0.90 final line-break
+/// probability. It does not change Fish identity, branch weights, species rarity
+/// or the later over-cap catch formula.
+pub fn preview_manual_sturdy_bait_fish_capability_v1(
+    area: FishingArea,
+    rod: EquippedFishingRodKind,
+    candidate: FishingFishInstanceNumericV1,
+) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
+    preview_manual_fish_capability_v1(area, rod, candidate, None, true)
+}
+
+fn preview_manual_fish_capability_v1(
     area: FishingArea,
     rod: EquippedFishingRodKind,
     candidate: FishingFishInstanceNumericV1,
     strengthen_level: Option<u8>,
+    sturdy_bait_active: bool,
 ) -> Result<ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedCapabilityError> {
     if let Some(level) = strengthen_level
         && !(1..=crate::STRENGTHEN_MAX_LEVEL).contains(&level)
@@ -167,7 +182,7 @@ fn preview_manual_fish_capability_with_strengthen_v1(
     let tension =
         fishing_tension_from_canonical_scaled_weight(candidate.weight_scaled_grams(), rarity)?;
     let load = fishing_catch_load_from_scaled_tensions(&[tension])?;
-    let strength = manual_fishing_line_strength(tier, true, strengthen_level, false)?;
+    let strength = manual_fishing_line_strength(tier, true, strengthen_level, sturdy_bait_active)?;
     let ratio = manual_fishing_capability_ratio(load, strength)?;
 
     Ok(match resolve_routed_fish_capability_stage(route, ratio)? {
@@ -178,7 +193,7 @@ fn preview_manual_fish_capability_with_strengthen_v1(
             let ratio = required.capability_ratio();
             ManualFishingUnmodifiedCapabilityPreviewV1::OverCapPending {
                 ratio,
-                line_break: preview_manual_fishing_line_break_chance_v1(ratio, false)?,
+                line_break: preview_manual_fishing_line_break_chance_v1(ratio, sturdy_bait_active)?,
                 catch_chance: preview_over_cap_catch_chance(ratio, None)?,
             }
         }

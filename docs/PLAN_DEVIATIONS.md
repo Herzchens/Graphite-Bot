@@ -2595,3 +2595,43 @@ After a SharpHook over-cap Fish survives line break, return the exact
 A line break still stages only Rod destruction; within-capability Fish and non-Fish
 outcomes can stage existing rollback-only asset/XP/wear children. Gold, bait and
 additional enchants fail closed. This slice does not authorize `/fish`.
+
+
+## Fishing Sturdy Bait selected-outcome owner
+
+### 1. Sturdy Bait is branch-neutral and changes only physical safety
+
+**Normative alignment — CONFIRMED**
+
+The canonical Sturdy Bait effect is x1.10 effective line strength and x0.90 final
+line-break chance. It does not alter Fish/Junk/Treasure branch weights, Fish species,
+variant, numeric identity, over-cap catch chance, progression or ordinary Rod wear.
+The existing capability kernel already owns the exact 11/10 strength factor, and the
+versioned line-break numeric kernel already applies 9/10 before half-up PPM rounding.
+
+**Final decision**
+
+Permit a narrow stateful path only when the locked Rod is ordinary and non-Gold,
+has no embedded enchants, and the bait settlement proves exactly one consumed bait
+category whose canonical bait is Sturdy. Auto-detached missing selections have no
+gameplay effect and do not invalidate the path; any second consumed bait does.
+Reuse baseline branch and Fish identity, compute capability with Sturdy active,
+then revalidate and resolve the same pinned LineBreak PPM domain using the Sturdy
+line-break preview.
+
+### 2. Bait consumption remains in the same rollback-owned cast transaction
+
+**Lifecycle finding — CONFIRMED**
+
+The pending cast settles active bait before outcome resolution and records the
+one-unit stack decrement plus settlement event in the same PostgreSQL transaction.
+Sturdy therefore cannot be resolved safely from an adapter-provided boolean.
+
+**Final decision**
+
+Derive Sturdy activation only from the locked settlement receipt. A landed Fish or
+non-Fish result may stage the existing asset/XP and single operation-keyed Rod wear
+children; a line break stages only Rod destruction; a survived over-cap Fish remains
+pending the unresolved catch/escape mapping. Direct Book stays identity-only. On
+rollback, the Sturdy unit, Rod state, asset/progression events and operation remain
+unchanged outside the transaction. This does not authorize `/fish`.
