@@ -2875,3 +2875,32 @@ owner can deserialize and validate a typed Fishing receipt. Operation creation
 does not commit independently; preflight/settlement failure rolls the newly
 inserted row back with the owning SQL transaction. This slice does not enable
 `/fish`.
+
+
+## Fishing request-owned preflight entrypoint
+
+Branch: feat/fishing-request-owned-preflight
+
+### 1. Adapter input ends at actor, request key and area
+
+**Ownership finding — CONFIRMED**
+
+The operation resolver now owns operation id, player binding, kind/version,
+request hash and RNG root. Retaining a second public path where an adapter
+chooses operation/player ids is useful for internal tests/child composition but
+must not be the eventual application boundary.
+
+**Final decision**
+
+Add a higher-level pre-terminal entrypoint accepting only Discord actor,
+external request key and canonical Fishing area plus a caller-owned SQL
+transaction. It creates/resumes the canonical PENDING operation, then moves
+that same transaction into the existing Fishing preflight/bait owner using the
+resolved operation/player identities. A newly inserted operation therefore
+rolls back automatically with any preflight error or explicit pending-owner
+rollback; retry of an existing PENDING operation reuses the persisted RNG root.
+
+The lower-level operation-id entrypoint remains available as an internal
+composition/testing primitive. Neither entrypoint can commit a cast. Typed
+COMMITTED replay, terminal result/audit/outbox and the Discord `/fish`
+adapter remain later gates.

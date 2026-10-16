@@ -19,7 +19,7 @@ use crate::{
     FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution, FishingRodEnchant,
     FishingRodLevelXEffect, FishingRodLevelXPolicyError, MULTI_TREASURE_MAX_LEVEL,
     MULTICATCH_MAX_LEVEL, ManualFishingCastPreflight, ManualFishingCastPreflightError,
-    ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError,
+    ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError, ManualFishingOperationError,
     ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
     ManualFishingRngDrawError, ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
     ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingTreasureXBranchError,
@@ -31,7 +31,8 @@ use crate::{
     canonical_enchant_max_resulting_level, deliver_fishing_fish_instance_v1,
     deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
     fishing_rod_level_x_policy, lock_manual_fishing_cast_preflight,
-    manual_mine_fish_cooldown_policy, preview_manual_fishing_unmodified_fish_candidate_v1,
+    lock_or_create_manual_fishing_operation_v1, manual_mine_fish_cooldown_policy,
+    preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_school_bait_fish_capability_v1,
     preview_manual_strengthen_fish_capability_v1, preview_manual_sturdy_bait_fish_capability_v1,
     preview_manual_unmodified_fish_capability_v1, preview_over_cap_catch_chance,
@@ -45,6 +46,8 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum ManualFishingCastOwnerError {
+    #[error(transparent)]
+    Operation(#[from] ManualFishingOperationError),
     #[error(transparent)]
     Preflight(#[from] ManualFishingCastPreflightError),
     #[error(transparent)]
@@ -2832,6 +2835,36 @@ fn locked_pre_cap_modifiers(
 /// While result/terminal/outbox integration is not implemented, this function can prepare a
 /// cast but deliberately cannot commit it. Its opaque pending owner prevents accidental live
 /// bait consumption or permanent-area unlocking without a fully settled cast operation.
+/// Creates/resumes the canonical request-key operation and immediately enters
+/// authoritative manual-Fishing preflight in the same caller-owned transaction.
+///
+/// This is the adapter-safe entrypoint for pre-terminal work: adapters provide
+/// actor/request-key/area only and cannot supply an operation id, player id or RNG
+/// root. If operation resolution or preflight fails, the owned transaction drops
+/// and the newly inserted PENDING operation is rolled back with every partial
+/// preflight mutation. The returned pending owner still has no commit path.
+pub async fn begin_manual_fishing_cast_request_v1<'c>(
+    mut tx: Transaction<'c, Postgres>,
+    discord_user_id: u64,
+    external_request_key: &str,
+    area: FishingArea,
+) -> Result<PendingManualFishingCastV1<'c>, ManualFishingCastOwnerError> {
+    let operation = lock_or_create_manual_fishing_operation_v1(
+        &mut tx,
+        discord_user_id,
+        external_request_key,
+        area,
+    )
+    .await?;
+    begin_manual_fishing_cast_v1(
+        tx,
+        operation.operation_id,
+        operation.player_id,
+        operation.area,
+    )
+    .await
+}
+
 pub async fn begin_manual_fishing_cast_v1<'c>(
     mut tx: Transaction<'c, Postgres>,
     operation_id: Uuid,
