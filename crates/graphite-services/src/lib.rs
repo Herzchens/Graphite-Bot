@@ -49,6 +49,7 @@ mod fishing_rod_level_x;
 mod fishing_rod_state;
 mod fishing_school_bait;
 mod fishing_species;
+mod fishing_terminal;
 mod fishing_treasure_x;
 mod fishing_unbreaking_x;
 mod fishing_unmodified_capability;
@@ -357,6 +358,10 @@ pub use fishing_species::{
     CANONICAL_FISH_AREA_ROWS, CANONICAL_FISH_SPECIES_COUNT, FishingAreaSpeciesPolicy,
     FishingSpecies, FishingSpeciesPolicy, RareBaitAreaSpeciesWeightPreview,
     fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
+};
+pub use fishing_terminal::{
+    ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
+    ManualFishingStarterBaseTerminalReceiptV1,
 };
 pub use fishing_treasure_x::{
     ManualFishingTreasureXBranchError, resolve_manual_fishing_treasure_x_branch_v1,
