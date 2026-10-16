@@ -27,7 +27,7 @@ pub enum ManualFishingSuccessfulProgressionOutcomeV1 {
     Fish { landed_rarities: Vec<FishingRarity> },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ManualFishingProgressionSettlementReceiptV1 {
     pub operation_id: Uuid,
     pub player_id: Uuid,

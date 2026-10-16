@@ -2,7 +2,7 @@ use graphite_items::{
     StackDeliveryMutationError, StackDeliveryMutationReceipt, StackDeliveryMutationRequest,
     apply_stack_delivery_mutation,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
@@ -15,7 +15,7 @@ use crate::{
 
 pub const FISHING_PAYLOAD_ITEM_DEFINITION_VERSION_V1: i32 = 1;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "branch", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingResolvedNonFishPayloadV1 {
     Junk {
@@ -28,13 +28,13 @@ pub enum FishingResolvedNonFishPayloadV1 {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FishingNonFishPayloadDeliveryReceiptV1 {
     pub outcome: FishingResolvedNonFishPayloadV1,
     pub delivery: StackDeliveryMutationReceipt,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "branch", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FishingResolvedNonFishOutcomeV1 {
     Junk {
@@ -46,7 +46,7 @@ pub enum FishingResolvedNonFishOutcomeV1 {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FishingNonFishOutcomeDeliveryReceiptV1 {
     pub outcome: FishingResolvedNonFishOutcomeV1,
     pub deliveries: Vec<FishingNonFishPayloadDeliveryReceiptV1>,

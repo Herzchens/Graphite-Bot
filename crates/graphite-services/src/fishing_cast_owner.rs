@@ -2,6 +2,7 @@ use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::fishing_terminal::finalize_manual_fishing_starter_base_v1;
 use crate::fishing_unmodified_line_stage::{
     resolve_manual_sturdy_bait_line_stage_v1, resolve_manual_unmodified_line_stage_v1,
 };
@@ -22,12 +23,14 @@ use crate::{
     ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError, ManualFishingOperationError,
     ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
     ManualFishingRngDrawError, ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
-    ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingTreasureXBranchError,
-    ManualFishingUnbreakingXError, ManualFishingUnbreakingXWearPreviewV1,
-    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
-    ManualFishingUnmodifiedLineStageV1, ManualMineFishCooldownPolicy, OverCapCatchChancePolicy,
-    SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL, apply_operation_fishing_rod_durability_v1,
+    ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
+    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
+    ManualFishingTreasureXBranchError, ManualFishingUnbreakingXError,
+    ManualFishingUnbreakingXWearPreviewV1, ManualFishingUnmodifiedCapabilityError,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
+    ManualMineFishCooldownPolicy, OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL,
+    STRENGTHEN_MAX_LEVEL, apply_operation_fishing_rod_durability_v1,
     canonical_enchant_max_resulting_level, deliver_fishing_fish_instance_v1,
     deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
     fishing_rod_level_x_policy, lock_manual_fishing_cast_preflight,
@@ -48,6 +51,12 @@ use crate::{
 pub enum ManualFishingCastOwnerError {
     #[error(transparent)]
     Operation(#[from] ManualFishingOperationError),
+    #[error(transparent)]
+    StarterTerminal(#[from] ManualFishingStarterBaseTerminalError),
+    #[error(
+        "direct Enchant Book delivery is not implemented, so this Starter Basic cast cannot commit"
+    )]
+    StarterTerminalDirectBookPending,
     #[error(transparent)]
     Preflight(#[from] ManualFishingCastPreflightError),
     #[error(transparent)]
@@ -2802,6 +2811,47 @@ impl PendingManualFishingCastV1<'_> {
                 }
             }
         }
+    }
+
+    /// Atomically commits the complete no-modifier Starter Pool + Starter Basic
+    /// path for Fish, Junk, or non-book Treasure.
+    ///
+    /// Direct Enchant Book remains blocked before terminal transition. No other
+    /// area/Rod/modifier path is authorized by this narrow terminal owner.
+    pub async fn commit_unmodified_starter_base_v1(
+        mut self,
+    ) -> Result<ManualFishingStarterBaseTerminalReceiptV1, ManualFishingCastOwnerError> {
+        let staged = self.stage_unmodified_starter_base_outcome_v1().await?;
+        let outcome = match staged {
+            PendingManualFishingStarterBaseOutcomeV1::Fish {
+                delivery,
+                progression,
+            } => ManualFishingStarterBaseTerminalOutcomeV1::Fish {
+                delivery,
+                progression,
+            },
+            PendingManualFishingStarterBaseOutcomeV1::NonFish { staged } => {
+                ManualFishingStarterBaseTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                }
+            }
+            PendingManualFishingStarterBaseOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::StarterTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingStarterBaseTerminalReceiptV1 {
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            outcome,
+        };
+        finalize_manual_fishing_starter_base_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingStarterBaseTerminalError::from)?;
+        Ok(receipt)
     }
 
     pub async fn rollback(self) -> Result<(), sqlx::Error> {

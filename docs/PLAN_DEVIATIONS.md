@@ -2904,3 +2904,46 @@ The lower-level operation-id entrypoint remains available as an internal
 composition/testing primitive. Neither entrypoint can commit a cast. Typed
 COMMITTED replay, terminal result/audit/outbox and the Discord `/fish`
 adapter remain later gates.
+
+
+## Fishing Starter Basic terminal commit
+
+Branch: feat/fishing-starter-terminal
+
+### 1. One narrow path has all gameplay consequences required for terminal commit
+
+**Lifecycle finding — CONFIRMED**
+
+Starter Pool with Starter Basic and no active bait/enchant/Gold modifiers has no
+line-break or ordinary Rod-wear consequence. Its actual operation-pinned baseline
+branch is already authoritative. Fish has unique FishInstance delivery plus exact
+successful progression; Junk and non-book Treasure have replay-safe stack delivery
+plus exact successful progression. The remaining direct Enchant Book category still
+lacks its unique Book ItemInstance persistence/delivery owner.
+
+**Final decision**
+
+Allow terminal commit only after the existing Starter Basic selected-outcome owner
+returns Fish or non-book outcome. Convert those staged child receipts into a typed
+`ManualFishingStarterBaseTerminalReceiptV1`; validate every child belongs to the
+same operation/player, then insert one `fishing:cast:terminal` asset/audit event,
+transition the operation PENDING -> COMMITTED with that typed JSON result, insert
+one `fishing.cast.completed` outbox event, and commit the same SQL transaction.
+Any failed terminal write rolls back output, progression, terminal event, operation
+transition and outbox together.
+
+### 2. Direct Book and every broader Fishing path stay non-terminal
+
+**Safety finding — CONFIRMED**
+
+A selected direct Enchant Book still has identity only, not an ItemInstance delivery.
+Ordinary Rod paths also retain unresolved over-cap catch/Mending/combined-modifier
+boundaries. Treating those outcomes as terminal would make result replay claim assets
+or consequences that were never fully settled.
+
+**Final decision**
+
+A direct Book on the Starter Basic baseline returns a terminal-blocking error before
+the operation transition. No other pending selected-outcome enum is accepted by this
+terminal helper. This slice does not register Discord `/fish`; committed request-key
+replay is a follow-up typed lifecycle step rather than exposing opaque operation JSON.

@@ -6,11 +6,11 @@ use graphite_services::{
     FishingResolvedNonFishOutcomeV1, MANUAL_FISHING_OPERATION_KIND,
     MANUAL_FISHING_OPERATION_POLICY_VERSION, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
     ManualFishingCastPreflightError, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
-    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MultiTreasureCount,
-    MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
-    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
-    PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
+    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
+    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
+    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -27,6 +27,94 @@ use graphite_services::{
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn starter_basic_terminal_commit_persists_typed_result_and_outbox_atomically() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "starter-terminal").await;
+    let operation_id = seed_operation(&store, player_id, nonce, "starter-terminal").await;
+    let root = find_baseline_branch_root(operation_id, 0);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending =
+        begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
+            .await
+            .unwrap();
+    let receipt = pending.commit_unmodified_starter_base_v1().await.unwrap();
+    assert_eq!(receipt.operation_id, operation_id);
+    assert_eq!(receipt.player_id, player_id);
+    assert_eq!(receipt.area, FishingArea::StarterPool);
+    let ManualFishingStarterBaseTerminalOutcomeV1::Fish {
+        delivery,
+        progression,
+    } = &receipt.outcome
+    else {
+        panic!("forced baseline Fish branch must commit Fish");
+    };
+    assert_eq!(delivery.operation_id, operation_id);
+    assert_eq!(progression.operation_id, operation_id);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+
+    let row = sqlx::query("SELECT state, result, committed_at FROM operations WHERE id = $1")
+        .bind(operation_id)
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    let state: String = sqlx::Row::try_get(&row, "state").unwrap();
+    let result: serde_json::Value = sqlx::Row::try_get(&row, "result").unwrap();
+    let committed_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::Row::try_get(&row, "committed_at").unwrap();
+    assert_eq!(state, "COMMITTED");
+    assert!(committed_at.is_some());
+    assert_eq!(
+        serde_json::from_value::<graphite_services::ManualFishingStarterBaseTerminalReceiptV1>(
+            result,
+        )
+        .unwrap(),
+        receipt
+    );
+
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!((terminal_events, outbox), (1, 1));
+}
+
+fn find_baseline_branch_root(operation_id: Uuid, selected_index: usize) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    for nonce in 0_u64..20_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut rng = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if rng.sample_weighted(&[176, 17, 7]).unwrap() == selected_index {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find requested baseline branch");
+}
 
 #[tokio::test]
 async fn request_owned_entrypoint_creates_preflights_and_rolls_back_operation_together() {
