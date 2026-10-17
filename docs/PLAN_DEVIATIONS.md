@@ -2947,3 +2947,50 @@ A direct Book on the Starter Basic baseline returns a terminal-blocking error be
 the operation transition. No other pending selected-outcome enum is accepted by this
 terminal helper. This slice does not register Discord `/fish`; committed request-key
 replay is a follow-up typed lifecycle step rather than exposing opaque operation JSON.
+
+
+## Fishing typed COMMITTED request replay
+
+Branch: feat/fishing-committed-replay
+
+### 1. Request replay stops before gameplay state is re-entered
+
+**Lifecycle finding — CONFIRMED**
+
+The Starter Basic terminal slice introduced the first canonical typed manual-Fishing
+operation result. Keeping the request resolver PENDING-only would force an adapter to
+treat a successful retry as an error or re-open gameplay state after the original
+transaction had already committed.
+
+**Final decision**
+
+Add a request-resolution result with two states: PENDING returns the canonical
+operation identity for normal preflight, while COMMITTED accepts only the typed
+`ManualFishingStarterBaseTerminalReceiptV1`. Before exposing a committed receipt,
+validate actor, operation kind/version, request hash, operation id, persisted player
+binding and requested area. Missing, malformed or internally mismatched result JSON
+fails closed. Do not inspect current Rod/bait/progression state on a committed replay.
+
+The existing PENDING-only operation helper remains available for lower-level preflight
+composition and reports COMMITTED as terminal after successful typed decoding.
+
+### 2. Adapter-safe replay owns transaction closure
+
+**Ownership finding — CONFIRMED**
+
+The application-facing request boundary already owns a caller-supplied transaction.
+A committed retry must release its `FOR UPDATE` lock without entering Fishing
+preflight or leaving transaction cleanup to the adapter.
+
+**Final decision**
+
+Expose a cast-request resolver returning either a transaction-owning pending cast or
+the exact committed Starter Basic receipt. On COMMITTED replay, close the read/lock
+transaction before returning the receipt. Regression coverage commits a real forced
+Starter-Pool Fish outcome, retries by the original external request key, verifies
+byte-equivalent typed replay, and proves no additional asset/progression/outbox
+mutation is produced.
+
+This does not generalize opaque COMMITTED JSON to future Fishing paths. A future
+terminal receipt variant must be explicitly versioned and added to the decoder before
+its request replay becomes valid. `/fish` remains disabled.

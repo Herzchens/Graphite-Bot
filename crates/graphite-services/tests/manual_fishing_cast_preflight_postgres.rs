@@ -5,12 +5,13 @@ use graphite_services::{
     FishingArea, FishingAreaAccessOrigin, FishingCatchBranch, FishingDirectBookRollError,
     FishingResolvedNonFishOutcomeV1, MANUAL_FISHING_OPERATION_KIND,
     MANUAL_FISHING_OPERATION_POLICY_VERSION, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
-    ManualFishingCastPreflightError, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
-    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
-    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1, ManualFishingPpmDrawV1,
+    ManualFishingRngDrawError, ManualFishingStarterBaseTerminalOutcomeV1,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MultiTreasureCount,
+    MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -22,11 +23,107 @@ use graphite_services::{
     begin_manual_fishing_cast_v1, direct_fishing_book_pool_membership,
     direct_fishing_finished_book_level_weight, lock_manual_fishing_cast_preflight,
     manual_fishing_base_fish_cast_aexp, multi_treasure_count_policy, multicatch_count_policy,
-    preview_over_cap_catch_chance, resolve_manual_fishing_direct_book_candidate_v1,
-    resolve_manual_fishing_treasure_x_branch_v1,
+    preview_over_cap_catch_chance, resolve_manual_fishing_cast_request_v1,
+    resolve_manual_fishing_direct_book_candidate_v1, resolve_manual_fishing_treasure_x_branch_v1,
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn request_owned_committed_starter_cast_replays_typed_receipt_without_new_mutations() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "request-committed-replay").await;
+    let key = format!("test:manual-fishing-request:{nonce}:committed");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_baseline_branch_root(operation.operation_id, 0);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_unmodified_starter_base_v1().await.unwrap();
+
+    let asset_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let progression_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedStarterBase(replayed) = replay else {
+        panic!("committed request must replay the typed Starter Basic receipt");
+    };
+    assert_eq!(*replayed, committed);
+
+    let asset_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let progression_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(
+        (asset_after, progression_after),
+        (asset_before, progression_before)
+    );
+
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!(outbox, 1);
+}
 
 #[tokio::test]
 async fn starter_basic_terminal_commit_persists_typed_result_and_outbox_atomically() {

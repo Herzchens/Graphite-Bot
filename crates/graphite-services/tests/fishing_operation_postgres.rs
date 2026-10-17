@@ -1,7 +1,7 @@
 use graphite_services::{
     FishingArea, MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION,
     ManualFishingOperationError, lock_or_create_manual_fishing_operation_v1,
-    manual_fishing_request_hash_v1,
+    manual_fishing_request_hash_v1, resolve_manual_fishing_operation_v1,
 };
 use graphite_store::PgStore;
 use sqlx::Row;
@@ -182,14 +182,14 @@ async fn terminal_operation_is_not_opaque_replayed_and_creation_rolls_back() {
 
     let mut terminal = store.pool().begin().await.unwrap();
     assert!(matches!(
-        lock_or_create_manual_fishing_operation_v1(
+        resolve_manual_fishing_operation_v1(
             &mut terminal,
             u64::try_from(actor).unwrap(),
             &key,
             FishingArea::StarterPool,
         )
         .await,
-        Err(ManualFishingOperationError::OperationTerminal(state)) if state == "COMMITTED"
+        Err(ManualFishingOperationError::InvalidOperationResult(_))
     ));
     terminal.rollback().await.unwrap();
 }
