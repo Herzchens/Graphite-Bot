@@ -3,8 +3,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::fishing_terminal::{
-    finalize_manual_fishing_starter_base_v1, finalize_manual_fishing_strengthen_v1,
-    finalize_manual_fishing_unbreaking_x_v1, finalize_manual_fishing_unmodified_ordinary_v1,
+    finalize_manual_fishing_sharp_hook_v1, finalize_manual_fishing_starter_base_v1,
+    finalize_manual_fishing_strengthen_v1, finalize_manual_fishing_unbreaking_x_v1,
+    finalize_manual_fishing_unmodified_ordinary_v1,
 };
 use crate::fishing_unmodified_line_stage::{
     resolve_manual_sturdy_bait_line_stage_v1, resolve_manual_unmodified_line_stage_v1,
@@ -27,17 +28,18 @@ use crate::{
     ManualFishingOperationResolutionV1, ManualFishingProgressionSettlementError,
     ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
     ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
-    ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
-    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingStrengthenTerminalError,
-    ManualFishingStrengthenTerminalOutcomeV1, ManualFishingStrengthenTerminalReceiptV1,
-    ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingTerminalReceiptKindV1,
-    ManualFishingTreasureXBranchError, ManualFishingUnbreakingXError,
-    ManualFishingUnbreakingXTerminalError, ManualFishingUnbreakingXTerminalOutcomeV1,
-    ManualFishingUnbreakingXTerminalReceiptV1, ManualFishingUnbreakingXWearPreviewV1,
-    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalError,
-    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingSharpHookTerminalError, ManualFishingSharpHookTerminalOutcomeV1,
+    ManualFishingSharpHookTerminalReceiptV1, ManualFishingStarterBaseTerminalError,
+    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStarterBaseTerminalReceiptV1,
+    ManualFishingStrengthenTerminalError, ManualFishingStrengthenTerminalOutcomeV1,
+    ManualFishingStrengthenTerminalReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
+    ManualFishingTerminalReceiptKindV1, ManualFishingTreasureXBranchError,
+    ManualFishingUnbreakingXError, ManualFishingUnbreakingXTerminalError,
+    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalReceiptV1,
+    ManualFishingUnbreakingXWearPreviewV1, ManualFishingUnmodifiedCapabilityError,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
+    ManualFishingUnmodifiedOrdinaryTerminalError, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
     ManualFishingUnmodifiedOrdinaryTerminalReceiptV1, ManualMineFishCooldownPolicy,
     OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL,
     apply_operation_fishing_rod_durability_v1, canonical_enchant_max_resulting_level,
@@ -74,6 +76,16 @@ pub enum ManualFishingCastOwnerError {
     StrengthenTerminalDurabilityMissing,
     #[error("resolved Strengthen terminal durability disagrees with its persisted receipt")]
     StrengthenTerminalDurabilityMismatch,
+    #[error(transparent)]
+    SharpHookTerminal(#[from] ManualFishingSharpHookTerminalError),
+    #[error("survived over-cap Fish cannot commit from the SharpHook terminal path")]
+    SharpHookTerminalOverCapPending,
+    #[error("direct Enchant Book cannot commit from the SharpHook terminal path")]
+    SharpHookTerminalDirectBookPending,
+    #[error("resolved SharpHook terminal outcome is missing its operation-keyed Rod receipt")]
+    SharpHookTerminalDurabilityMissing,
+    #[error("resolved SharpHook terminal durability disagrees with its persisted receipt")]
+    SharpHookTerminalDurabilityMismatch,
     #[error(transparent)]
     UnbreakingXTerminal(#[from] ManualFishingUnbreakingXTerminalError),
     #[error("survived over-cap Fish cannot commit from the Unbreaking X terminal path")]
@@ -502,6 +514,7 @@ pub enum ManualFishingCastRequestResolutionV1<'c> {
     CommittedStarterBase(Box<ManualFishingStarterBaseTerminalReceiptV1>),
     CommittedUnmodifiedOrdinary(Box<ManualFishingUnmodifiedOrdinaryTerminalReceiptV1>),
     CommittedStrengthen(Box<ManualFishingStrengthenTerminalReceiptV1>),
+    CommittedSharpHook(Box<ManualFishingSharpHookTerminalReceiptV1>),
     CommittedUnbreakingX(Box<ManualFishingUnbreakingXTerminalReceiptV1>),
 }
 
@@ -2939,6 +2952,79 @@ impl PendingManualFishingCastV1<'_> {
         Ok(receipt.clone())
     }
 
+    /// Atomically commits fully resolved exact SharpHook-I-X-only outcomes.
+    ///
+    /// SharpHook changes only the unresolved post-line-break over-cap catch chance.
+    /// Therefore only landed within-capability Fish, Junk/non-book Treasure and
+    /// line break may cross the terminal boundary. Survived over-cap Fish and
+    /// direct Book stay non-terminal.
+    pub async fn commit_sharp_hook_v1(
+        mut self,
+    ) -> Result<ManualFishingSharpHookTerminalReceiptV1, ManualFishingCastOwnerError> {
+        let sharp_hook_level = self.sharp_hook_only_level_v1()?;
+        let staged = self.stage_sharp_hook_selected_outcome_v1().await?;
+        let outcome = match staged {
+            PendingManualFishingSharpHookSelectedOutcomeV1::LandedFish {
+                delivery,
+                progression,
+                durability,
+            } => {
+                let durability = self.sharp_hook_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingSharpHookTerminalOutcomeV1::Fish {
+                    delivery,
+                    progression,
+                    durability,
+                }
+            }
+            PendingManualFishingSharpHookSelectedOutcomeV1::NonFish { staged, durability } => {
+                let durability = self.sharp_hook_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingSharpHookTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    durability,
+                }
+            }
+            PendingManualFishingSharpHookSelectedOutcomeV1::LineBroken { durability } => {
+                let durability = self.sharp_hook_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingSharpHookTerminalOutcomeV1::LineBroken { durability }
+            }
+            PendingManualFishingSharpHookSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::SharpHookTerminalOverCapPending);
+            }
+            PendingManualFishingSharpHookSelectedOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::SharpHookTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingSharpHookTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::SharpHook,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            sharp_hook_level,
+            outcome,
+        };
+        finalize_manual_fishing_sharp_hook_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingSharpHookTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    fn sharp_hook_terminal_durability_receipt_v1(
+        &self,
+        applied: &AppliedFishingRodDurabilityState,
+    ) -> Result<FishingRodDurabilityMutationReceiptV1, ManualFishingCastOwnerError> {
+        let receipt = self
+            .staged_durability
+            .as_ref()
+            .ok_or(ManualFishingCastOwnerError::SharpHookTerminalDurabilityMissing)?;
+        if &receipt.applied != applied {
+            return Err(ManualFishingCastOwnerError::SharpHookTerminalDurabilityMismatch);
+        }
+        Ok(receipt.clone())
+    }
+
     /// Atomically commits the fully resolved exact Unbreaking-X-only path.
     ///
     /// Landed Fish/Junk/non-book Treasure include their successful children, the
@@ -3216,6 +3302,14 @@ pub async fn resolve_manual_fishing_cast_request_v1<'c>(
                 .await
                 .map_err(ManualFishingOperationError::from)?;
             Ok(ManualFishingCastRequestResolutionV1::CommittedStrengthen(
+                receipt,
+            ))
+        }
+        ManualFishingOperationResolutionV1::CommittedSharpHook(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedSharpHook(
                 receipt,
             ))
         }
