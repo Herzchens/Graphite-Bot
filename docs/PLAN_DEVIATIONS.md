@@ -3134,3 +3134,50 @@ Return a terminal-blocking error for `OverCapCatchPending` and
 non-Gold Rod with exactly one Strengthen I-X enchant and no consumed bait. Gold,
 additional enchants and combined modifier/cap cases remain fail-closed. This does
 not enable Discord `/fish`.
+
+
+## Fishing SharpHook terminal commit
+
+Branch: `feat/fishing-sharp-hook-terminal`
+
+### 1. Resolved SharpHook-only outcomes may cross the terminal boundary
+
+**Lifecycle finding — CONFIRMED**
+
+The exact SharpHook-I-X-only owner changes only post-line-break catch chance for an
+over-cap Fish. It does not alter branch weights, Fish identity, line strength,
+line-break probability, successful progression or ordinary Rod wear. Therefore a
+within-capability/guaranteed Fish, Junk, non-book Treasure or line break has no
+remaining gameplay consequence once its selected outcome is staged.
+
+**Final decision**
+
+Add typed receipt kind `SHARP_HOOK` and persist the exact validated SharpHook
+level. Landed Fish/non-Fish receipts retain their existing delivery/progression
+children and operation-keyed ordinary durability receipt; line break retains only
+the matching destruction receipt. Validate child operation/player/area ownership,
+SharpHook I-X bounds and the expected no-Unbreaking durability resolution before
+writing the single terminal asset event, PENDING -> COMMITTED operation result and
+`fishing.cast.completed` outbox row atomically.
+
+Request-key COMMITTED replay recognizes the SharpHook receipt and returns the exact
+committed result without re-entering preflight or applying a second Rod event.
+
+### 2. The unresolved over-cap catch mapping remains a hard terminal blocker
+
+**Safety finding — CONFIRMED**
+
+After an over-cap Fish survives line break, SharpHook produces an exact reduced
+`OverCapCatchChancePolicy`. Its denominator is not guaranteed to map exactly onto
+the existing 1,000,000-PPM catch RNG domain, and no canonical rounding or alternate
+weighted-domain mapping is frozen. Direct Enchant Book still lacks unique Book
+ItemInstance delivery.
+
+**Final decision**
+
+Return a terminal-blocking error for both `OverCapCatchPending` and
+`DirectBookPending`. Do not round or sample the SharpHook catch chance in this
+slice. The terminal owner remains restricted to one ordinary non-Gold Rod with
+exactly one SharpHook I-X enchant and no consumed bait. Gold, additional enchants
+and combined modifier/cap cases remain fail-closed. This does not enable Discord
+`/fish`.

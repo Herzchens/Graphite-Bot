@@ -361,12 +361,14 @@ pub use fishing_species::{
     fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
 };
 pub use fishing_terminal::{
-    ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
-    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingStrengthenTerminalError,
-    ManualFishingStrengthenTerminalOutcomeV1, ManualFishingStrengthenTerminalReceiptV1,
-    ManualFishingTerminalReceiptKindV1, ManualFishingUnbreakingXTerminalError,
-    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalReceiptV1,
-    ManualFishingUnmodifiedOrdinaryTerminalError, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingSharpHookTerminalError, ManualFishingSharpHookTerminalOutcomeV1,
+    ManualFishingSharpHookTerminalReceiptV1, ManualFishingStarterBaseTerminalError,
+    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStarterBaseTerminalReceiptV1,
+    ManualFishingStrengthenTerminalError, ManualFishingStrengthenTerminalOutcomeV1,
+    ManualFishingStrengthenTerminalReceiptV1, ManualFishingTerminalReceiptKindV1,
+    ManualFishingUnbreakingXTerminalError, ManualFishingUnbreakingXTerminalOutcomeV1,
+    ManualFishingUnbreakingXTerminalReceiptV1, ManualFishingUnmodifiedOrdinaryTerminalError,
+    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
     ManualFishingUnmodifiedOrdinaryTerminalReceiptV1,
 };
 pub use fishing_treasure_x::{

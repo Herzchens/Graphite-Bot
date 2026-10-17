@@ -6,13 +6,14 @@ use graphite_services::{
     FishingResolvedNonFishOutcomeV1, MANUAL_FISHING_OPERATION_KIND,
     MANUAL_FISHING_OPERATION_POLICY_VERSION, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
     ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1, ManualFishingPpmDrawV1,
-    ManualFishingRngDrawError, ManualFishingStarterBaseTerminalOutcomeV1,
-    ManualFishingStrengthenTerminalOutcomeV1, ManualFishingUnbreakingXTerminalOutcomeV1,
-    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
-    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingRngDrawError, ManualFishingSharpHookTerminalOutcomeV1,
+    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStrengthenTerminalOutcomeV1,
+    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
+    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1, ManualFishingWeightedDrawV1,
+    MultiTreasureCount, MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -257,6 +258,212 @@ async fn request_owned_strengthen_i_junk_commits_and_replays_without_second_wear
     .await
     .unwrap();
     assert_eq!((terminal_events, outbox), (1, 1));
+}
+
+#[tokio::test]
+async fn request_owned_sharp_hook_i_junk_commits_and_replays_without_second_wear() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "sharp-hook-i-terminal-junk",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "SHARP_HOOK", 1).await;
+    let key = format!("test:manual-fishing-request:{nonce}:sharp-hook-i-junk");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_baseline_branch_root(operation.operation_id, 1);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_sharp_hook_v1().await.unwrap();
+    assert_eq!(committed.sharp_hook_level, 1);
+    let ManualFishingSharpHookTerminalOutcomeV1::NonFish {
+        progression,
+        durability,
+        ..
+    } = &committed.outcome
+    else {
+        panic!("forced baseline Junk branch must commit non-Fish SharpHook");
+    };
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    assert_eq!(durability.operation_id, operation.operation_id);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("SharpHook terminal receipt must contain ordinary Rod durability");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let before: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedSharpHook(replayed) = replay else {
+        panic!("committed SharpHook request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    let after: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "COMMITTED"
+    );
+
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!((terminal_events, outbox), (1, 1));
+}
+
+#[tokio::test]
+async fn request_owned_sharp_hook_direct_book_stays_pending_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "sharp-hook-terminal-book",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "SHARP_HOOK", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:sharp-hook-book");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_selected_direct_book_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        pending.commit_sharp_hook_v1().await,
+        Err(ManualFishingCastOwnerError::SharpHookTerminalDirectBookPending)
+    ));
+
+    let durability: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let progression_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(durability, 200);
+    assert_eq!((terminal_events, progression_events), (0, 0));
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "PENDING"
+    );
 }
 
 #[tokio::test]
