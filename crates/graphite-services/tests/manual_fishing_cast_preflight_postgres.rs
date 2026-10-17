@@ -8,12 +8,12 @@ use graphite_services::{
     ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1, ManualFishingPpmDrawV1,
     ManualFishingRngDrawError, ManualFishingSharpHookTerminalOutcomeV1,
     ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStrengthenTerminalOutcomeV1,
-    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
-    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1, ManualFishingWeightedDrawV1,
-    MultiTreasureCount, MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
-    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
-    PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingTreasureXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalOutcomeV1,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
+    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
+    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -437,6 +437,213 @@ async fn request_owned_sharp_hook_direct_book_stays_pending_and_rolls_back() {
     assert!(matches!(
         pending.commit_sharp_hook_v1().await,
         Err(ManualFishingCastOwnerError::SharpHookTerminalDirectBookPending)
+    ));
+
+    let durability: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let progression_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(durability, 200);
+    assert_eq!((terminal_events, progression_events), (0, 0));
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "PENDING"
+    );
+}
+
+#[tokio::test]
+async fn request_owned_treasure_x_non_book_treasure_commits_and_replays_without_second_wear() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "treasure-x-terminal-nonbook",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "FISHING_ROD_TREASURE", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:treasure-x-nonbook");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_treasure_x_non_book_treasure_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_treasure_x_v1().await.unwrap();
+    let ManualFishingTreasureXTerminalOutcomeV1::NonFish {
+        delivery,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Treasure-X non-book Treasure must commit as NonFish");
+    };
+    assert_eq!(delivery.deliveries.len(), 1);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    assert_eq!(progression.base_activity_xp, 5);
+    assert_eq!(durability.operation_id, operation.operation_id);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Treasure X terminal receipt must contain ordinary Rod durability");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let before: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedTreasureX(replayed) = replay else {
+        panic!("committed Treasure X request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    let after: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "COMMITTED"
+    );
+
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
+    )
+    .bind(operation.operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!((terminal_events, outbox), (1, 1));
+}
+
+#[tokio::test]
+async fn request_owned_treasure_x_direct_book_stays_pending_and_rolls_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "treasure-x-terminal-book",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "FISHING_ROD_TREASURE", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:treasure-x-book");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_treasure_x_direct_book_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        pending.commit_treasure_x_v1().await,
+        Err(ManualFishingCastOwnerError::TreasureXTerminalDirectBookPending)
     ));
 
     let durability: i64 =
@@ -1444,6 +1651,24 @@ fn find_treasure_x_non_book_treasure_root(operation_id: Uuid) -> [u8; 32] {
         }
     }
     panic!("test fixture could not find Treasure-X non-book Treasure seed");
+}
+
+fn find_treasure_x_direct_book_root(operation_id: Uuid) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    for nonce in 0_u64..20_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut branch = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if branch.sample_weighted(&[880, 85, 63]).unwrap() != 2 {
+            continue;
+        }
+        let mut treasure = DomainRng::derive(root, operation, "fishing.manual.v1.treasure_result");
+        if treasure.sample_weighted(&[20, 15, 4, 4, 5, 2]).unwrap() == 2 {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find Treasure-X direct Book seed");
 }
 
 fn find_multi_treasure_root(

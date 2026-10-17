@@ -3181,3 +3181,49 @@ slice. The terminal owner remains restricted to one ordinary non-Gold Rod with
 exactly one SharpHook I-X enchant and no consumed bait. Gold, additional enchants
 and combined modifier/cap cases remain fail-closed. This does not enable Discord
 `/fish`.
+
+
+## Fishing Treasure X terminal commit
+
+Branch: `feat/fishing-treasure-x-terminal`
+
+### 1. Fully resolved Treasure-X-only outcomes may share the terminal boundary
+
+**Lifecycle finding — CONFIRMED**
+
+The exact Treasure-X-only selected-outcome owner changes only the outer
+Fish/Junk/Treasure weighting using the already-frozen integer vector
+`880:85:63`. It leaves Fish identity, physical capability, internal Treasure
+payload resolution, successful progression and ordinary Rod durability with
+their existing owners.
+
+**Final decision**
+
+Add typed receipt kind `TREASURE_X`. The receipt kind itself is exact policy
+provenance because lower Treasure levels are rejected before selection. Landed
+Fish/non-Fish receipts retain their existing delivery/progression children and
+operation-keyed ordinary durability receipt; line break retains only the matching
+destruction receipt. Validate child operation/player/area ownership and the
+expected no-Unbreaking durability resolution before writing the single terminal
+asset event, PENDING -> COMMITTED operation result and
+`fishing.cast.completed` outbox row atomically.
+
+Request-key COMMITTED replay recognizes `TREASURE_X`, validates stored
+operation/player/area provenance and returns the exact committed receipt without
+re-entering branch selection or applying a second Rod event.
+
+### 2. Treasure X does not resolve shared over-cap or Book blockers
+
+**Safety finding — CONFIRMED**
+
+Treasure X changes branch frequency but not the unresolved catch/escape mapping
+after an over-cap Fish survives line break. A direct Enchant Book still lacks the
+unique Book ItemInstance delivery lifecycle.
+
+**Final decision**
+
+Return a terminal-blocking error for `OverCapCatchPending` and
+`DirectBookPending`. The terminal owner remains restricted to one ordinary
+non-Gold Rod with exactly Treasure X, no consumed bait and no additional enchants.
+Treasure I-IX, Gold and combined modifier/cap cases remain fail-closed. This does
+not enable Discord `/fish`.
