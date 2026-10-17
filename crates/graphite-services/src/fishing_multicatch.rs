@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const MULTICATCH_PROBABILITY_BASIS_POINTS: u16 = 10_000;
@@ -10,7 +10,7 @@ const MULTICATCH_TRIPLE_PPM_PER_LEVEL: u32 = 3_000;
 const MULTICATCH_QUADRUPLE_PPM_PER_LEVEL: u32 = 1_000;
 const MULTICATCH_QUINTUPLE_PPM_PER_LEVEL: u32 = 250;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MulticatchLevelXCount {
     Single,

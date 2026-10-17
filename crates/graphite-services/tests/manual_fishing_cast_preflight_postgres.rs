@@ -5,15 +5,16 @@ use graphite_services::{
     FishingArea, FishingAreaAccessOrigin, FishingCatchBranch, FishingDirectBookRollError,
     FishingResolvedNonFishOutcomeV1, MANUAL_FISHING_OPERATION_KIND,
     MANUAL_FISHING_OPERATION_POLICY_VERSION, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
-    ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1, ManualFishingPpmDrawV1,
-    ManualFishingRngDrawError, ManualFishingSharpHookTerminalOutcomeV1,
-    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStrengthenTerminalOutcomeV1,
-    ManualFishingTreasureXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalOutcomeV1,
-    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
-    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1,
+    ManualFishingModifierTerminalOutcomeV1, ManualFishingPpmDrawV1, ManualFishingRngDrawError,
+    ManualFishingSharpHookTerminalOutcomeV1, ManualFishingStarterBaseTerminalOutcomeV1,
+    ManualFishingStrengthenTerminalOutcomeV1, ManualFishingTreasureXTerminalOutcomeV1,
+    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
+    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1, ManualFishingWeightedDrawV1,
+    MultiTreasureCount, MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -671,6 +672,707 @@ async fn request_owned_treasure_x_direct_book_stays_pending_and_rolls_back() {
         operation_state(&store, operation.operation_id).await,
         "PENDING"
     );
+}
+
+#[tokio::test]
+async fn request_owned_bait_rack_iii_junk_commits_and_replays_without_second_wear() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "bait-rack-iii-terminal-junk",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "BAIT_RACK", 3).await;
+    let key = format!("test:manual-fishing-request:{nonce}:bait-rack-iii-junk");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_baseline_branch_root(operation.operation_id, 1);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_bait_rack_v1().await.unwrap();
+    assert_eq!(committed.bait_rack_level, 3);
+    let ManualFishingModifierTerminalOutcomeV1::NonFish {
+        progression,
+        durability,
+        ..
+    } = &committed.outcome
+    else {
+        panic!("forced Bait Rack Junk must commit as NonFish");
+    };
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Bait Rack terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedBaitRack(replayed) = replay else {
+        panic!("committed Bait Rack request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        199
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_multicatch_x_multi_fish_commits_and_replays_without_second_wear() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "multicatch-x-terminal",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "MULTICATCH", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:multicatch-x");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_multicatch_fish_root(operation.operation_id, 10);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_multicatch_v1().await.unwrap();
+    assert_eq!(committed.multicatch_level, 10);
+    let count = committed
+        .multicatch_count
+        .expect("Fish Multicatch terminal must pin its count");
+    assert!(count.fish_count > 1);
+    let ManualFishingModifierTerminalOutcomeV1::Fish {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Starter Pool Multicatch Fish must commit as Fish");
+    };
+    assert_eq!(deliveries.len(), usize::from(count.fish_count));
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Multicatch terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let asset_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedMulticatch(replayed) = replay else {
+        panic!("committed Multicatch request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    let asset_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(asset_after, asset_before);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        199
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_multi_treasure_x_repeated_non_book_commits_and_replays() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "multi-treasure-x-terminal",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "MULTI_TREASURE", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:multi-treasure-x");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_multi_treasure_root(operation.operation_id, 0, 10);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_multi_treasure_v1().await.unwrap();
+    assert_eq!(committed.multi_treasure_level, 10);
+    let ManualFishingModifierTerminalOutcomeV1::NonFish {
+        delivery,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced repeated Multi Treasure must commit as NonFish");
+    };
+    assert!(delivery.deliveries.len() > 1);
+    assert_eq!(progression.base_activity_xp, 10);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Multi Treasure terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let asset_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedMultiTreasure(replayed) = replay else {
+        panic!("committed Multi Treasure request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    let asset_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(asset_after, asset_before);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        199
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_multi_treasure_direct_books_stay_pending_and_roll_back() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "multi-treasure-terminal-books",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "MULTI_TREASURE", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:multi-treasure-books");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_multi_treasure_root(operation.operation_id, 2, 10);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        pending.commit_multi_treasure_v1().await,
+        Err(ManualFishingCastOwnerError::MultiTreasureTerminalDirectBooksPending)
+    ));
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        200
+    );
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "PENDING"
+    );
+    assert_no_terminal_mutation(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_sturdy_bait_junk_commits_bait_and_replays_without_second_consumption() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "sturdy-terminal-junk",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let key = format!("test:manual-fishing-request:{nonce}:sturdy-junk");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    seed_active_fishing_bait(
+        &store,
+        player_id,
+        operation.operation_id,
+        "STURDY",
+        "fishing.bait.sturdy",
+        2,
+    )
+    .await;
+    let root = find_baseline_branch_root(operation.operation_id, 1);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_sturdy_bait_v1().await.unwrap();
+    assert_eq!(committed.bait_settlement.plan.consumed_bait_categories, 1);
+    assert_eq!(committed.bait_settlement.consumption_receipts.len(), 1);
+    let ManualFishingModifierTerminalOutcomeV1::NonFish { durability, .. } = &committed.outcome
+    else {
+        panic!("forced Sturdy Junk must commit as NonFish");
+    };
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Sturdy terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(
+        fishing_bait_quantity(&store, player_id, "fishing.bait.sturdy").await,
+        1
+    );
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedSturdyBait(replayed) = replay else {
+        panic!("committed Sturdy Bait request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(
+        fishing_bait_quantity(&store, player_id, "fishing.bait.sturdy").await,
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        199
+    );
+    assert_eq!(
+        bait_settlement_event_count(&store, operation.operation_id).await,
+        1
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_sturdy_bait_direct_book_rolls_back_consumption() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "sturdy-terminal-book",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let key = format!("test:manual-fishing-request:{nonce}:sturdy-book");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    seed_active_fishing_bait(
+        &store,
+        player_id,
+        operation.operation_id,
+        "STURDY",
+        "fishing.bait.sturdy",
+        2,
+    )
+    .await;
+    let root = find_selected_direct_book_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        pending.commit_sturdy_bait_v1().await,
+        Err(ManualFishingCastOwnerError::SturdyBaitTerminalDirectBookPending)
+    ));
+    assert_eq!(
+        fishing_bait_quantity(&store, player_id, "fishing.bait.sturdy").await,
+        2
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        200
+    );
+    assert_eq!(
+        bait_settlement_event_count(&store, operation.operation_id).await,
+        0
+    );
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "PENDING"
+    );
+    assert_no_terminal_mutation(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_school_bait_triggered_multi_fish_commits_bait_and_replays() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "school-terminal-triggered",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let key = format!("test:manual-fishing-request:{nonce}:school-triggered");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    seed_active_fishing_bait(
+        &store,
+        player_id,
+        operation.operation_id,
+        "SCHOOL",
+        "fishing.bait.school",
+        2,
+    )
+    .await;
+    let root = find_school_bait_triggered_fish_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_school_bait_v1().await.unwrap();
+    let quantity = committed
+        .school_quantity
+        .expect("School Fish terminal must pin quantity RNG");
+    assert_eq!(quantity.chance_ppm, 80_000);
+    assert_eq!(quantity.quantity.final_fish_count(), 2);
+    let ManualFishingModifierTerminalOutcomeV1::Fish {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced triggered School Fish must commit as Fish");
+    };
+    assert_eq!(deliveries.len(), 2);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("School terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(
+        fishing_bait_quantity(&store, player_id, "fishing.bait.school").await,
+        1
+    );
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedSchoolBait(replayed) = replay else {
+        panic!("committed School Bait request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(
+        fishing_bait_quantity(&store, player_id, "fishing.bait.school").await,
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        199
+    );
+    assert_eq!(
+        bait_settlement_event_count(&store, operation.operation_id).await,
+        1
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
 }
 
 #[tokio::test]
@@ -1722,6 +2424,24 @@ fn find_multicatch_fish_root(operation_id: Uuid, level: u8) -> [u8; 32] {
         }
     }
     panic!("test fixture could not find a deterministic multi-fish Multicatch seed");
+}
+
+fn find_school_bait_triggered_fish_root(operation_id: Uuid) -> [u8; 32] {
+    let operation = OperationId::from_uuid(operation_id);
+    for nonce in 0_u64..200_000 {
+        let mut bytes = [0_u8; 32];
+        bytes[..8].copy_from_slice(&nonce.to_be_bytes());
+        let root = RootSeed::from_bytes(bytes);
+        let mut branch = DomainRng::derive(root, operation, "fishing.manual.v1.catch_branch");
+        if branch.sample_weighted(&[176, 17, 7]).unwrap() != 0 {
+            continue;
+        }
+        let mut school = DomainRng::derive(root, operation, "fishing.manual.v1.school_bait_proc");
+        if school.sample_uniform_below(1_000_000).unwrap() < 80_000 {
+            return bytes;
+        }
+    }
+    panic!("test fixture could not find triggered School-Bait Fish seed");
 }
 
 fn find_selected_direct_book_root(operation_id: Uuid) -> [u8; 32] {
@@ -4364,6 +5084,70 @@ async fn set_account_level(store: &PgStore, player_id: Uuid, level: u16) {
     .execute(store.pool())
     .await
     .unwrap();
+}
+
+async fn fishing_bait_quantity(store: &PgStore, player_id: Uuid, definition_key: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT quantity FROM item_stacks WHERE player_id = $1 AND definition_key = $2 AND definition_version = 1 AND location = 'ITEM_BAG'",
+    )
+    .bind(player_id)
+    .bind(definition_key)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+}
+
+async fn bait_settlement_event_count(store: &PgStore, operation_id: Uuid) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:bait:cast'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+}
+
+async fn assert_terminal_once(store: &PgStore, operation_id: Uuid) {
+    assert_eq!(operation_state(store, operation_id).await, "COMMITTED");
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!((terminal_events, outbox), (1, 1));
+}
+
+async fn assert_no_terminal_mutation(store: &PgStore, operation_id: Uuid) {
+    let terminal_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    let progression_events: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let outbox: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap();
+    assert_eq!((terminal_events, progression_events, outbox), (0, 0, 0));
 }
 
 async fn unlock_count(store: &PgStore, player_id: Uuid) -> i64 {

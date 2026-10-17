@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     fishing_bait_policy, resolve_school_bait_quantity,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ManualFishingSchoolBaitQuantityV1 {
     pub draw_ppm: u32,
     pub chance_ppm: u32,

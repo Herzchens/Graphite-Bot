@@ -5,10 +5,15 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    AppliedFishingRodDurabilityState, FishingArea, FishingFishInstanceDeliveryReceiptV1,
-    FishingNonFishOutcomeDeliveryReceiptV1, FishingRodDurabilityMutationReceiptV1,
-    FishingRodDurabilityResolution, ManualFishingProgressionSettlementReceiptV1,
-    ManualFishingUnbreakingXWearPreviewV1, SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL,
+    AppliedFishingRodDurabilityState, BAIT_RACK_MAX_LEVEL, FISHING_BAIT_ITEM_DEFINITION_VERSION,
+    FishingArea, FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastSettlementReceipt,
+    FishingFishInstanceDeliveryReceiptV1, FishingNonFishOutcomeDeliveryReceiptV1,
+    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution,
+    MANUAL_FISHING_RNG_PPM_SCALE, MULTI_TREASURE_MAX_LEVEL, MULTICATCH_MAX_LEVEL,
+    ManualFishingMulticatchCountV1, ManualFishingProgressionSettlementReceiptV1,
+    ManualFishingSchoolBaitQuantityV1, ManualFishingUnbreakingXWearPreviewV1, MulticatchCount,
+    SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL, fishing_bait_item_definition_key,
+    multicatch_count_policy, resolve_school_bait_quantity,
 };
 
 const TERMINAL_MUTATION_KEY: &str = "fishing:cast:terminal";
@@ -44,6 +49,11 @@ pub enum ManualFishingTerminalReceiptKindV1 {
     Strengthen,
     SharpHook,
     TreasureX,
+    BaitRack,
+    Multicatch,
+    MultiTreasure,
+    SturdyBait,
+    SchoolBait,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -227,6 +237,96 @@ pub enum ManualFishingTreasureXTerminalError {
     ChildIntegrityMismatch,
     #[error("terminal Fishing receipt contains a non-ordinary or wrong durability consequence")]
     DurabilityIntegrityMismatch,
+    #[error("manual Fishing operation was not PENDING at terminal transition")]
+    OperationTransitionConflict,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "branch", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ManualFishingModifierTerminalOutcomeV1 {
+    Fish {
+        deliveries: Vec<FishingFishInstanceDeliveryReceiptV1>,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+    NonFish {
+        delivery: FishingNonFishOutcomeDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+    LineBroken {
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ManualFishingBaitRackTerminalReceiptV1 {
+    pub receipt_kind: ManualFishingTerminalReceiptKindV1,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub area: FishingArea,
+    pub bait_rack_level: u8,
+    pub outcome: ManualFishingModifierTerminalOutcomeV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ManualFishingMulticatchTerminalReceiptV1 {
+    pub receipt_kind: ManualFishingTerminalReceiptKindV1,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub area: FishingArea,
+    pub multicatch_level: u8,
+    pub multicatch_count: Option<ManualFishingMulticatchCountV1>,
+    pub outcome: ManualFishingModifierTerminalOutcomeV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ManualFishingMultiTreasureTerminalReceiptV1 {
+    pub receipt_kind: ManualFishingTerminalReceiptKindV1,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub area: FishingArea,
+    pub multi_treasure_level: u8,
+    pub outcome: ManualFishingModifierTerminalOutcomeV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ManualFishingSturdyBaitTerminalReceiptV1 {
+    pub receipt_kind: ManualFishingTerminalReceiptKindV1,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub area: FishingArea,
+    pub bait_settlement: FishingBaitCastSettlementReceipt,
+    pub outcome: ManualFishingModifierTerminalOutcomeV1,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ManualFishingSchoolBaitTerminalReceiptV1 {
+    pub receipt_kind: ManualFishingTerminalReceiptKindV1,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub area: FishingArea,
+    pub bait_settlement: FishingBaitCastSettlementReceipt,
+    pub school_quantity: Option<ManualFishingSchoolBaitQuantityV1>,
+    pub outcome: ManualFishingModifierTerminalOutcomeV1,
+}
+
+#[derive(Debug, Error)]
+pub enum ManualFishingModifierTerminalError {
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error("terminal Fishing receipt serialization failed: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error("terminal Fishing receipt contains invalid modifier provenance")]
+    InvalidModifierProvenance,
+    #[error("terminal Fishing receipt contains child receipts for another operation/player/area")]
+    ChildIntegrityMismatch,
+    #[error("terminal Fishing receipt contains a non-ordinary or wrong durability consequence")]
+    DurabilityIntegrityMismatch,
+    #[error("terminal Fishing receipt contains invalid bait settlement provenance")]
+    BaitSettlementIntegrityMismatch,
+    #[error("terminal Fishing receipt contains invalid quantity RNG provenance")]
+    QuantityIntegrityMismatch,
     #[error("manual Fishing operation was not PENDING at terminal transition")]
     OperationTransitionConflict,
 }
@@ -780,6 +880,393 @@ fn validate_treasure_x_child_integrity(
             validate_durability(durability, FishingRodDurabilityResolution::LineBreak)?;
         }
     }
+    Ok(())
+}
+
+pub(crate) async fn finalize_manual_fishing_bait_rack_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    receipt: &ManualFishingBaitRackTerminalReceiptV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    if !(1..=BAIT_RACK_MAX_LEVEL).contains(&receipt.bait_rack_level) {
+        return Err(ManualFishingModifierTerminalError::InvalidModifierProvenance);
+    }
+    validate_modifier_outcome_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        receipt.area,
+        &receipt.outcome,
+        Some(1),
+    )?;
+    persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
+}
+
+pub(crate) async fn finalize_manual_fishing_multicatch_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    receipt: &ManualFishingMulticatchTerminalReceiptV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    if !(1..=MULTICATCH_MAX_LEVEL).contains(&receipt.multicatch_level) {
+        return Err(ManualFishingModifierTerminalError::InvalidModifierProvenance);
+    }
+    let expected_fish_count = match (&receipt.outcome, receipt.multicatch_count) {
+        (
+            ManualFishingModifierTerminalOutcomeV1::Fish { .. }
+            | ManualFishingModifierTerminalOutcomeV1::LineBroken { .. },
+            Some(count),
+        ) => {
+            validate_multicatch_count_v1(receipt.multicatch_level, count)?;
+            Some(usize::from(count.fish_count))
+        }
+        (ManualFishingModifierTerminalOutcomeV1::NonFish { .. }, None) => None,
+        _ => return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch),
+    };
+    validate_modifier_outcome_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        receipt.area,
+        &receipt.outcome,
+        expected_fish_count,
+    )?;
+    persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
+}
+
+pub(crate) async fn finalize_manual_fishing_multi_treasure_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    receipt: &ManualFishingMultiTreasureTerminalReceiptV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    if !(1..=MULTI_TREASURE_MAX_LEVEL).contains(&receipt.multi_treasure_level) {
+        return Err(ManualFishingModifierTerminalError::InvalidModifierProvenance);
+    }
+    validate_modifier_outcome_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        receipt.area,
+        &receipt.outcome,
+        Some(1),
+    )?;
+    persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
+}
+
+pub(crate) async fn finalize_manual_fishing_sturdy_bait_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    receipt: &ManualFishingSturdyBaitTerminalReceiptV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    validate_bait_settlement_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        &receipt.bait_settlement,
+        FishingBait::Sturdy,
+    )?;
+    validate_modifier_outcome_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        receipt.area,
+        &receipt.outcome,
+        Some(1),
+    )?;
+    persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
+}
+
+pub(crate) async fn finalize_manual_fishing_school_bait_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    receipt: &ManualFishingSchoolBaitTerminalReceiptV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    validate_bait_settlement_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        &receipt.bait_settlement,
+        FishingBait::School,
+    )?;
+    let expected_fish_count = match (&receipt.outcome, receipt.school_quantity) {
+        (
+            ManualFishingModifierTerminalOutcomeV1::Fish { .. }
+            | ManualFishingModifierTerminalOutcomeV1::LineBroken { .. },
+            Some(quantity),
+        ) => {
+            validate_school_quantity_v1(quantity)?;
+            Some(usize::from(quantity.quantity.final_fish_count()))
+        }
+        (ManualFishingModifierTerminalOutcomeV1::NonFish { .. }, None) => None,
+        _ => return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch),
+    };
+    validate_modifier_outcome_v1(
+        receipt.operation_id,
+        receipt.player_id,
+        receipt.area,
+        &receipt.outcome,
+        expected_fish_count,
+    )?;
+    persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
+}
+
+fn validate_modifier_outcome_v1(
+    operation_id: Uuid,
+    player_id: Uuid,
+    area: FishingArea,
+    outcome: &ManualFishingModifierTerminalOutcomeV1,
+    expected_fish_count: Option<usize>,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    let matches = |child_operation_id: Uuid, child_player_id: Uuid| {
+        child_operation_id == operation_id && child_player_id == player_id
+    };
+    let validate_durability =
+        |durability: &FishingRodDurabilityMutationReceiptV1,
+         expected: FishingRodDurabilityResolution| {
+            if !matches(durability.operation_id, durability.player_id)
+                || durability.area != area
+                || durability.resolution != expected
+                || !matches!(
+                    &durability.applied,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                )
+            {
+                return Err(ManualFishingModifierTerminalError::DurabilityIntegrityMismatch);
+            }
+            Ok(())
+        };
+
+    match outcome {
+        ManualFishingModifierTerminalOutcomeV1::Fish {
+            deliveries,
+            progression,
+            durability,
+        } => {
+            let Some(expected_fish_count) = expected_fish_count else {
+                return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+            };
+            if deliveries.len() != expected_fish_count
+                || deliveries.is_empty()
+                || deliveries
+                    .iter()
+                    .any(|delivery| !matches(delivery.operation_id, delivery.player_id))
+                || !matches(progression.operation_id, progression.player_id)
+            {
+                return Err(ManualFishingModifierTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
+        ManualFishingModifierTerminalOutcomeV1::NonFish {
+            delivery,
+            progression,
+            durability,
+        } => {
+            if !matches(progression.operation_id, progression.player_id)
+                || delivery
+                    .deliveries
+                    .iter()
+                    .any(|row| !matches(row.delivery.operation_id, row.delivery.player_id))
+            {
+                return Err(ManualFishingModifierTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
+        ManualFishingModifierTerminalOutcomeV1::LineBroken { durability } => {
+            let Some(_) = expected_fish_count else {
+                return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+            };
+            validate_durability(durability, FishingRodDurabilityResolution::LineBreak)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_multicatch_count_v1(
+    level: u8,
+    count: ManualFishingMulticatchCountV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    if count.level != level || count.draw_ppm >= MANUAL_FISHING_RNG_PPM_SCALE {
+        return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+    }
+    let outcomes = [
+        MulticatchCount::Single,
+        MulticatchCount::Double,
+        MulticatchCount::Triple,
+        MulticatchCount::Quadruple,
+        MulticatchCount::Quintuple,
+    ];
+    let mut lower = 0_u32;
+    for outcome in outcomes {
+        let policy = multicatch_count_policy(level, outcome)
+            .map_err(|_| ManualFishingModifierTerminalError::QuantityIntegrityMismatch)?;
+        let upper = lower
+            .checked_add(policy.probability_ppm)
+            .ok_or(ManualFishingModifierTerminalError::QuantityIntegrityMismatch)?;
+        if outcome == count.outcome {
+            if count.fish_count != policy.fish_count
+                || count.selected_probability_ppm != policy.probability_ppm
+                || !(lower..upper).contains(&count.draw_ppm)
+            {
+                return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+            }
+            return Ok(());
+        }
+        lower = upper;
+    }
+    Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch)
+}
+
+fn validate_school_quantity_v1(
+    quantity: ManualFishingSchoolBaitQuantityV1,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    if quantity.draw_ppm >= MANUAL_FISHING_RNG_PPM_SCALE || quantity.chance_ppm != 80_000 {
+        return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+    }
+    let expected_proc = if quantity.draw_ppm < quantity.chance_ppm {
+        crate::SchoolBaitProcResolution::Triggered
+    } else {
+        crate::SchoolBaitProcResolution::NotTriggered
+    };
+    if quantity.proc_resolution != expected_proc {
+        return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+    }
+    let expected_quantity =
+        resolve_school_bait_quantity(crate::FishingCatchBranch::Fish, 1, expected_proc)
+            .map_err(|_| ManualFishingModifierTerminalError::QuantityIntegrityMismatch)?;
+    if quantity.quantity != expected_quantity {
+        return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch);
+    }
+    Ok(())
+}
+
+fn validate_bait_settlement_v1(
+    operation_id: Uuid,
+    player_id: Uuid,
+    bait_settlement: &FishingBaitCastSettlementReceipt,
+    expected_bait: FishingBait,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    if bait_settlement.operation_id != operation_id
+        || bait_settlement.player_id != player_id
+        || bait_settlement.plan.bait_rack_level.is_some()
+        || bait_settlement.plan.consumed_bait_categories != 1
+        || usize::from(bait_settlement.plan.active_baits_before_cast)
+            != bait_settlement.plan.entries.len()
+        || usize::from(bait_settlement.plan.auto_detached_bait_categories)
+            != bait_settlement.auto_detached.len()
+        || usize::from(
+            bait_settlement
+                .plan
+                .consumed_bait_categories
+                .saturating_add(bait_settlement.plan.auto_detached_bait_categories),
+        ) != bait_settlement.plan.entries.len()
+        || bait_settlement.consumption_receipts.len() != 1
+    {
+        return Err(ManualFishingModifierTerminalError::BaitSettlementIntegrityMismatch);
+    }
+    let mut consumed = bait_settlement
+        .plan
+        .entries
+        .iter()
+        .filter(|entry| entry.action == FishingBaitCastConsumptionAction::ConsumeForCast);
+    let Some(entry) = consumed.next() else {
+        return Err(ManualFishingModifierTerminalError::BaitSettlementIntegrityMismatch);
+    };
+    let consumption = &bait_settlement.consumption_receipts[0];
+    let expected_definition_key = fishing_bait_item_definition_key(expected_bait);
+    if consumed.next().is_some()
+        || entry.bait != expected_bait
+        || entry.units_consumed != 1
+        || entry.available_units_before <= 0
+        || entry.available_units_after != entry.available_units_before - 1
+        || consumption.operation_id != operation_id
+        || consumption.player_id != player_id
+        || consumption.mutation_key
+            != format!(
+                "fishing:bait:consume:{}",
+                expected_bait_key_v1(expected_bait)
+            )
+        || consumption.definition_key != expected_definition_key
+        || consumption.definition_version != FISHING_BAIT_ITEM_DEFINITION_VERSION
+        || consumption.quantity != 1
+        || consumption.quantity_before != entry.available_units_before
+        || consumption.quantity_after != entry.available_units_after
+        || bait_settlement.auto_detached.iter().any(|bait| {
+            !bait_settlement.plan.entries.iter().any(|plan_entry| {
+                plan_entry.bait == *bait
+                    && plan_entry.action == FishingBaitCastConsumptionAction::AutoDetachMissingUnit
+            })
+        })
+    {
+        return Err(ManualFishingModifierTerminalError::BaitSettlementIntegrityMismatch);
+    }
+    Ok(())
+}
+
+fn expected_bait_key_v1(bait: FishingBait) -> &'static str {
+    match bait {
+        FishingBait::School => "school",
+        FishingBait::Quality => "quality",
+        FishingBait::Rare => "rare",
+        FishingBait::Treasure => "treasure",
+        FishingBait::Sturdy => "sturdy",
+    }
+}
+
+async fn persist_modifier_terminal_v1<T: Serialize>(
+    tx: &mut Transaction<'_, Postgres>,
+    operation_id: Uuid,
+    player_id: Uuid,
+    receipt: &T,
+) -> Result<(), ManualFishingModifierTerminalError> {
+    let payload = serde_json::to_value(receipt)?;
+    sqlx::query(
+        r#"
+        INSERT INTO asset_events (
+            id, operation_id, mutation_key, player_id, event_kind, payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(OperationId::new().as_uuid())
+    .bind(operation_id)
+    .bind(TERMINAL_MUTATION_KEY)
+    .bind(player_id)
+    .bind(TERMINAL_EVENT_KIND)
+    .bind(payload.clone())
+    .execute(&mut **tx)
+    .await?;
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE operations
+           SET state = 'COMMITTED',
+               result = $1,
+               committed_at = clock_timestamp()
+         WHERE id = $2
+           AND player_id = $3
+           AND state = 'PENDING'
+        "#,
+    )
+    .bind(payload.clone())
+    .bind(operation_id)
+    .bind(player_id)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(ManualFishingModifierTerminalError::OperationTransitionConflict);
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO outbox_events (id, operation_id, topic, payload)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (operation_id, topic) DO NOTHING
+        "#,
+    )
+    .bind(OperationId::new().as_uuid())
+    .bind(operation_id)
+    .bind(TERMINAL_OUTBOX_TOPIC)
+    .bind(payload)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
