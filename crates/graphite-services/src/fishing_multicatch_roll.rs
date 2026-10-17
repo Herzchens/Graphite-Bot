@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -15,7 +15,7 @@ const OUTCOMES: [MulticatchCount; 5] = [
     MulticatchCount::Quintuple,
 ];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ManualFishingMulticatchCountV1 {
     pub level: u8,
     pub draw_ppm: u32,

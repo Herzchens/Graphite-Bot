@@ -361,15 +361,19 @@ pub use fishing_species::{
     fishing_area_species_pool, fishing_species_policy, preview_rare_bait_area_species_weight,
 };
 pub use fishing_terminal::{
+    ManualFishingBaitRackTerminalReceiptV1, ManualFishingModifierTerminalError,
+    ManualFishingModifierTerminalOutcomeV1, ManualFishingMultiTreasureTerminalReceiptV1,
+    ManualFishingMulticatchTerminalReceiptV1, ManualFishingSchoolBaitTerminalReceiptV1,
     ManualFishingSharpHookTerminalError, ManualFishingSharpHookTerminalOutcomeV1,
     ManualFishingSharpHookTerminalReceiptV1, ManualFishingStarterBaseTerminalError,
     ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStarterBaseTerminalReceiptV1,
     ManualFishingStrengthenTerminalError, ManualFishingStrengthenTerminalOutcomeV1,
-    ManualFishingStrengthenTerminalReceiptV1, ManualFishingTerminalReceiptKindV1,
-    ManualFishingTreasureXTerminalError, ManualFishingTreasureXTerminalOutcomeV1,
-    ManualFishingTreasureXTerminalReceiptV1, ManualFishingUnbreakingXTerminalError,
-    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalReceiptV1,
-    ManualFishingUnmodifiedOrdinaryTerminalError, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingStrengthenTerminalReceiptV1, ManualFishingSturdyBaitTerminalReceiptV1,
+    ManualFishingTerminalReceiptKindV1, ManualFishingTreasureXTerminalError,
+    ManualFishingTreasureXTerminalOutcomeV1, ManualFishingTreasureXTerminalReceiptV1,
+    ManualFishingUnbreakingXTerminalError, ManualFishingUnbreakingXTerminalOutcomeV1,
+    ManualFishingUnbreakingXTerminalReceiptV1, ManualFishingUnmodifiedOrdinaryTerminalError,
+    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
     ManualFishingUnmodifiedOrdinaryTerminalReceiptV1,
 };
 pub use fishing_treasure_x::{

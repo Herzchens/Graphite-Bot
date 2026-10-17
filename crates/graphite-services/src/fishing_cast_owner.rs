@@ -3,9 +3,12 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::fishing_terminal::{
+    finalize_manual_fishing_bait_rack_v1, finalize_manual_fishing_multi_treasure_v1,
+    finalize_manual_fishing_multicatch_v1, finalize_manual_fishing_school_bait_v1,
     finalize_manual_fishing_sharp_hook_v1, finalize_manual_fishing_starter_base_v1,
-    finalize_manual_fishing_strengthen_v1, finalize_manual_fishing_treasure_x_v1,
-    finalize_manual_fishing_unbreaking_x_v1, finalize_manual_fishing_unmodified_ordinary_v1,
+    finalize_manual_fishing_strengthen_v1, finalize_manual_fishing_sturdy_bait_v1,
+    finalize_manual_fishing_treasure_x_v1, finalize_manual_fishing_unbreaking_x_v1,
+    finalize_manual_fishing_unmodified_ordinary_v1,
 };
 use crate::fishing_unmodified_line_stage::{
     resolve_manual_sturdy_bait_line_stage_v1, resolve_manual_unmodified_line_stage_v1,
@@ -23,16 +26,20 @@ use crate::{
     FishingResolvedNonFishOutcomeV1, FishingRodDurabilityMutationError,
     FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution, FishingRodEnchant,
     FishingRodLevelXEffect, FishingRodLevelXPolicyError, MULTI_TREASURE_MAX_LEVEL,
-    MULTICATCH_MAX_LEVEL, ManualFishingCastPreflight, ManualFishingCastPreflightError,
-    ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError, ManualFishingOperationError,
+    MULTICATCH_MAX_LEVEL, ManualFishingBaitRackTerminalReceiptV1, ManualFishingCastPreflight,
+    ManualFishingCastPreflightError, ManualFishingModifierTerminalError,
+    ManualFishingModifierTerminalOutcomeV1, ManualFishingMultiTreasureTerminalReceiptV1,
+    ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError,
+    ManualFishingMulticatchTerminalReceiptV1, ManualFishingOperationError,
     ManualFishingOperationResolutionV1, ManualFishingProgressionSettlementError,
     ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
     ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
-    ManualFishingSharpHookTerminalError, ManualFishingSharpHookTerminalOutcomeV1,
-    ManualFishingSharpHookTerminalReceiptV1, ManualFishingStarterBaseTerminalError,
-    ManualFishingStarterBaseTerminalOutcomeV1, ManualFishingStarterBaseTerminalReceiptV1,
-    ManualFishingStrengthenTerminalError, ManualFishingStrengthenTerminalOutcomeV1,
-    ManualFishingStrengthenTerminalReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
+    ManualFishingSchoolBaitTerminalReceiptV1, ManualFishingSharpHookTerminalError,
+    ManualFishingSharpHookTerminalOutcomeV1, ManualFishingSharpHookTerminalReceiptV1,
+    ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
+    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingStrengthenTerminalError,
+    ManualFishingStrengthenTerminalOutcomeV1, ManualFishingStrengthenTerminalReceiptV1,
+    ManualFishingSturdyBaitTerminalReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
     ManualFishingTerminalReceiptKindV1, ManualFishingTreasureXBranchError,
     ManualFishingTreasureXTerminalError, ManualFishingTreasureXTerminalOutcomeV1,
     ManualFishingTreasureXTerminalReceiptV1, ManualFishingUnbreakingXError,
@@ -98,6 +105,32 @@ pub enum ManualFishingCastOwnerError {
     TreasureXTerminalDurabilityMissing,
     #[error("resolved Treasure X terminal durability disagrees with its persisted receipt")]
     TreasureXTerminalDurabilityMismatch,
+    #[error(transparent)]
+    ModifierTerminal(#[from] ManualFishingModifierTerminalError),
+    #[error("resolved modifier terminal outcome is missing its operation-keyed Rod receipt")]
+    ModifierTerminalDurabilityMissing,
+    #[error("resolved modifier terminal durability disagrees with its persisted receipt")]
+    ModifierTerminalDurabilityMismatch,
+    #[error("survived over-cap Fish cannot commit from the Bait Rack terminal path")]
+    BaitRackTerminalOverCapPending,
+    #[error("direct Enchant Book cannot commit from the Bait Rack terminal path")]
+    BaitRackTerminalDirectBookPending,
+    #[error("survived over-cap Fish cannot commit from the Multicatch terminal path")]
+    MulticatchTerminalOverCapPending,
+    #[error("direct Enchant Book cannot commit from the Multicatch terminal path")]
+    MulticatchTerminalDirectBookPending,
+    #[error("survived over-cap Fish cannot commit from the Multi Treasure terminal path")]
+    MultiTreasureTerminalOverCapPending,
+    #[error("direct Enchant Books cannot commit from the Multi Treasure terminal path")]
+    MultiTreasureTerminalDirectBooksPending,
+    #[error("survived over-cap Fish cannot commit from the Sturdy Bait terminal path")]
+    SturdyBaitTerminalOverCapPending,
+    #[error("direct Enchant Book cannot commit from the Sturdy Bait terminal path")]
+    SturdyBaitTerminalDirectBookPending,
+    #[error("survived over-cap Fish cannot commit from the School Bait terminal path")]
+    SchoolBaitTerminalOverCapPending,
+    #[error("direct Enchant Book cannot commit from the School Bait terminal path")]
+    SchoolBaitTerminalDirectBookPending,
     #[error(transparent)]
     UnbreakingXTerminal(#[from] ManualFishingUnbreakingXTerminalError),
     #[error("survived over-cap Fish cannot commit from the Unbreaking X terminal path")]
@@ -528,6 +561,11 @@ pub enum ManualFishingCastRequestResolutionV1<'c> {
     CommittedStrengthen(Box<ManualFishingStrengthenTerminalReceiptV1>),
     CommittedSharpHook(Box<ManualFishingSharpHookTerminalReceiptV1>),
     CommittedTreasureX(Box<ManualFishingTreasureXTerminalReceiptV1>),
+    CommittedBaitRack(Box<ManualFishingBaitRackTerminalReceiptV1>),
+    CommittedMulticatch(Box<ManualFishingMulticatchTerminalReceiptV1>),
+    CommittedMultiTreasure(Box<ManualFishingMultiTreasureTerminalReceiptV1>),
+    CommittedSturdyBait(Box<ManualFishingSturdyBaitTerminalReceiptV1>),
+    CommittedSchoolBait(Box<ManualFishingSchoolBaitTerminalReceiptV1>),
     CommittedUnbreakingX(Box<ManualFishingUnbreakingXTerminalReceiptV1>),
 }
 
@@ -2965,6 +3003,296 @@ impl PendingManualFishingCastV1<'_> {
         Ok(receipt.clone())
     }
 
+    /// Atomically commits fully resolved Bait-Rack-I-III-only outcomes.
+    pub async fn commit_bait_rack_v1(
+        mut self,
+    ) -> Result<ManualFishingBaitRackTerminalReceiptV1, ManualFishingCastOwnerError> {
+        let bait_rack_level = self.bait_rack_only_level_v1()?;
+        let staged = self.stage_bait_rack_selected_outcome_v1().await?;
+        let outcome = match staged {
+            PendingManualFishingBaitRackSelectedOutcomeV1::LandedFish {
+                delivery,
+                progression,
+                durability,
+            } => ManualFishingModifierTerminalOutcomeV1::Fish {
+                deliveries: vec![delivery],
+                progression,
+                durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+            },
+            PendingManualFishingBaitRackSelectedOutcomeV1::NonFish { staged, durability } => {
+                ManualFishingModifierTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
+            }
+            PendingManualFishingBaitRackSelectedOutcomeV1::LineBroken { durability } => {
+                ManualFishingModifierTerminalOutcomeV1::LineBroken {
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
+            }
+            PendingManualFishingBaitRackSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::BaitRackTerminalOverCapPending);
+            }
+            PendingManualFishingBaitRackSelectedOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::BaitRackTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingBaitRackTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::BaitRack,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            bait_rack_level,
+            outcome,
+        };
+        finalize_manual_fishing_bait_rack_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingModifierTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    /// Atomically commits fully resolved Multicatch-I-X-only outcomes.
+    pub async fn commit_multicatch_v1(
+        mut self,
+    ) -> Result<ManualFishingMulticatchTerminalReceiptV1, ManualFishingCastOwnerError> {
+        let multicatch_level = self.multicatch_only_level_v1()?;
+        let staged = self.stage_multicatch_selected_outcome_v1().await?;
+        let (multicatch_count, outcome) = match staged {
+            PendingManualFishingMulticatchSelectedOutcomeV1::LandedFish {
+                count,
+                deliveries,
+                progression,
+                durability,
+            } => (
+                Some(count),
+                ManualFishingModifierTerminalOutcomeV1::Fish {
+                    deliveries,
+                    progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
+            PendingManualFishingMulticatchSelectedOutcomeV1::NonFish { staged, durability } => (
+                None,
+                ManualFishingModifierTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
+            PendingManualFishingMulticatchSelectedOutcomeV1::LineBroken { count, durability } => (
+                Some(count),
+                ManualFishingModifierTerminalOutcomeV1::LineBroken {
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
+            PendingManualFishingMulticatchSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::MulticatchTerminalOverCapPending);
+            }
+            PendingManualFishingMulticatchSelectedOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::MulticatchTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingMulticatchTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::Multicatch,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            multicatch_level,
+            multicatch_count,
+            outcome,
+        };
+        finalize_manual_fishing_multicatch_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingModifierTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    /// Atomically commits fully resolved Multi-Treasure-I-X-only outcomes.
+    pub async fn commit_multi_treasure_v1(
+        mut self,
+    ) -> Result<ManualFishingMultiTreasureTerminalReceiptV1, ManualFishingCastOwnerError> {
+        let multi_treasure_level = self.multi_treasure_only_level_v1()?;
+        let staged = self.stage_multi_treasure_selected_outcome_v1().await?;
+        let outcome = match staged {
+            PendingManualFishingMultiTreasureSelectedOutcomeV1::LandedFish {
+                delivery,
+                progression,
+                durability,
+            } => ManualFishingModifierTerminalOutcomeV1::Fish {
+                deliveries: vec![delivery],
+                progression,
+                durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+            },
+            PendingManualFishingMultiTreasureSelectedOutcomeV1::NonFish { staged, durability } => {
+                ManualFishingModifierTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
+            }
+            PendingManualFishingMultiTreasureSelectedOutcomeV1::LineBroken { durability } => {
+                ManualFishingModifierTerminalOutcomeV1::LineBroken {
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
+            }
+            PendingManualFishingMultiTreasureSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::MultiTreasureTerminalOverCapPending);
+            }
+            PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBooksPending { .. } => {
+                return Err(ManualFishingCastOwnerError::MultiTreasureTerminalDirectBooksPending);
+            }
+        };
+        let receipt = ManualFishingMultiTreasureTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::MultiTreasure,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            multi_treasure_level,
+            outcome,
+        };
+        finalize_manual_fishing_multi_treasure_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingModifierTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    /// Atomically commits fully resolved Sturdy-Bait-only outcomes and its exact
+    /// one-unit bait settlement in the same transaction.
+    pub async fn commit_sturdy_bait_v1(
+        mut self,
+    ) -> Result<ManualFishingSturdyBaitTerminalReceiptV1, ManualFishingCastOwnerError> {
+        self.ensure_sturdy_bait_only_cast_v1()?;
+        let bait_settlement = self.bait.clone();
+        let staged = self.stage_sturdy_bait_selected_outcome_v1().await?;
+        let outcome = match staged {
+            PendingManualFishingSturdyBaitSelectedOutcomeV1::LandedFish {
+                delivery,
+                progression,
+                durability,
+            } => ManualFishingModifierTerminalOutcomeV1::Fish {
+                deliveries: vec![delivery],
+                progression,
+                durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+            },
+            PendingManualFishingSturdyBaitSelectedOutcomeV1::NonFish { staged, durability } => {
+                ManualFishingModifierTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
+            }
+            PendingManualFishingSturdyBaitSelectedOutcomeV1::LineBroken { durability } => {
+                ManualFishingModifierTerminalOutcomeV1::LineBroken {
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
+            }
+            PendingManualFishingSturdyBaitSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::SturdyBaitTerminalOverCapPending);
+            }
+            PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::SturdyBaitTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingSturdyBaitTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::SturdyBait,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            bait_settlement,
+            outcome,
+        };
+        finalize_manual_fishing_sturdy_bait_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingModifierTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    /// Atomically commits fully resolved School-Bait-only outcomes with the exact
+    /// proc provenance and one-unit bait settlement.
+    pub async fn commit_school_bait_v1(
+        mut self,
+    ) -> Result<ManualFishingSchoolBaitTerminalReceiptV1, ManualFishingCastOwnerError> {
+        self.ensure_school_bait_only_cast_v1()?;
+        let bait_settlement = self.bait.clone();
+        let staged = self.stage_school_bait_selected_outcome_v1().await?;
+        let (school_quantity, outcome) = match staged {
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::LandedFish {
+                quantity,
+                deliveries,
+                progression,
+                durability,
+            } => (
+                Some(quantity),
+                ManualFishingModifierTerminalOutcomeV1::Fish {
+                    deliveries,
+                    progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::NonFish { staged, durability } => (
+                None,
+                ManualFishingModifierTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::LineBroken {
+                quantity,
+                durability,
+            } => (
+                Some(quantity),
+                ManualFishingModifierTerminalOutcomeV1::LineBroken {
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::SchoolBaitTerminalOverCapPending);
+            }
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::SchoolBaitTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingSchoolBaitTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::SchoolBait,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            bait_settlement,
+            school_quantity,
+            outcome,
+        };
+        finalize_manual_fishing_school_bait_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingModifierTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    fn modifier_terminal_durability_receipt_v1(
+        &self,
+        applied: &AppliedFishingRodDurabilityState,
+    ) -> Result<FishingRodDurabilityMutationReceiptV1, ManualFishingCastOwnerError> {
+        let receipt = self
+            .staged_durability
+            .as_ref()
+            .ok_or(ManualFishingCastOwnerError::ModifierTerminalDurabilityMissing)?;
+        if &receipt.applied != applied {
+            return Err(ManualFishingCastOwnerError::ModifierTerminalDurabilityMismatch);
+        }
+        Ok(receipt.clone())
+    }
+
     /// Atomically commits fully resolved exact Treasure-X-only outcomes.
     ///
     /// Treasure X changes only the outer catch-branch weighting. The exact-X loadout
@@ -3403,6 +3731,44 @@ pub async fn resolve_manual_fishing_cast_request_v1<'c>(
                 .await
                 .map_err(ManualFishingOperationError::from)?;
             Ok(ManualFishingCastRequestResolutionV1::CommittedTreasureX(
+                receipt,
+            ))
+        }
+        ManualFishingOperationResolutionV1::CommittedBaitRack(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedBaitRack(
+                receipt,
+            ))
+        }
+        ManualFishingOperationResolutionV1::CommittedMulticatch(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedMulticatch(
+                receipt,
+            ))
+        }
+        ManualFishingOperationResolutionV1::CommittedMultiTreasure(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedMultiTreasure(receipt))
+        }
+        ManualFishingOperationResolutionV1::CommittedSturdyBait(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedSturdyBait(
+                receipt,
+            ))
+        }
+        ManualFishingOperationResolutionV1::CommittedSchoolBait(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedSchoolBait(
                 receipt,
             ))
         }
