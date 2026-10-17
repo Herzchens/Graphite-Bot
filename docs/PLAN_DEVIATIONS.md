@@ -3088,3 +3088,49 @@ Return a terminal-blocking error for `OverCapCatchPending` and
 `DirectBookPending`. Only the exact ordinary non-Gold Rod + Unbreaking X-only
 loadout may use this terminal owner; lower Unbreaking levels, Gold Rod, bait and
 additional enchants remain fail-closed. This does not enable Discord `/fish`.
+
+
+## Fishing Strengthen terminal commit
+
+Branch: `feat/fishing-strengthen-terminal`
+
+### 1. Fully resolved Strengthen-only outcomes may share the existing terminal boundary
+
+**Lifecycle finding — CONFIRMED**
+
+The exact Strengthen-I-X-only selected-outcome owner already keeps the canonical
+baseline branch and Fish identity while changing only the authoritative physical
+capability ratio through the frozen +4% line-strength-per-level rule. For
+within-capability/guaranteed Fish, Junk, non-book Treasure and line break, all
+asset, progression and ordinary Rod consequences are already resolved inside the
+same PostgreSQL transaction.
+
+**Final decision**
+
+Add typed receipt kind `STRENGTHEN` and persist the exact validated Strengthen
+level that governed capability. Landed Fish/non-Fish receipts retain the existing
+delivery/progression children and operation-keyed ordinary durability receipt;
+line break retains only the matching destruction receipt. Child
+operation/player/area ownership and the expected no-Unbreaking durability
+resolution are validated before the single terminal event, PENDING -> COMMITTED
+operation result and `fishing.cast.completed` outbox row are written atomically.
+
+Request-key COMMITTED replay recognizes the Strengthen receipt, validates stored
+operation/player/area provenance and returns the exact committed result without
+re-entering preflight or applying a second Rod event.
+
+### 2. Strengthen does not resolve the shared over-cap or Book blockers
+
+**Safety finding — CONFIRMED**
+
+A survived over-cap Fish still lacks the approved exact rational catch/escape RNG
+mapping, and a direct Enchant Book still lacks unique Book ItemInstance delivery.
+Strengthen changes neither dependency.
+
+**Final decision**
+
+Return a terminal-blocking error for `OverCapCatchPending` and
+`DirectBookPending`. The terminal owner remains restricted to one ordinary
+non-Gold Rod with exactly one Strengthen I-X enchant and no consumed bait. Gold,
+additional enchants and combined modifier/cap cases remain fail-closed. This does
+not enable Discord `/fish`.

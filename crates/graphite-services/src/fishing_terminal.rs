@@ -378,22 +378,21 @@ fn validate_strengthen_child_integrity(
     let matches = |operation_id: Uuid, player_id: Uuid| {
         operation_id == receipt.operation_id && player_id == receipt.player_id
     };
-    let validate_durability = |
-        durability: &FishingRodDurabilityMutationReceiptV1,
-        expected: FishingRodDurabilityResolution,
-    | {
-        if !matches(durability.operation_id, durability.player_id)
-            || durability.area != receipt.area
-            || durability.resolution != expected
-            || !matches!(
-                &durability.applied,
-                AppliedFishingRodDurabilityState::Ordinary { .. }
-            )
-        {
-            return Err(ManualFishingStrengthenTerminalError::DurabilityIntegrityMismatch);
-        }
-        Ok(())
-    };
+    let validate_durability =
+        |durability: &FishingRodDurabilityMutationReceiptV1,
+         expected: FishingRodDurabilityResolution| {
+            if !matches(durability.operation_id, durability.player_id)
+                || durability.area != receipt.area
+                || durability.resolution != expected
+                || !matches!(
+                    &durability.applied,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                )
+            {
+                return Err(ManualFishingStrengthenTerminalError::DurabilityIntegrityMismatch);
+            }
+            Ok(())
+        };
 
     match &receipt.outcome {
         ManualFishingStrengthenTerminalOutcomeV1::Fish {

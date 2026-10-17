@@ -362,10 +362,11 @@ pub use fishing_species::{
 };
 pub use fishing_terminal::{
     ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
-    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingTerminalReceiptKindV1,
-    ManualFishingUnbreakingXTerminalError, ManualFishingUnbreakingXTerminalOutcomeV1,
-    ManualFishingUnbreakingXTerminalReceiptV1, ManualFishingUnmodifiedOrdinaryTerminalError,
-    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingStrengthenTerminalError,
+    ManualFishingStrengthenTerminalOutcomeV1, ManualFishingStrengthenTerminalReceiptV1,
+    ManualFishingTerminalReceiptKindV1, ManualFishingUnbreakingXTerminalError,
+    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalReceiptV1,
+    ManualFishingUnmodifiedOrdinaryTerminalError, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
     ManualFishingUnmodifiedOrdinaryTerminalReceiptV1,
 };
 pub use fishing_treasure_x::{
