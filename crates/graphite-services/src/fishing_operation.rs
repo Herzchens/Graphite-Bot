@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     FishingArea, MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION,
-    ManualFishingStarterBaseTerminalReceiptV1,
+    ManualFishingStarterBaseTerminalReceiptV1, ManualFishingUnmodifiedOrdinaryTerminalReceiptV1,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -21,6 +21,7 @@ pub struct ManualFishingOperationV1 {
 pub enum ManualFishingOperationResolutionV1 {
     Pending(ManualFishingOperationV1),
     CommittedStarterBase(Box<ManualFishingStarterBaseTerminalReceiptV1>),
+    CommittedUnmodifiedOrdinary(Box<ManualFishingUnmodifiedOrdinaryTerminalReceiptV1>),
 }
 
 #[derive(Debug, Error)]
@@ -39,6 +40,8 @@ pub enum ManualFishingOperationError {
     MissingOperationResult,
     #[error("stored Fishing operation result is not a valid supported typed receipt: {0}")]
     InvalidOperationResult(Box<serde_json::Error>),
+    #[error("stored Fishing operation result has unsupported receipt kind {0}")]
+    UnsupportedOperationResultKind(String),
     #[error("stored Fishing operation state does not match its typed committed receipt")]
     StoredOperationIntegrityMismatch,
     #[error("Fishing operation cannot be resumed in state {0}")]
@@ -119,7 +122,8 @@ pub async fn lock_or_create_manual_fishing_operation_v1(
         .await?
     {
         ManualFishingOperationResolutionV1::Pending(operation) => Ok(operation),
-        ManualFishingOperationResolutionV1::CommittedStarterBase(_) => Err(
+        ManualFishingOperationResolutionV1::CommittedStarterBase(_)
+        | ManualFishingOperationResolutionV1::CommittedUnmodifiedOrdinary(_) => Err(
             ManualFishingOperationError::OperationTerminal("COMMITTED".to_owned()),
         ),
     }
@@ -169,6 +173,27 @@ async fn validate_existing_operation(
     if state == "COMMITTED" {
         let value: Option<Value> = row.try_get("result")?;
         let value = value.ok_or(ManualFishingOperationError::MissingOperationResult)?;
+        if let Some(kind) = value.get("receipt_kind").and_then(Value::as_str) {
+            if kind != "UNMODIFIED_ORDINARY" {
+                return Err(ManualFishingOperationError::UnsupportedOperationResultKind(
+                    kind.to_owned(),
+                ));
+            }
+            let receipt: ManualFishingUnmodifiedOrdinaryTerminalReceiptV1 =
+                serde_json::from_value(value).map_err(|error| {
+                    ManualFishingOperationError::InvalidOperationResult(Box::new(error))
+                })?;
+            if receipt.operation_id != operation_id
+                || stored_player_id != Some(receipt.player_id)
+                || receipt.area != area
+            {
+                return Err(ManualFishingOperationError::StoredOperationIntegrityMismatch);
+            }
+            return Ok(
+                ManualFishingOperationResolutionV1::CommittedUnmodifiedOrdinary(Box::new(receipt)),
+            );
+        }
+
         let receipt: ManualFishingStarterBaseTerminalReceiptV1 = serde_json::from_value(value)
             .map_err(|error| {
                 ManualFishingOperationError::InvalidOperationResult(Box::new(error))

@@ -5,8 +5,9 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    FishingArea, FishingFishInstanceDeliveryReceiptV1, FishingNonFishOutcomeDeliveryReceiptV1,
-    ManualFishingProgressionSettlementReceiptV1,
+    AppliedFishingRodDurabilityState, FishingArea, FishingFishInstanceDeliveryReceiptV1,
+    FishingNonFishOutcomeDeliveryReceiptV1, FishingRodDurabilityMutationReceiptV1,
+    FishingRodDurabilityResolution, ManualFishingProgressionSettlementReceiptV1,
 };
 
 const TERMINAL_MUTATION_KEY: &str = "fishing:cast:terminal";
@@ -32,6 +33,53 @@ pub struct ManualFishingStarterBaseTerminalReceiptV1 {
     pub player_id: Uuid,
     pub area: FishingArea,
     pub outcome: ManualFishingStarterBaseTerminalOutcomeV1,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ManualFishingTerminalReceiptKindV1 {
+    UnmodifiedOrdinary,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "branch", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1 {
+    Fish {
+        delivery: FishingFishInstanceDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+    NonFish {
+        delivery: FishingNonFishOutcomeDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+    LineBroken {
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ManualFishingUnmodifiedOrdinaryTerminalReceiptV1 {
+    pub receipt_kind: ManualFishingTerminalReceiptKindV1,
+    pub operation_id: Uuid,
+    pub player_id: Uuid,
+    pub area: FishingArea,
+    pub outcome: ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+}
+
+#[derive(Debug, Error)]
+pub enum ManualFishingUnmodifiedOrdinaryTerminalError {
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error("terminal Fishing receipt serialization failed: {0}")]
+    Serialization(#[from] serde_json::Error),
+    #[error("terminal Fishing receipt contains child receipts for another operation/player/area")]
+    ChildIntegrityMismatch,
+    #[error("terminal Fishing receipt contains a non-ordinary or wrong durability consequence")]
+    DurabilityIntegrityMismatch,
+    #[error("manual Fishing operation was not PENDING at terminal transition")]
+    OperationTransitionConflict,
 }
 
 #[derive(Debug, Error)]
@@ -108,6 +156,135 @@ pub(crate) async fn finalize_manual_fishing_starter_base_v1(
     .bind(payload)
     .execute(&mut **tx)
     .await?;
+    Ok(())
+}
+
+pub(crate) async fn finalize_manual_fishing_unmodified_ordinary_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    receipt: &ManualFishingUnmodifiedOrdinaryTerminalReceiptV1,
+) -> Result<(), ManualFishingUnmodifiedOrdinaryTerminalError> {
+    validate_unmodified_ordinary_child_integrity(receipt)?;
+
+    let payload = serde_json::to_value(receipt)?;
+    sqlx::query(
+        r#"
+        INSERT INTO asset_events (
+            id, operation_id, mutation_key, player_id, event_kind, payload
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+    )
+    .bind(OperationId::new().as_uuid())
+    .bind(receipt.operation_id)
+    .bind(TERMINAL_MUTATION_KEY)
+    .bind(receipt.player_id)
+    .bind(TERMINAL_EVENT_KIND)
+    .bind(payload.clone())
+    .execute(&mut **tx)
+    .await?;
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE operations
+           SET state = 'COMMITTED',
+               result = $1,
+               committed_at = clock_timestamp()
+         WHERE id = $2
+           AND player_id = $3
+           AND state = 'PENDING'
+        "#,
+    )
+    .bind(payload.clone())
+    .bind(receipt.operation_id)
+    .bind(receipt.player_id)
+    .execute(&mut **tx)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(ManualFishingUnmodifiedOrdinaryTerminalError::OperationTransitionConflict);
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO outbox_events (id, operation_id, topic, payload)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (operation_id, topic) DO NOTHING
+        "#,
+    )
+    .bind(OperationId::new().as_uuid())
+    .bind(receipt.operation_id)
+    .bind(TERMINAL_OUTBOX_TOPIC)
+    .bind(payload)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+fn validate_unmodified_ordinary_child_integrity(
+    receipt: &ManualFishingUnmodifiedOrdinaryTerminalReceiptV1,
+) -> Result<(), ManualFishingUnmodifiedOrdinaryTerminalError> {
+    let matches = |operation_id: Uuid, player_id: Uuid| {
+        operation_id == receipt.operation_id && player_id == receipt.player_id
+    };
+    let validate_durability =
+        |durability: &FishingRodDurabilityMutationReceiptV1,
+         expected_resolution: FishingRodDurabilityResolution| {
+            if !matches(durability.operation_id, durability.player_id)
+                || durability.area != receipt.area
+                || durability.resolution != expected_resolution
+                || !matches!(
+                    &durability.applied,
+                    AppliedFishingRodDurabilityState::Ordinary { .. }
+                )
+            {
+                return Err(
+                    ManualFishingUnmodifiedOrdinaryTerminalError::DurabilityIntegrityMismatch,
+                );
+            }
+            Ok(())
+        };
+
+    match &receipt.outcome {
+        ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::Fish {
+            delivery,
+            progression,
+            durability,
+        } => {
+            if !matches(delivery.operation_id, delivery.player_id)
+                || !matches(progression.operation_id, progression.player_id)
+            {
+                return Err(ManualFishingUnmodifiedOrdinaryTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
+        ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::NonFish {
+            delivery,
+            progression,
+            durability,
+        } => {
+            if !matches(progression.operation_id, progression.player_id)
+                || delivery
+                    .deliveries
+                    .iter()
+                    .any(|row| !matches(row.delivery.operation_id, row.delivery.player_id))
+            {
+                return Err(ManualFishingUnmodifiedOrdinaryTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
+        ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::LineBroken { durability } => {
+            validate_durability(durability, FishingRodDurabilityResolution::LineBreak)?;
+        }
+    }
     Ok(())
 }
 

@@ -8,10 +8,10 @@ use graphite_services::{
     ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1, ManualFishingPpmDrawV1,
     ManualFishingRngDrawError, ManualFishingStarterBaseTerminalOutcomeV1,
     ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingWeightedDrawV1, MultiTreasureCount,
-    MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
-    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
-    PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
+    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
+    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -28,6 +28,219 @@ use graphite_services::{
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn request_owned_unmodified_ordinary_junk_commits_and_replays_without_second_wear() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "ordinary-terminal-junk",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let key = format!("test:manual-fishing-request:{nonce}:ordinary-junk");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_baseline_branch_root(operation.operation_id, 1);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_unmodified_ordinary_v1().await.unwrap();
+    assert_eq!(committed.operation_id, operation.operation_id);
+    assert_eq!(committed.player_id, player_id);
+    assert_eq!(committed.area, FishingArea::River);
+    let ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::NonFish {
+        progression,
+        durability,
+        ..
+    } = &committed.outcome
+    else {
+        panic!("forced baseline Junk branch must commit a non-Fish ordinary result");
+    };
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    assert_eq!(durability.operation_id, operation.operation_id);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("ordinary terminal receipt must contain ordinary Rod durability");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let durability_after_commit: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(durability_after_commit, 199);
+    let asset_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let progression_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedUnmodifiedOrdinary(replayed) = replay else {
+        panic!("committed ordinary request must replay its typed terminal receipt");
+    };
+    assert_eq!(*replayed, committed);
+
+    let durability_after_replay: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let asset_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let progression_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
+            .bind(operation.operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(durability_after_replay, 199);
+    assert_eq!(
+        (asset_after, progression_after),
+        (asset_before, progression_before)
+    );
+}
+
+#[tokio::test]
+async fn ordinary_rod_starter_pool_fish_can_commit_with_one_wear_event() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "ordinary-terminal-fish",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let key = format!("test:manual-fishing-request:{nonce}:ordinary-fish");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_baseline_branch_root(operation.operation_id, 0);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_unmodified_ordinary_v1().await.unwrap();
+    let ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::Fish {
+        delivery,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Starter Pool Fish branch must commit Fish");
+    };
+    assert_eq!(delivery.operation_id, operation.operation_id);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("ordinary Rod terminal Fish must carry ordinary wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+
+    let current: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(current, 199);
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "COMMITTED"
+    );
+}
 
 #[tokio::test]
 async fn request_owned_committed_starter_cast_replays_typed_receipt_without_new_mutations() {
