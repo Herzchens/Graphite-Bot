@@ -1,6 +1,7 @@
 mod equip_enchant_guard;
 mod transactional_stack;
 mod transactional_stack_consumption;
+mod transactional_unique_item_bag;
 
 pub use transactional_stack::{
     StackDeliveryMutationError, StackDeliveryMutationReceipt, StackDeliveryMutationRequest,
@@ -9,6 +10,12 @@ pub use transactional_stack::{
 pub use transactional_stack_consumption::{
     StackConsumptionMutationError, StackConsumptionMutationReceipt,
     StackConsumptionMutationRequest, apply_stack_consumption_mutation,
+};
+pub use transactional_unique_item_bag::{
+    ClaimedUniqueItemBagDelivery, UniqueItemBagDeliveryMutationError,
+    UniqueItemBagDeliveryMutationReceipt, UniqueItemBagDeliveryMutationRequest,
+    UniqueItemBagPendingClaimReceipt, UniqueItemInstanceFlags,
+    apply_unique_item_bag_delivery_mutation, claim_pending_unique_item_bag_deliveries,
 };
 
 use graphite_core::{OperationId, RootSeed};
@@ -90,7 +97,7 @@ pub struct StackView {
     pub occupied_slots: u64,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ItemBagSnapshot {
     pub player_id: Uuid,
     pub level: i64,
@@ -98,6 +105,7 @@ pub struct ItemBagSnapshot {
     pub used_slots: u64,
     pub pending_deliveries: u64,
     pub stacks: Vec<StackView>,
+    pub unique_items: Vec<ItemView>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -301,6 +309,57 @@ impl ItemService {
             }
         }
 
+        let unique_rows = sqlx::query(
+            r#"
+            SELECT i.id,
+                   i.definition_key,
+                   i.definition_version,
+                   d.category,
+                   d.rarity,
+                   i.location,
+                   i.is_starter,
+                   i.is_account_bound,
+                   i.is_tradeable,
+                   i.is_sellable,
+                   i.is_discardable,
+                   i.is_enchantable,
+                   i.is_upgradeable,
+                   i.is_unbreakable,
+                   i.is_repairable,
+                   i.current_durability,
+                   i.max_durability,
+                   i.catch_weight_grams,
+                   i.catch_weight_scaled_grams,
+                   i.state
+              FROM item_instances i
+              JOIN item_definition_versions d
+                ON d.key = i.definition_key
+               AND d.version = i.definition_version
+             WHERE i.owner_player_id = $1
+               AND i.location = 'ITEM_BAG'
+             ORDER BY i.created_at, i.id
+            "#,
+        )
+        .bind(player_id)
+        .fetch_all(self.store.pool())
+        .await?;
+        used_slots = used_slots
+            .checked_add(
+                u64::try_from(unique_rows.len()).map_err(|_| ItemError::ArithmeticOverflow)?,
+            )
+            .ok_or(ItemError::ArithmeticOverflow)?;
+        let mut unique_items = Vec::with_capacity(
+            unique_rows
+                .len()
+                .min(usize::try_from(READ_LIST_LIMIT).unwrap_or(25)),
+        );
+        for row in unique_rows {
+            if unique_items.len() >= usize::try_from(READ_LIST_LIMIT).unwrap_or(25) {
+                break;
+            }
+            unique_items.push(row_to_item_view(row)?);
+        }
+
         let pending: i64 = sqlx::query(
             "SELECT COUNT(*) AS count FROM pending_asset_deliveries WHERE player_id = $1 AND state = 'PENDING' AND desired_location = 'ITEM_BAG'",
         )
@@ -317,6 +376,7 @@ impl ItemService {
             pending_deliveries: u64::try_from(pending)
                 .map_err(|_| ItemError::ArithmeticOverflow)?,
             stacks,
+            unique_items,
         })
     }
 
@@ -1299,6 +1359,25 @@ async fn item_bag_used_slots(
             .checked_add(slots_for_quantity(quantity, stack_limit)?)
             .ok_or(ItemError::ArithmeticOverflow)?;
     }
+
+    let unique_rows = sqlx::query(
+        r#"
+        SELECT id
+          FROM item_instances
+         WHERE owner_player_id = $1
+           AND location = 'ITEM_BAG'
+         ORDER BY id
+         FOR UPDATE
+        "#,
+    )
+    .bind(player_id)
+    .fetch_all(&mut **tx)
+    .await?;
+    used = used
+        .checked_add(
+            u64::try_from(unique_rows.len()).map_err(|_| ItemError::ArithmeticOverflow)?,
+        )
+        .ok_or(ItemError::ArithmeticOverflow)?;
     Ok(used)
 }
 

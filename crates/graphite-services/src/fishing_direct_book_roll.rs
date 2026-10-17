@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
@@ -17,7 +17,7 @@ const BOOK_POOLS: [DirectFishingBookPool; 5] = [
 ];
 
 /// A version-pinned *identity preview*, not a delivered Enchant Book ItemInstance.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FishingDirectBookCandidateV1 {
     pub treasure_slot: u8,
     pub pool: DirectFishingBookPool,
