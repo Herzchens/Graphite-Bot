@@ -7,11 +7,12 @@ use graphite_services::{
     MANUAL_FISHING_OPERATION_POLICY_VERSION, MAX_FISH_PER_CAST, ManualFishingCastOwnerError,
     ManualFishingCastPreflightError, ManualFishingCastRequestResolutionV1, ManualFishingPpmDrawV1,
     ManualFishingRngDrawError, ManualFishingStarterBaseTerminalOutcomeV1,
-    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
-    ManualFishingWeightedDrawV1, MultiTreasureCount, MulticatchCount,
-    NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnmodifiedCapabilityPreviewV1,
+    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageV1,
+    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1, ManualFishingWeightedDrawV1,
+    MultiTreasureCount, MulticatchCount, NATIVE_ACTIVE_BAIT_CATEGORY_SLOTS,
+    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingLureXSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -28,6 +29,116 @@ use graphite_services::{
 };
 use graphite_store::PgStore;
 use uuid::Uuid;
+
+#[tokio::test]
+async fn request_owned_unbreaking_x_junk_commits_and_replays_exact_wear() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "unbreaking-x-terminal-junk",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "UNBREAKING", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:unbreaking-x-junk");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_baseline_branch_root(operation.operation_id, 1);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let tx = store.pool().begin().await.unwrap();
+    let pending = begin_manual_fishing_cast_request_v1(
+        tx,
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let expected_wear = pending.preview_unbreaking_x_ordinary_wear_v1().unwrap();
+    assert_eq!(expected_wear.chance_ppm, 200_000);
+
+    let committed = pending.commit_unbreaking_x_v1().await.unwrap();
+    let ManualFishingUnbreakingXTerminalOutcomeV1::NonFish {
+        progression,
+        wear,
+        durability,
+        ..
+    } = &committed.outcome
+    else {
+        panic!("forced baseline Junk branch must commit non-Fish Unbreaking X");
+    };
+    assert_eq!(*wear, expected_wear);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    assert_eq!(durability.operation_id, operation.operation_id);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Unbreaking X terminal receipt must carry ordinary Rod durability");
+    };
+    assert_eq!(
+        preview.resulting_durability,
+        if expected_wear.prevented { 200 } else { 199 }
+    );
+
+    let before: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedUnbreakingX(replayed) = replay else {
+        panic!("committed Unbreaking X request must replay its typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    let after: i64 =
+        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+    assert_eq!(after, before);
+    assert_eq!(
+        operation_state(&store, operation.operation_id).await,
+        "COMMITTED"
+    );
+}
 
 #[tokio::test]
 async fn request_owned_unmodified_ordinary_junk_commits_and_replays_without_second_wear() {

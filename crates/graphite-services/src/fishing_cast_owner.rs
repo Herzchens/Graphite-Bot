@@ -3,7 +3,8 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::fishing_terminal::{
-    finalize_manual_fishing_starter_base_v1, finalize_manual_fishing_unmodified_ordinary_v1,
+    finalize_manual_fishing_starter_base_v1, finalize_manual_fishing_unbreaking_x_v1,
+    finalize_manual_fishing_unmodified_ordinary_v1,
 };
 use crate::fishing_unmodified_line_stage::{
     resolve_manual_sturdy_bait_line_stage_v1, resolve_manual_unmodified_line_stage_v1,
@@ -29,11 +30,12 @@ use crate::{
     ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
     ManualFishingStarterBaseTerminalReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
     ManualFishingTerminalReceiptKindV1, ManualFishingTreasureXBranchError,
-    ManualFishingUnbreakingXError, ManualFishingUnbreakingXWearPreviewV1,
-    ManualFishingUnmodifiedCapabilityError, ManualFishingUnmodifiedCapabilityPreviewV1,
-    ManualFishingUnmodifiedFishCandidateError, ManualFishingUnmodifiedLineStageError,
-    ManualFishingUnmodifiedLineStageV1, ManualFishingUnmodifiedOrdinaryTerminalError,
-    ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
+    ManualFishingUnbreakingXError, ManualFishingUnbreakingXTerminalError,
+    ManualFishingUnbreakingXTerminalOutcomeV1, ManualFishingUnbreakingXTerminalReceiptV1,
+    ManualFishingUnbreakingXWearPreviewV1, ManualFishingUnmodifiedCapabilityError,
+    ManualFishingUnmodifiedCapabilityPreviewV1, ManualFishingUnmodifiedFishCandidateError,
+    ManualFishingUnmodifiedLineStageError, ManualFishingUnmodifiedLineStageV1,
+    ManualFishingUnmodifiedOrdinaryTerminalError, ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1,
     ManualFishingUnmodifiedOrdinaryTerminalReceiptV1, ManualMineFishCooldownPolicy,
     OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL,
     apply_operation_fishing_rod_durability_v1, canonical_enchant_max_resulting_level,
@@ -60,6 +62,16 @@ pub enum ManualFishingCastOwnerError {
     StarterTerminal(#[from] ManualFishingStarterBaseTerminalError),
     #[error(transparent)]
     UnmodifiedOrdinaryTerminal(#[from] ManualFishingUnmodifiedOrdinaryTerminalError),
+    #[error(transparent)]
+    UnbreakingXTerminal(#[from] ManualFishingUnbreakingXTerminalError),
+    #[error("survived over-cap Fish cannot commit from the Unbreaking X terminal path")]
+    UnbreakingXTerminalOverCapPending,
+    #[error("direct Enchant Book cannot commit from the Unbreaking X terminal path")]
+    UnbreakingXTerminalDirectBookPending,
+    #[error("resolved Unbreaking X terminal outcome is missing its operation-keyed Rod receipt")]
+    UnbreakingXTerminalDurabilityMissing,
+    #[error("resolved Unbreaking X terminal durability disagrees with its persisted receipt")]
+    UnbreakingXTerminalDurabilityMismatch,
     #[error(
         "unmodified ordinary terminal path requires an ordinary non-Gold Rod with no bait or enchants"
     )]
@@ -477,6 +489,7 @@ pub enum ManualFishingCastRequestResolutionV1<'c> {
     Pending(Box<PendingManualFishingCastV1<'c>>),
     CommittedStarterBase(Box<ManualFishingStarterBaseTerminalReceiptV1>),
     CommittedUnmodifiedOrdinary(Box<ManualFishingUnmodifiedOrdinaryTerminalReceiptV1>),
+    CommittedUnbreakingX(Box<ManualFishingUnbreakingXTerminalReceiptV1>),
 }
 
 pub struct PendingManualFishingCastV1<'c> {
@@ -2840,6 +2853,82 @@ impl PendingManualFishingCastV1<'_> {
         }
     }
 
+    /// Atomically commits the fully resolved exact Unbreaking-X-only path.
+    ///
+    /// Landed Fish/Junk/non-book Treasure include their successful children, the
+    /// pinned 20% wear preview and the matching operation-keyed durability receipt.
+    /// A line break commits Rod destruction without sampling Unbreaking or awarding
+    /// successful XP. Survived over-cap Fish and direct Book remain non-terminal.
+    pub async fn commit_unbreaking_x_v1(
+        mut self,
+    ) -> Result<ManualFishingUnbreakingXTerminalReceiptV1, ManualFishingCastOwnerError> {
+        self.ensure_unbreaking_x_only_cast_v1()?;
+        let staged = self.stage_unbreaking_x_selected_outcome_v1().await?;
+        let outcome = match staged {
+            PendingManualFishingUnbreakingXSelectedOutcomeV1::LandedFish {
+                delivery,
+                progression,
+                durability,
+            } => {
+                let wear = self.preview_unbreaking_x_ordinary_wear_v1()?;
+                let durability = self.unbreaking_x_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingUnbreakingXTerminalOutcomeV1::Fish {
+                    delivery,
+                    progression,
+                    wear,
+                    durability,
+                }
+            }
+            PendingManualFishingUnbreakingXSelectedOutcomeV1::NonFish { staged, durability } => {
+                let wear = self.preview_unbreaking_x_ordinary_wear_v1()?;
+                let durability = self.unbreaking_x_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingUnbreakingXTerminalOutcomeV1::NonFish {
+                    delivery: staged.delivery,
+                    progression: staged.progression,
+                    wear,
+                    durability,
+                }
+            }
+            PendingManualFishingUnbreakingXSelectedOutcomeV1::LineBroken { durability } => {
+                let durability = self.unbreaking_x_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingUnbreakingXTerminalOutcomeV1::LineBroken { durability }
+            }
+            PendingManualFishingUnbreakingXSelectedOutcomeV1::OverCapCatchPending { .. } => {
+                return Err(ManualFishingCastOwnerError::UnbreakingXTerminalOverCapPending);
+            }
+            PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBookPending { .. } => {
+                return Err(ManualFishingCastOwnerError::UnbreakingXTerminalDirectBookPending);
+            }
+        };
+        let receipt = ManualFishingUnbreakingXTerminalReceiptV1 {
+            receipt_kind: ManualFishingTerminalReceiptKindV1::UnbreakingX,
+            operation_id: self.preflight.operation_id,
+            player_id: self.preflight.player_id,
+            area: self.preflight.area_access.area,
+            outcome,
+        };
+        finalize_manual_fishing_unbreaking_x_v1(&mut self.tx, &receipt).await?;
+        self.tx
+            .commit()
+            .await
+            .map_err(ManualFishingUnbreakingXTerminalError::from)?;
+        Ok(receipt)
+    }
+
+    fn unbreaking_x_terminal_durability_receipt_v1(
+        &self,
+        applied: &AppliedFishingRodDurabilityState,
+    ) -> Result<FishingRodDurabilityMutationReceiptV1, ManualFishingCastOwnerError> {
+        let receipt = self
+            .staged_durability
+            .as_ref()
+            .ok_or(ManualFishingCastOwnerError::UnbreakingXTerminalDurabilityMissing)?;
+        if &receipt.applied != applied {
+            return Err(ManualFishingCastOwnerError::UnbreakingXTerminalDurabilityMismatch);
+        }
+        Ok(receipt.clone())
+    }
+
     /// Atomically commits the fully resolved zero-modifier ordinary non-Gold Rod path.
     ///
     /// Landed Fish/Junk/non-book Treasure carry their already-staged asset,
@@ -3035,6 +3124,14 @@ pub async fn resolve_manual_fishing_cast_request_v1<'c>(
                 .await
                 .map_err(ManualFishingOperationError::from)?;
             Ok(ManualFishingCastRequestResolutionV1::CommittedUnmodifiedOrdinary(receipt))
+        }
+        ManualFishingOperationResolutionV1::CommittedUnbreakingX(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedUnbreakingX(
+                receipt,
+            ))
         }
     }
 }

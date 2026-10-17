@@ -3042,3 +3042,49 @@ Return a terminal-blocking error before operation transition for
 ordinary non-Gold Rod with no bait or embedded enchants; Starter Basic retains its
 existing receipt contract and Gold/combined modifiers remain outside this terminal
 owner. This does not enable Discord `/fish`.
+
+
+## Fishing Unbreaking X terminal commit
+
+Branch: feat/fishing-unbreaking-x-terminal
+
+### 1. Exact wear provenance belongs in the committed receipt
+
+**Lifecycle finding — CONFIRMED**
+
+The standalone Unbreaking-X-only owner already resolves the baseline catch,
+physical Fish stage and one operation-keyed Rod consequence. For a normal
+completed attempt, the exact frozen 1/5 prevention chance maps to the pinned
+200,000-PPM wear domain; line-break destruction bypasses that draw entirely.
+Landed Fish/Junk/non-book Treasure and line break therefore have no remaining
+gameplay consequence in this narrow loadout.
+
+**Final decision**
+
+Add typed receipt kind `UNBREAKING_X`. Landed Fish/non-Fish outcomes persist
+their delivery/progression children, the exact pinned wear preview and the
+matching operation-keyed durability receipt. Receipt validation requires
+20% == 200,000 PPM, `prevented == (draw < chance)`, and the durability
+resolution's prevention flag to equal that pinned decision. A line-break
+receipt contains only the operation-keyed destruction result and must use the
+LineBreak resolution; it never consults Unbreaking or grants successful XP.
+
+The existing terminal asset event, PENDING -> COMMITTED transition, operation
+result and `fishing.cast.completed` outbox write remain one PostgreSQL
+transaction. Request-key COMMITTED replay recognizes the explicit receipt tag,
+validates operation/player/area provenance and never applies a second wear event.
+
+### 2. Unresolved physical/asset outcomes still block terminal transition
+
+**Safety finding — CONFIRMED**
+
+A survived over-cap Fish still lacks the approved exact catch/escape RNG mapping,
+and direct Enchant Book still lacks unique Book ItemInstance delivery. Unbreaking
+does not resolve either dependency.
+
+**Final decision**
+
+Return a terminal-blocking error for `OverCapCatchPending` and
+`DirectBookPending`. Only the exact ordinary non-Gold Rod + Unbreaking X-only
+loadout may use this terminal owner; lower Unbreaking levels, Gold Rod, bait and
+additional enchants remain fail-closed. This does not enable Discord `/fish`.
