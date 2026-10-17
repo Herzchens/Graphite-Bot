@@ -2994,3 +2994,51 @@ mutation is produced.
 This does not generalize opaque COMMITTED JSON to future Fishing paths. A future
 terminal receipt variant must be explicitly versioned and added to the decoder before
 its request replay becomes valid. `/fish` remains disabled.
+
+
+## Fishing unmodified ordinary terminal commit
+
+Branch: feat/fishing-unmodified-ordinary-terminal
+
+### 1. Fully resolved ordinary baseline outcomes can share the terminal boundary
+
+**Lifecycle finding — CONFIRMED**
+
+The no-modifier ordinary non-Gold Rod path already has an authoritative baseline
+branch, Fish identity/capability/line-break sequence, successful progression,
+replay-safe item delivery and an operation-keyed Rod durability receipt. For
+within-capability/guaranteed Fish, Junk and non-book Treasure, no remaining
+gameplay consequence is unresolved. A line break is also terminal: it destroys
+the Rod and grants no successful Fishing XP.
+
+**Final decision**
+
+Permit terminal commit only for those resolved variants. Landed Fish and non-Fish
+receipts persist the exact delivery/progression children plus the durable normal
+Rod-wear receipt. Line-break receipts persist only the operation-keyed destruction
+receipt. Child operation/player/area ownership and expected durability resolution
+are validated before inserting the single terminal asset event, transitioning
+PENDING -> COMMITTED, writing the typed operation result and adding the existing
+`fishing.cast.completed` outbox row in the same PostgreSQL transaction.
+
+The ordinary terminal receipt carries explicit kind
+`UNMODIFIED_ORDINARY`. Request-key replay recognizes that tag, validates stored
+operation/player/area provenance and returns the exact typed receipt without
+re-entering Fishing state or applying a second Rod wear event.
+
+### 2. Survived over-cap Fish and direct Book remain non-terminal
+
+**Safety finding — CONFIRMED**
+
+A survived over-cap line still lacks the approved exact rational catch/escape RNG
+mapping. A direct Enchant Book still has identity only and lacks unique Book
+ItemInstance delivery. Neither outcome has all economic/asset consequences needed
+for a truthful committed result.
+
+**Final decision**
+
+Return a terminal-blocking error before operation transition for
+`OverCapCatchPending` and `DirectBookPending`. This slice is restricted to an
+ordinary non-Gold Rod with no bait or embedded enchants; Starter Basic retains its
+existing receipt contract and Gold/combined modifiers remain outside this terminal
+owner. This does not enable Discord `/fish`.
