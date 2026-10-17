@@ -1,16 +1,26 @@
 use blake3::Hasher;
 use graphite_core::{OperationId, RootSeed};
+use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::{FishingArea, MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION};
+use crate::{
+    FishingArea, MANUAL_FISHING_OPERATION_KIND, MANUAL_FISHING_OPERATION_POLICY_VERSION,
+    ManualFishingStarterBaseTerminalReceiptV1,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ManualFishingOperationV1 {
     pub operation_id: Uuid,
     pub player_id: Uuid,
     pub area: FishingArea,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ManualFishingOperationResolutionV1 {
+    Pending(ManualFishingOperationV1),
+    CommittedStarterBase(Box<ManualFishingStarterBaseTerminalReceiptV1>),
 }
 
 #[derive(Debug, Error)]
@@ -25,6 +35,12 @@ pub enum ManualFishingOperationError {
     OperationMissingAfterInsert,
     #[error("external request key was reused with different Fishing request provenance")]
     IdempotencyConflict,
+    #[error("committed Fishing operation has no typed result")]
+    MissingOperationResult,
+    #[error("stored Fishing operation result is not a valid supported typed receipt: {0}")]
+    InvalidOperationResult(Box<serde_json::Error>),
+    #[error("stored Fishing operation state does not match its typed committed receipt")]
+    StoredOperationIntegrityMismatch,
     #[error("Fishing operation cannot be resumed in state {0}")]
     OperationTerminal(String),
 }
@@ -35,26 +51,21 @@ impl From<sqlx::Error> for ManualFishingOperationError {
     }
 }
 
-/// Creates or resumes one PENDING manual-Fishing operation inside the caller's
-/// transaction.
+/// Resolves one manual-Fishing request identity inside the caller transaction.
 ///
-/// The external request key owns retry identity. The domain-separated request
-/// hash covers the selected canonical Fishing area; actor, operation kind,
-/// policy version and bound player are validated independently from persisted
-/// columns. A duplicate PENDING request returns the exact original operation
-/// and RNG root remains untouched. COMMITTED replay belongs to the future typed
-/// terminal-result owner, so this pre-terminal resolver fails closed rather than
-/// exposing opaque JSON as a gameplay receipt.
+/// A matching PENDING operation returns its original operation/player/area and
+/// leaves preflight to the owning cast service. The only currently supported
+/// COMMITTED replay is the typed Starter-Pool/Starter-Basic v1 receipt. Replay
+/// validates operation id, player id, area, actor, kind, policy version and the
+/// domain-separated request hash before exposing the receipt.
 ///
-/// This function commits nothing. Its caller must keep operation creation,
-/// Fishing preflight and eventual settlement in the same transaction or roll
-/// the operation row back on failure.
-pub async fn lock_or_create_manual_fishing_operation_v1(
+/// This function performs no gameplay mutation and commits nothing.
+pub async fn resolve_manual_fishing_operation_v1(
     tx: &mut Transaction<'_, Postgres>,
     discord_user_id: u64,
     external_request_key: &str,
     area: FishingArea,
-) -> Result<ManualFishingOperationV1, ManualFishingOperationError> {
+) -> Result<ManualFishingOperationResolutionV1, ManualFishingOperationError> {
     let actor = i64::try_from(discord_user_id)
         .map_err(|_| ManualFishingOperationError::SnowflakeOutOfRange)?;
     let request_hash = manual_fishing_request_hash_v1(area);
@@ -93,6 +104,27 @@ pub async fn lock_or_create_manual_fishing_operation_v1(
     validate_existing_operation(tx, row, actor, area, &request_hash).await
 }
 
+/// Creates or resumes one PENDING manual-Fishing operation.
+///
+/// This compatibility/preflight helper intentionally refuses a successfully
+/// decoded COMMITTED receipt. Adapter-facing code that needs retry replay should
+/// use `resolve_manual_fishing_operation_v1` or the higher cast-request resolver.
+pub async fn lock_or_create_manual_fishing_operation_v1(
+    tx: &mut Transaction<'_, Postgres>,
+    discord_user_id: u64,
+    external_request_key: &str,
+    area: FishingArea,
+) -> Result<ManualFishingOperationV1, ManualFishingOperationError> {
+    match resolve_manual_fishing_operation_v1(tx, discord_user_id, external_request_key, area)
+        .await?
+    {
+        ManualFishingOperationResolutionV1::Pending(operation) => Ok(operation),
+        ManualFishingOperationResolutionV1::CommittedStarterBase(_) => Err(
+            ManualFishingOperationError::OperationTerminal("COMMITTED".to_owned()),
+        ),
+    }
+}
+
 async fn select_operation(
     tx: &mut Transaction<'_, Postgres>,
     external_request_key: &str,
@@ -100,7 +132,7 @@ async fn select_operation(
     Ok(sqlx::query(
         r#"
         SELECT id, actor_discord_user_id, player_id, kind, state,
-               policy_version, request_hash
+               policy_version, request_hash, result
           FROM operations
          WHERE external_request_key = $1
          FOR UPDATE
@@ -117,7 +149,7 @@ async fn validate_existing_operation(
     actor: i64,
     area: FishingArea,
     request_hash: &[u8; 32],
-) -> Result<ManualFishingOperationV1, ManualFishingOperationError> {
+) -> Result<ManualFishingOperationResolutionV1, ManualFishingOperationError> {
     let operation_id: Uuid = row.try_get("id")?;
     let stored_actor: i64 = row.try_get("actor_discord_user_id")?;
     let stored_player_id: Option<Uuid> = row.try_get("player_id")?;
@@ -133,6 +165,24 @@ async fn validate_existing_operation(
     {
         return Err(ManualFishingOperationError::IdempotencyConflict);
     }
+
+    if state == "COMMITTED" {
+        let value: Option<Value> = row.try_get("result")?;
+        let value = value.ok_or(ManualFishingOperationError::MissingOperationResult)?;
+        let receipt: ManualFishingStarterBaseTerminalReceiptV1 = serde_json::from_value(value)
+            .map_err(|error| {
+                ManualFishingOperationError::InvalidOperationResult(Box::new(error))
+            })?;
+        if receipt.operation_id != operation_id
+            || stored_player_id != Some(receipt.player_id)
+            || receipt.area != area
+        {
+            return Err(ManualFishingOperationError::StoredOperationIntegrityMismatch);
+        }
+        return Ok(ManualFishingOperationResolutionV1::CommittedStarterBase(
+            Box::new(receipt),
+        ));
+    }
     if state != "PENDING" {
         return Err(ManualFishingOperationError::OperationTerminal(state));
     }
@@ -141,11 +191,13 @@ async fn validate_existing_operation(
     if stored_player_id != Some(player_id) {
         return Err(ManualFishingOperationError::IdempotencyConflict);
     }
-    Ok(ManualFishingOperationV1 {
-        operation_id,
-        player_id,
-        area,
-    })
+    Ok(ManualFishingOperationResolutionV1::Pending(
+        ManualFishingOperationV1 {
+            operation_id,
+            player_id,
+            area,
+        },
+    ))
 }
 
 async fn load_player_id(

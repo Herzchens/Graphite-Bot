@@ -21,8 +21,9 @@ use crate::{
     FishingRodLevelXEffect, FishingRodLevelXPolicyError, MULTI_TREASURE_MAX_LEVEL,
     MULTICATCH_MAX_LEVEL, ManualFishingCastPreflight, ManualFishingCastPreflightError,
     ManualFishingMulticatchCountV1, ManualFishingMulticatchRollError, ManualFishingOperationError,
-    ManualFishingProgressionSettlementError, ManualFishingProgressionSettlementReceiptV1,
-    ManualFishingRngDrawError, ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
+    ManualFishingOperationResolutionV1, ManualFishingProgressionSettlementError,
+    ManualFishingProgressionSettlementReceiptV1, ManualFishingRngDrawError,
+    ManualFishingSchoolBaitError, ManualFishingSchoolBaitQuantityV1,
     ManualFishingStarterBaseTerminalError, ManualFishingStarterBaseTerminalOutcomeV1,
     ManualFishingStarterBaseTerminalReceiptV1, ManualFishingSuccessfulProgressionOutcomeV1,
     ManualFishingTreasureXBranchError, ManualFishingUnbreakingXError,
@@ -41,10 +42,10 @@ use crate::{
     preview_manual_unmodified_fish_capability_v1, preview_over_cap_catch_chance,
     resolve_manual_fishing_direct_book_candidate_v1,
     resolve_manual_fishing_multi_treasure_count_v1, resolve_manual_fishing_multicatch_count_v1,
-    resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_school_bait_quantity_v1,
-    resolve_manual_fishing_treasure_x_branch_v1, resolve_manual_fishing_unbreaking_x_wear_v1,
-    resolve_manual_fishing_unmodified_base_branch_v1, settle_active_fishing_baits_for_cast,
-    settle_manual_fishing_successful_progression_v1,
+    resolve_manual_fishing_non_fish_outcome_v1, resolve_manual_fishing_operation_v1,
+    resolve_manual_fishing_school_bait_quantity_v1, resolve_manual_fishing_treasure_x_branch_v1,
+    resolve_manual_fishing_unbreaking_x_wear_v1, resolve_manual_fishing_unmodified_base_branch_v1,
+    settle_active_fishing_baits_for_cast, settle_manual_fishing_successful_progression_v1,
 };
 
 #[derive(Debug, Error)]
@@ -452,6 +453,11 @@ pub enum PendingManualFishingUnbreakingXSelectedOutcomeV1 {
 /// Dropping this value rolls the PostgreSQL transaction back, including any first-area unlock
 /// or bait consumption performed during preparation. The caller can explicitly roll back.
 #[must_use = "an unfinished manual Fishing cast must be rolled back"]
+pub enum ManualFishingCastRequestResolutionV1<'c> {
+    Pending(Box<PendingManualFishingCastV1<'c>>),
+    CommittedStarterBase(Box<ManualFishingStarterBaseTerminalReceiptV1>),
+}
+
 pub struct PendingManualFishingCastV1<'c> {
     tx: Transaction<'c, Postgres>,
     preflight: ManualFishingCastPreflight,
@@ -2893,6 +2899,38 @@ fn locked_pre_cap_modifiers(
 /// root. If operation resolution or preflight fails, the owned transaction drops
 /// and the newly inserted PENDING operation is rolled back with every partial
 /// preflight mutation. The returned pending owner still has no commit path.
+/// Resolves a request-key cast as either new/PENDING work or an exact typed
+/// committed Starter-Basic replay. A COMMITTED replay never re-enters preflight,
+/// bait, item, progression or RNG mutation; the read transaction is closed first.
+pub async fn resolve_manual_fishing_cast_request_v1<'c>(
+    mut tx: Transaction<'c, Postgres>,
+    discord_user_id: u64,
+    external_request_key: &str,
+    area: FishingArea,
+) -> Result<ManualFishingCastRequestResolutionV1<'c>, ManualFishingCastOwnerError> {
+    match resolve_manual_fishing_operation_v1(&mut tx, discord_user_id, external_request_key, area)
+        .await?
+    {
+        ManualFishingOperationResolutionV1::Pending(operation) => begin_manual_fishing_cast_v1(
+            tx,
+            operation.operation_id,
+            operation.player_id,
+            operation.area,
+        )
+        .await
+        .map(Box::new)
+        .map(ManualFishingCastRequestResolutionV1::Pending),
+        ManualFishingOperationResolutionV1::CommittedStarterBase(receipt) => {
+            tx.commit()
+                .await
+                .map_err(ManualFishingOperationError::from)?;
+            Ok(ManualFishingCastRequestResolutionV1::CommittedStarterBase(
+                receipt,
+            ))
+        }
+    }
+}
+
 pub async fn begin_manual_fishing_cast_request_v1<'c>(
     mut tx: Transaction<'c, Postgres>,
     discord_user_id: u64,

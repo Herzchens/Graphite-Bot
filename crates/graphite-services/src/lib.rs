@@ -215,9 +215,9 @@ pub use fishing_capability_routing::{
     resolve_fishing_over_cap_sequence, resolve_routed_fish_capability_stage,
 };
 pub use fishing_cast_owner::{
-    ManualFishingCastOwnerError, PendingManualFishingBaitRackSelectedOutcomeV1,
-    PendingManualFishingCastV1, PendingManualFishingLureXSelectedOutcomeV1,
-    PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    ManualFishingCastOwnerError, ManualFishingCastRequestResolutionV1,
+    PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingCastV1,
+    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
@@ -226,7 +226,7 @@ pub use fishing_cast_owner::{
     PendingManualFishingTreasureXSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_request_v1,
-    begin_manual_fishing_cast_v1,
+    begin_manual_fishing_cast_v1, resolve_manual_fishing_cast_request_v1,
 };
 pub use fishing_cast_preflight::{
     ManualFishingCastPreflight, ManualFishingCastPreflightError, lock_manual_fishing_cast_preflight,
@@ -293,8 +293,9 @@ pub use fishing_numeric::{
     preview_manual_fishing_line_break_chance_v1, resolve_fish_instance_numeric_v1,
 };
 pub use fishing_operation::{
-    ManualFishingOperationError, ManualFishingOperationV1,
+    ManualFishingOperationError, ManualFishingOperationResolutionV1, ManualFishingOperationV1,
     lock_or_create_manual_fishing_operation_v1, manual_fishing_request_hash_v1,
+    resolve_manual_fishing_operation_v1,
 };
 pub use fishing_over_cap::{
     FishingOverCapError, OVER_CAP_CATCH_CHANCE_MAX_PERCENT, OVER_CAP_CATCH_CHANCE_MIN_PERCENT,
