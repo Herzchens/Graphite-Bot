@@ -3227,3 +3227,81 @@ Return a terminal-blocking error for `OverCapCatchPending` and
 non-Gold Rod with exactly Treasure X, no consumed bait and no additional enchants.
 Treasure I-IX, Gold and combined modifier/cap cases remain fail-closed. This does
 not enable Discord `/fish`.
+
+
+## Fishing resolved modifier terminalization wave
+
+Branch: `feat/fishing-terminal-expansion-wave`
+
+### 1. Five already-resolved owners now share one explicit terminal contract
+
+**Lifecycle finding — CONFIRMED**
+
+Bait Rack I-III, Multicatch I-X, Multi Treasure I-X, Sturdy Bait and School Bait
+already own their exact narrow selected-outcome semantics. For Fish/Junk/non-book
+Treasure and line break, each owner has complete output, progression and one
+operation-keyed ordinary Rod consequence inside the same PostgreSQL transaction.
+None of these paths needs the unresolved over-cap catch/escape mapping or unique
+Enchant Book ItemInstance writer for those resolved outcomes.
+
+**Final decision**
+
+Add typed terminal receipt kinds `BAIT_RACK`, `MULTICATCH`,
+`MULTI_TREASURE`, `STURDY_BAIT` and `SCHOOL_BAIT`. Reuse one validated
+modifier-terminal outcome shape for delivered Fish collections, non-Fish
+delivery/progression and line-break destruction. Persist one terminal asset event,
+the PENDING -> COMMITTED operation result and `fishing.cast.completed` outbox
+row in the owning transaction.
+
+Bait Rack persists its exact I-III level. Multicatch persists the exact I-X level
+and, on Fish/line-break branches, the operation-pinned PPM count receipt; terminal
+validation recomputes the canonical per-level bucket interval and rejects any
+draw/outcome/count mismatch. Multi Treasure persists its exact I-X level and the
+already-delivered independent payload receipts. Request-key COMMITTED replay
+deserializes the typed receipt and returns it without re-entering RNG or applying
+a second Rod mutation.
+
+### 2. Consumed-bait terminal receipts must prove the exact inventory mutation
+
+**Integrity finding — CONFIRMED**
+
+Sturdy and School owners consume one authoritative active bait unit during
+preflight in the same transaction. A committed cast must therefore preserve more
+than a boolean "bait active" flag; otherwise replay/audit would lose the exact
+stack-consumption provenance that governed the outcome.
+
+**Final decision**
+
+Sturdy and School terminal receipts embed the authoritative
+`FishingBaitCastSettlementReceipt`. Validation ties it to the same
+operation/player, requires exactly the expected consumed bait category, verifies
+the canonical mutation key, ItemDefinition key/version, one-unit quantity and
+before/after stack counts, and reconciles any auto-detached missing selections
+with the settlement plan.
+
+School Fish/line-break receipts also persist the exact 80,000-PPM quantity draw
+and recompute the canonical one-or-two-fish result before commit. Non-Fish School
+outcomes persist no quantity draw because the School proc is intentionally not
+sampled there. Request-key replay cannot consume another bait unit or reroll the
+School proc.
+
+### 3. Existing unresolved boundaries remain hard blockers
+
+**Safety finding — CONFIRMED**
+
+A survived over-cap Fish still lacks the approved exact catch/escape RNG mapping,
+and direct Enchant Book outcomes still lack unique Book ItemInstance delivery.
+Multi Treasure may resolve multiple independent Book identities, but identity
+alone is still not issuance. Lure X additionally has an exact cooldown projection
+without an authoritative persisted cooldown owner.
+
+**Final decision**
+
+Every wave owner returns a terminal-blocking error for survived over-cap Fish and
+direct Book outcomes before operation transition. Repeated Multi Treasure Books
+remain pending as a set. Gold Rod, consumed-bait/enchant combinations outside each
+exact owner and additional modifiers remain fail-closed.
+
+Lure X is deliberately excluded from this wave until cooldown persistence has an
+authoritative lifecycle owner; no terminal receipt may silently treat its pure
+8,696 ms projection as persisted state. Discord `/fish` remains unavailable.
