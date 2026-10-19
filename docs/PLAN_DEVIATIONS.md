@@ -3305,3 +3305,96 @@ exact owner and additional modifiers remain fail-closed.
 Lure X is deliberately excluded from this wave until cooldown persistence has an
 authoritative lifecycle owner; no terminal receipt may silently treat its pure
 8,696 ms projection as persisted state. Discord `/fish` remains unavailable.
+
+
+## Fishing direct Finished Enchant Book terminal wave
+
+Branch: `feat/fishing-direct-book-terminal-wave`
+
+### 1. Direct Fishing Books are unique ItemInstances, not stack placeholders
+
+**Asset-model finding — CONFIRMED**
+
+The frozen Fishing Book RNG already resolves one exact canonical enchant and
+finished level, and prior deviations explicitly require the eventual reward to be
+a unique Book ItemInstance. Treating the result as a stack would erase the
+`(enchant, level)` identity required by the existing enchant-application
+lifecycle.
+
+**Final decision**
+
+Add versioned non-stackable ItemDefinition `enchant.book.finished` and immutable
+typed child state `item_instance_finished_enchant_books(item_instance_id,
+enchant_key, level)`. Fishing issuance stores pool/treasure-slot data only as
+audit provenance; the reusable Book asset identity is exactly enchant + level.
+
+Fishing-created Books are owned unique assets but transfer/liquidation/discard
+flags remain fail-closed in this slice. No Market/NPC/discard authority is inferred
+from the existence of the Book item.
+
+### 2. Item Bag capacity must count unique items and overflow must preserve identity
+
+**Storage-integrity finding — CONFIRMED**
+
+Before this wave, Item Bag used-slot accounting counted stack rows but not unique
+ItemInstances. Issuing Finished Books directly to Item Bag under that accounting
+could exceed the configured slot cap. The existing pending-delivery schema also
+restricted item-linked unique delivery to Catch Bag.
+
+**Final decision**
+
+Count every ItemInstance located in Item Bag as one slot in both read snapshots
+and transactional capacity checks. Allow item-linked pending delivery to target
+Item Bag. A generic operation-keyed unique Item Bag delivery primitive creates the
+exact ItemInstance once, places it directly in Item Bag when capacity exists, or
+preserves the same identity in TEMP_OVERFLOW with a PENDING delivery when full.
+
+Pending unique Item Bag delivery is FIFO claimable by an explicit operation. Claim
+moves the existing ItemInstance rather than minting a replacement and is
+request/operation replay-safe. To bound TEMP_OVERFLOW without inventing a queue
+size policy, a new unique issuance is rejected while an older operation still owns
+an unresolved unique Item Bag delivery; one operation may still create multiple
+pending unique items atomically, which is required for Multi Treasure.
+
+### 3. Direct Book becomes a successful Treasure terminal outcome
+
+**Lifecycle finding — CONFIRMED**
+
+Once unique Book issuance exists, the earlier terminal blocker is no longer an
+asset gap. Direct Book is still an already-selected Treasure result, so successful
+Fishing progression uses the existing Treasure base-AEXP policy with landed count
+equal to the number of Books issued. Normal Rod durability/bait consequences stay
+owned by each existing narrow selected-outcome path.
+
+**Final decision**
+
+Add Book variants to Starter Basic, ordinary, Unbreaking X, Strengthen, SharpHook,
+Treasure X and the shared modifier-terminal outcome. Bait Rack, Multicatch, Sturdy
+Bait and School Bait issue exactly one Book when their selected Treasure result is
+Book. Multi Treasure may issue the already-frozen 1-3 independently rerolled Book
+candidates as separate unique ItemInstances with contiguous treasure-slot
+provenance.
+
+Terminal validation requires non-empty Book delivery, canonical pool membership
+and non-zero weighted finished level, contiguous slots beginning at zero, exact
+Book ItemDefinition/version, operation/player ownership, pending linkage
+consistency, and Treasure AEXP computed from the number of delivered Books.
+Existing durability, Unbreaking wear, bait-settlement and operation provenance
+validation remains in force. Request-key COMMITTED replay returns the same typed
+Book ItemInstance IDs and never reruns Book RNG, issuance, bait consumption,
+progression or Rod wear.
+
+### 4. The wave does not authorize Lure terminalization or over-cap catch RNG
+
+**Safety finding — CONFIRMED**
+
+Lure X still has only an exact 8,696 ms cooldown projection and no authoritative
+persisted cooldown owner. A survived over-cap Fish still lacks the approved exact
+catch/escape RNG mapping. Neither dependency is related to Finished Book issuance.
+
+**Final decision**
+
+Keep Lure X Book staging pre-terminal together with the rest of Lure X until
+cooldown persistence is owned. Keep survived over-cap Fish pre-terminal across all
+owners. Gold Rod, Luck-of-the-Sea cap composition and unsupported combined
+modifier paths remain fail-closed. Discord `/fish` remains unavailable.

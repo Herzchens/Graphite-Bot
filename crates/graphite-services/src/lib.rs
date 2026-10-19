@@ -223,7 +223,8 @@ pub use fishing_capability_routing::{
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, ManualFishingCastRequestResolutionV1,
     PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingCastV1,
-    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    PendingManualFishingDirectBookReceiptV1, PendingManualFishingLureXSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,

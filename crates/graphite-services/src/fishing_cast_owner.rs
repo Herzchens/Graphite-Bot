@@ -19,7 +19,8 @@ use crate::{
     BAIT_RACK_MAX_LEVEL, CanonicalEnchant, EquipmentTier, EquippedFishingRodKind, FishingArea,
     FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastConsumptionEntry,
     FishingBaitCastSettlementReceipt, FishingBaitStateError, FishingCatchBranch,
-    FishingCatchBranchPreCapWeightsV1, FishingDirectBookCandidateV1, FishingDirectBookRollError,
+    FishingCatchBranchPreCapWeightsV1, FishingDirectBookCandidateV1,
+    FishingDirectBookDeliveryError, FishingDirectBookDeliveryReceiptV1, FishingDirectBookRollError,
     FishingFishInstanceDeliveryError, FishingFishInstanceDeliveryReceiptV1,
     FishingFishInstanceDeliveryRequestV1, FishingNonFishOutcomeDeliveryReceiptV1,
     FishingNonFishPayloadDeliveryError, FishingNonFishRollError, FishingOverCapError,
@@ -52,10 +53,11 @@ use crate::{
     ManualFishingUnmodifiedOrdinaryTerminalReceiptV1, ManualMineFishCooldownPolicy,
     OverCapCatchChancePolicy, SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL,
     apply_operation_fishing_rod_durability_v1, canonical_enchant_max_resulting_level,
-    deliver_fishing_fish_instance_v1, deliver_fishing_non_fish_outcome_v1,
-    fishing_catch_branch_pre_cap_weights_v1, fishing_rod_level_x_policy,
-    lock_manual_fishing_cast_preflight, lock_or_create_manual_fishing_operation_v1,
-    manual_mine_fish_cooldown_policy, preview_manual_fishing_unmodified_fish_candidate_v1,
+    deliver_fishing_direct_book_v1, deliver_fishing_fish_instance_v1,
+    deliver_fishing_non_fish_outcome_v1, fishing_catch_branch_pre_cap_weights_v1,
+    fishing_rod_level_x_policy, lock_manual_fishing_cast_preflight,
+    lock_or_create_manual_fishing_operation_v1, manual_mine_fish_cooldown_policy,
+    preview_manual_fishing_unmodified_fish_candidate_v1,
     preview_manual_multicatch_fish_capability_v1, preview_manual_school_bait_fish_capability_v1,
     preview_manual_strengthen_fish_capability_v1, preview_manual_sturdy_bait_fish_capability_v1,
     preview_manual_unmodified_fish_capability_v1, preview_over_cap_catch_chance,
@@ -79,8 +81,6 @@ pub enum ManualFishingCastOwnerError {
     StrengthenTerminal(#[from] ManualFishingStrengthenTerminalError),
     #[error("survived over-cap Fish cannot commit from the Strengthen terminal path")]
     StrengthenTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the Strengthen terminal path")]
-    StrengthenTerminalDirectBookPending,
     #[error("resolved Strengthen terminal outcome is missing its operation-keyed Rod receipt")]
     StrengthenTerminalDurabilityMissing,
     #[error("resolved Strengthen terminal durability disagrees with its persisted receipt")]
@@ -89,8 +89,6 @@ pub enum ManualFishingCastOwnerError {
     SharpHookTerminal(#[from] ManualFishingSharpHookTerminalError),
     #[error("survived over-cap Fish cannot commit from the SharpHook terminal path")]
     SharpHookTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the SharpHook terminal path")]
-    SharpHookTerminalDirectBookPending,
     #[error("resolved SharpHook terminal outcome is missing its operation-keyed Rod receipt")]
     SharpHookTerminalDurabilityMissing,
     #[error("resolved SharpHook terminal durability disagrees with its persisted receipt")]
@@ -99,8 +97,6 @@ pub enum ManualFishingCastOwnerError {
     TreasureXTerminal(#[from] ManualFishingTreasureXTerminalError),
     #[error("survived over-cap Fish cannot commit from the Treasure X terminal path")]
     TreasureXTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the Treasure X terminal path")]
-    TreasureXTerminalDirectBookPending,
     #[error("resolved Treasure X terminal outcome is missing its operation-keyed Rod receipt")]
     TreasureXTerminalDurabilityMissing,
     #[error("resolved Treasure X terminal durability disagrees with its persisted receipt")]
@@ -113,30 +109,18 @@ pub enum ManualFishingCastOwnerError {
     ModifierTerminalDurabilityMismatch,
     #[error("survived over-cap Fish cannot commit from the Bait Rack terminal path")]
     BaitRackTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the Bait Rack terminal path")]
-    BaitRackTerminalDirectBookPending,
     #[error("survived over-cap Fish cannot commit from the Multicatch terminal path")]
     MulticatchTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the Multicatch terminal path")]
-    MulticatchTerminalDirectBookPending,
     #[error("survived over-cap Fish cannot commit from the Multi Treasure terminal path")]
     MultiTreasureTerminalOverCapPending,
-    #[error("direct Enchant Books cannot commit from the Multi Treasure terminal path")]
-    MultiTreasureTerminalDirectBooksPending,
     #[error("survived over-cap Fish cannot commit from the Sturdy Bait terminal path")]
     SturdyBaitTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the Sturdy Bait terminal path")]
-    SturdyBaitTerminalDirectBookPending,
     #[error("survived over-cap Fish cannot commit from the School Bait terminal path")]
     SchoolBaitTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the School Bait terminal path")]
-    SchoolBaitTerminalDirectBookPending,
     #[error(transparent)]
     UnbreakingXTerminal(#[from] ManualFishingUnbreakingXTerminalError),
     #[error("survived over-cap Fish cannot commit from the Unbreaking X terminal path")]
     UnbreakingXTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit from the Unbreaking X terminal path")]
-    UnbreakingXTerminalDirectBookPending,
     #[error("resolved Unbreaking X terminal outcome is missing its operation-keyed Rod receipt")]
     UnbreakingXTerminalDurabilityMissing,
     #[error("resolved Unbreaking X terminal durability disagrees with its persisted receipt")]
@@ -147,18 +131,12 @@ pub enum ManualFishingCastOwnerError {
     UnmodifiedOrdinaryTerminalRequiresOrdinaryRod,
     #[error("survived over-cap Fish cannot commit until exact catch/escape RNG is frozen")]
     UnmodifiedOrdinaryTerminalOverCapPending,
-    #[error("direct Enchant Book cannot commit until unique Book delivery is implemented")]
-    UnmodifiedOrdinaryTerminalDirectBookPending,
     #[error(
         "resolved ordinary terminal outcome is missing its operation-keyed Rod durability receipt"
     )]
     UnmodifiedOrdinaryTerminalDurabilityMissing,
     #[error("resolved ordinary terminal durability state disagrees with its persisted receipt")]
     UnmodifiedOrdinaryTerminalDurabilityMismatch,
-    #[error(
-        "direct Enchant Book delivery is not implemented, so this Starter Basic cast cannot commit"
-    )]
-    StarterTerminalDirectBookPending,
     #[error(transparent)]
     Preflight(#[from] ManualFishingCastPreflightError),
     #[error(transparent)]
@@ -167,6 +145,10 @@ pub enum ManualFishingCastOwnerError {
     NonFishRoll(#[from] FishingNonFishRollError),
     #[error(transparent)]
     DirectBookRoll(#[from] FishingDirectBookRollError),
+    #[error(transparent)]
+    DirectBookDelivery(#[from] FishingDirectBookDeliveryError),
+    #[error("direct Enchant Book candidate slots are not a contiguous operation-owned sequence")]
+    DirectBookCandidateSequenceMismatch,
     #[error("the actual cast branch is not Treasure")]
     BookRequiresTreasureBranch,
     #[error("the actual Treasure category is not Enchant Book")]
@@ -268,6 +250,12 @@ pub struct PendingManualFishingNonFishReceiptV1 {
     pub progression: ManualFishingProgressionSettlementReceiptV1,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingManualFishingDirectBookReceiptV1 {
+    pub deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
+    pub progression: ManualFishingProgressionSettlementReceiptV1,
+}
+
 /// Internal, rollback-only resolution of the complete *baseline Starter Basic* branch:
 /// its deterministic Fish/Junk/non-book Treasure asset and successful XP children.
 /// Rod wear is physically unavailable on the unbreakable Starter Basic, but operation
@@ -281,8 +269,8 @@ pub enum PendingManualFishingStarterBaseOutcomeV1 {
     NonFish {
         staged: PendingManualFishingNonFishReceiptV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
     },
 }
 
@@ -309,8 +297,9 @@ pub enum PendingManualFishingUnmodifiedSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -331,8 +320,9 @@ pub enum PendingManualFishingTreasureXSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -353,9 +343,9 @@ pub enum PendingManualFishingMultiTreasureSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBooksPending {
-        count: u8,
-        candidates: Vec<FishingDirectBookCandidateV1>,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -379,8 +369,9 @@ pub enum PendingManualFishingMulticatchSelectedOutcomeV1 {
         count: ManualFishingMulticatchCountV1,
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -401,8 +392,9 @@ pub enum PendingManualFishingBaitRackSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -453,8 +445,9 @@ pub enum PendingManualFishingSchoolBaitSelectedOutcomeV1 {
         quantity: ManualFishingSchoolBaitQuantityV1,
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -475,8 +468,9 @@ pub enum PendingManualFishingSturdyBaitSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -498,8 +492,9 @@ pub enum PendingManualFishingSharpHookSelectedOutcomeV1 {
         line_stage: ManualFishingUnmodifiedLineStageV1,
         catch_chance: OverCapCatchChancePolicy,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -520,8 +515,9 @@ pub enum PendingManualFishingStrengthenSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -542,8 +538,9 @@ pub enum PendingManualFishingUnbreakingXSelectedOutcomeV1 {
     OverCapCatchPending {
         line_stage: ManualFishingUnmodifiedLineStageV1,
     },
-    DirectBookPending {
-        candidate: FishingDirectBookCandidateV1,
+    DirectBook {
+        staged: PendingManualFishingDirectBookReceiptV1,
+        durability: AppliedFishingRodDurabilityState,
     },
 }
 
@@ -717,6 +714,49 @@ impl PendingManualFishingCastV1<'_> {
         Ok(PendingManualFishingNonFishReceiptV1 {
             outcome,
             delivery,
+            progression,
+        })
+    }
+
+    async fn stage_direct_book_candidates_v1(
+        &mut self,
+        candidates: Vec<FishingDirectBookCandidateV1>,
+    ) -> Result<PendingManualFishingDirectBookReceiptV1, ManualFishingCastOwnerError> {
+        if candidates.is_empty() || candidates.len() > 3 {
+            return Err(ManualFishingCastOwnerError::DirectBookCandidateSequenceMismatch);
+        }
+        for (slot, candidate) in candidates.iter().enumerate() {
+            if candidate.treasure_slot
+                != u8::try_from(slot)
+                    .map_err(|_| ManualFishingCastOwnerError::DirectBookCandidateSequenceMismatch)?
+            {
+                return Err(ManualFishingCastOwnerError::DirectBookCandidateSequenceMismatch);
+            }
+        }
+
+        let landed_count = u8::try_from(candidates.len())
+            .map_err(|_| ManualFishingCastOwnerError::DirectBookCandidateSequenceMismatch)?;
+        let mut deliveries = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            deliveries.push(
+                deliver_fishing_direct_book_v1(
+                    &mut self.tx,
+                    self.preflight.operation_id,
+                    self.preflight.player_id,
+                    candidate,
+                )
+                .await?,
+            );
+        }
+        let progression = settle_manual_fishing_successful_progression_v1(
+            &mut self.tx,
+            self.preflight.operation_id,
+            self.preflight.player_id,
+            &ManualFishingSuccessfulProgressionOutcomeV1::Treasure { landed_count },
+        )
+        .await?;
+        Ok(PendingManualFishingDirectBookReceiptV1 {
+            deliveries,
             progression,
         })
     }
@@ -1974,8 +2014,8 @@ impl PendingManualFishingCastV1<'_> {
     ///
     /// This path is deliberately restricted to the unbreakable Starter Basic Rod
     /// in Starter Pool, where Fish physically lands without line risk, and to casts
-    /// with no active bait or enchants. Direct Enchant Book outcomes return a pending identity without issuing
-    /// any asset, XP or Rod wear until the separate Book settlement is composed.
+    /// with no active bait or enchants. Direct Enchant Book outcomes use the dedicated
+    /// unique-Book delivery/progression path in the same transaction.
     ///
     /// A same-operation repeated call replays the original item/XP child receipts.
     /// The pending owner has no commit method: these staged effects roll back unless
@@ -2011,11 +2051,13 @@ impl PendingManualFishingCastV1<'_> {
                     Ok(staged) => Ok(PendingManualFishingStarterBaseOutcomeV1::NonFish { staged }),
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(
-                        PendingManualFishingStarterBaseOutcomeV1::DirectBookPending {
-                            candidate: self.preview_unmodified_selected_direct_book_v1()?,
-                        },
-                    ),
+                    )) => {
+                        let candidate = self.preview_unmodified_selected_direct_book_v1()?;
+                        let staged = self
+                            .stage_direct_book_candidates_v1(vec![candidate])
+                            .await?;
+                        Ok(PendingManualFishingStarterBaseOutcomeV1::DirectBook { staged })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2106,7 +2148,7 @@ impl PendingManualFishingCastV1<'_> {
     /// The line-break path destroys the Rod without issuing Fish or successful XP.
     /// A survived over-cap Fish stays pending with no output/durability/XP until
     /// the rational catch/escape RNG stage has an approved versioned mapping.
-    /// Direct Enchant Book Treasure remains identity-only, without assets or XP.
+    /// Direct Enchant Book Treasure uses the dedicated unique-Book delivery/progression path.
     ///
     /// This transaction-owned staging method cannot commit the operation or
     /// expose an application adapter; repeated calls replay the same child receipts.
@@ -2166,9 +2208,15 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending {
-                        candidate: self.preview_unmodified_selected_direct_book_v1()?,
-                    }),
+                    )) => {
+                        let candidate = self.preview_unmodified_selected_direct_book_v1()?;
+                        let staged = self.stage_direct_book_candidates_v1(vec![candidate]).await?;
+                        let durability = self.stage_unmodified_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2242,11 +2290,15 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(
-                        PendingManualFishingTreasureXSelectedOutcomeV1::DirectBookPending {
-                            candidate: self.preview_treasure_x_selected_direct_book_v1()?,
-                        },
-                    ),
+                    )) => {
+                        let candidate = self.preview_treasure_x_selected_direct_book_v1()?;
+                        let staged = self.stage_direct_book_candidates_v1(vec![candidate]).await?;
+                        let durability = self.stage_treasure_x_rod_durability_v1().await?;
+                        Ok(PendingManualFishingTreasureXSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2315,11 +2367,13 @@ impl PendingManualFishingCastV1<'_> {
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
                     )) => {
-                        let (count, candidates) =
+                        let (_, candidates) =
                             self.preview_multi_treasure_selected_direct_books_v1()?;
-                        Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBooksPending {
-                            count,
-                            candidates,
+                        let staged = self.stage_direct_book_candidates_v1(candidates).await?;
+                        let durability = self.stage_multi_treasure_rod_durability_v1().await?;
+                        Ok(PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
                         })
                     }
                     Err(other) => Err(other),
@@ -2401,11 +2455,19 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(
-                        PendingManualFishingMulticatchSelectedOutcomeV1::DirectBookPending {
-                            candidate: self.preview_multicatch_selected_direct_book_v1()?,
-                        },
-                    ),
+                    )) => {
+                        let candidate = self.preview_multicatch_selected_direct_book_v1()?;
+                        let staged = self
+                            .stage_direct_book_candidates_v1(vec![candidate])
+                            .await?;
+                        let durability = self.stage_multicatch_rod_durability_v1().await?;
+                        Ok(
+                            PendingManualFishingMulticatchSelectedOutcomeV1::DirectBook {
+                                staged,
+                                durability,
+                            },
+                        )
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2545,9 +2607,15 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(PendingManualFishingBaitRackSelectedOutcomeV1::DirectBookPending {
-                        candidate: self.preview_bait_rack_selected_direct_book_v1()?,
-                    }),
+                    )) => {
+                        let candidate = self.preview_bait_rack_selected_direct_book_v1()?;
+                        let staged = self.stage_direct_book_candidates_v1(vec![candidate]).await?;
+                        let durability = self.stage_bait_rack_rod_durability_v1().await?;
+                        Ok(PendingManualFishingBaitRackSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2627,11 +2695,19 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(
-                        PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBookPending {
-                            candidate: self.preview_school_bait_selected_direct_book_v1()?,
-                        },
-                    ),
+                    )) => {
+                        let candidate = self.preview_school_bait_selected_direct_book_v1()?;
+                        let staged = self
+                            .stage_direct_book_candidates_v1(vec![candidate])
+                            .await?;
+                        let durability = self.stage_school_bait_rod_durability_v1().await?;
+                        Ok(
+                            PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBook {
+                                staged,
+                                durability,
+                            },
+                        )
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2696,9 +2772,15 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBookPending {
-                        candidate: self.preview_sturdy_bait_selected_direct_book_v1()?,
-                    }),
+                    )) => {
+                        let candidate = self.preview_sturdy_bait_selected_direct_book_v1()?;
+                        let staged = self.stage_direct_book_candidates_v1(vec![candidate]).await?;
+                        let durability = self.stage_sturdy_bait_rod_durability_v1().await?;
+                        Ok(PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2783,11 +2865,17 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(
-                        PendingManualFishingSharpHookSelectedOutcomeV1::DirectBookPending {
-                            candidate: self.preview_sharp_hook_selected_direct_book_v1()?,
-                        },
-                    ),
+                    )) => {
+                        let candidate = self.preview_sharp_hook_selected_direct_book_v1()?;
+                        let staged = self
+                            .stage_direct_book_candidates_v1(vec![candidate])
+                            .await?;
+                        let durability = self.stage_sharp_hook_rod_durability_v1().await?;
+                        Ok(PendingManualFishingSharpHookSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2848,9 +2936,15 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(PendingManualFishingStrengthenSelectedOutcomeV1::DirectBookPending {
-                        candidate: self.preview_strengthen_selected_direct_book_v1()?,
-                    }),
+                    )) => {
+                        let candidate = self.preview_strengthen_selected_direct_book_v1()?;
+                        let staged = self.stage_direct_book_candidates_v1(vec![candidate]).await?;
+                        let durability = self.stage_strengthen_rod_durability_v1().await?;
+                        Ok(PendingManualFishingStrengthenSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2921,9 +3015,15 @@ impl PendingManualFishingCastV1<'_> {
                     }
                     Err(ManualFishingCastOwnerError::NonFishRoll(
                         FishingNonFishRollError::EnchantBookRequiresDedicatedResolver,
-                    )) => Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBookPending {
-                        candidate: self.preview_unbreaking_x_selected_direct_book_v1()?,
-                    }),
+                    )) => {
+                        let candidate = self.preview_unbreaking_x_selected_direct_book_v1()?;
+                        let staged = self.stage_direct_book_candidates_v1(vec![candidate]).await?;
+                        let durability = self.stage_unbreaking_x_rod_durability_v1().await?;
+                        Ok(PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBook {
+                            staged,
+                            durability,
+                        })
+                    }
                     Err(other) => Err(other),
                 }
             }
@@ -2933,9 +3033,9 @@ impl PendingManualFishingCastV1<'_> {
     /// Atomically commits the fully resolved exact Strengthen-I-X-only path.
     ///
     /// Strengthen changes only the exact physical capability ratio. Landed
-    /// Fish/Junk/non-book Treasure keep their existing asset/progression and
+    /// Fish/Junk/Treasure/Finished-Book keep their existing asset/progression and
     /// ordinary-wear authorities; a line break commits only Rod destruction.
-    /// Survived over-cap Fish and direct Book remain non-terminal.
+    /// Survived over-cap Fish remains non-terminal.
     pub async fn commit_strengthen_v1(
         mut self,
     ) -> Result<ManualFishingStrengthenTerminalReceiptV1, ManualFishingCastOwnerError> {
@@ -2969,8 +3069,13 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingStrengthenSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::StrengthenTerminalOverCapPending);
             }
-            PendingManualFishingStrengthenSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::StrengthenTerminalDirectBookPending);
+            PendingManualFishingStrengthenSelectedOutcomeV1::DirectBook { staged, durability } => {
+                let durability = self.strengthen_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingStrengthenTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability,
+                }
             }
         };
         let receipt = ManualFishingStrengthenTerminalReceiptV1 {
@@ -3034,8 +3139,12 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingBaitRackSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::BaitRackTerminalOverCapPending);
             }
-            PendingManualFishingBaitRackSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::BaitRackTerminalDirectBookPending);
+            PendingManualFishingBaitRackSelectedOutcomeV1::DirectBook { staged, durability } => {
+                ManualFishingModifierTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
             }
         };
         let receipt = ManualFishingBaitRackTerminalReceiptV1 {
@@ -3091,9 +3200,14 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingMulticatchSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::MulticatchTerminalOverCapPending);
             }
-            PendingManualFishingMulticatchSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::MulticatchTerminalDirectBookPending);
-            }
+            PendingManualFishingMulticatchSelectedOutcomeV1::DirectBook { staged, durability } => (
+                None,
+                ManualFishingModifierTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
         };
         let receipt = ManualFishingMulticatchTerminalReceiptV1 {
             receipt_kind: ManualFishingTerminalReceiptKindV1::Multicatch,
@@ -3143,9 +3257,14 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingMultiTreasureSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::MultiTreasureTerminalOverCapPending);
             }
-            PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBooksPending { .. } => {
-                return Err(ManualFishingCastOwnerError::MultiTreasureTerminalDirectBooksPending);
-            }
+            PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBook {
+                staged,
+                durability,
+            } => ManualFishingModifierTerminalOutcomeV1::Book {
+                deliveries: staged.deliveries,
+                progression: staged.progression,
+                durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+            },
         };
         let receipt = ManualFishingMultiTreasureTerminalReceiptV1 {
             receipt_kind: ManualFishingTerminalReceiptKindV1::MultiTreasure,
@@ -3196,8 +3315,12 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingSturdyBaitSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::SturdyBaitTerminalOverCapPending);
             }
-            PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::SturdyBaitTerminalDirectBookPending);
+            PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBook { staged, durability } => {
+                ManualFishingModifierTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                }
             }
         };
         let receipt = ManualFishingSturdyBaitTerminalReceiptV1 {
@@ -3258,9 +3381,14 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingSchoolBaitSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::SchoolBaitTerminalOverCapPending);
             }
-            PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::SchoolBaitTerminalDirectBookPending);
-            }
+            PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBook { staged, durability } => (
+                None,
+                ManualFishingModifierTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability: self.modifier_terminal_durability_receipt_v1(&durability)?,
+                },
+            ),
         };
         let receipt = ManualFishingSchoolBaitTerminalReceiptV1 {
             receipt_kind: ManualFishingTerminalReceiptKindV1::SchoolBait,
@@ -3296,9 +3424,9 @@ impl PendingManualFishingCastV1<'_> {
     /// Atomically commits fully resolved exact Treasure-X-only outcomes.
     ///
     /// Treasure X changes only the outer catch-branch weighting. The exact-X loadout
-    /// is already enforced by the selected-outcome owner, so only landed Fish,
-    /// Junk/non-book Treasure and line break may cross the terminal boundary.
-    /// Survived over-cap Fish and direct Book stay non-terminal.
+    /// is already enforced by the selected-outcome owner, so landed Fish,
+    /// Junk/non-book Treasure/direct Finished Book and line break may cross the terminal boundary.
+    /// Survived over-cap Fish stays non-terminal.
     pub async fn commit_treasure_x_v1(
         mut self,
     ) -> Result<ManualFishingTreasureXTerminalReceiptV1, ManualFishingCastOwnerError> {
@@ -3332,8 +3460,13 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingTreasureXSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::TreasureXTerminalOverCapPending);
             }
-            PendingManualFishingTreasureXSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::TreasureXTerminalDirectBookPending);
+            PendingManualFishingTreasureXSelectedOutcomeV1::DirectBook { staged, durability } => {
+                let durability = self.treasure_x_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingTreasureXTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability,
+                }
             }
         };
         let receipt = ManualFishingTreasureXTerminalReceiptV1 {
@@ -3368,9 +3501,8 @@ impl PendingManualFishingCastV1<'_> {
     /// Atomically commits fully resolved exact SharpHook-I-X-only outcomes.
     ///
     /// SharpHook changes only the unresolved post-line-break over-cap catch chance.
-    /// Therefore only landed within-capability Fish, Junk/non-book Treasure and
-    /// line break may cross the terminal boundary. Survived over-cap Fish and
-    /// direct Book stay non-terminal.
+    /// Therefore landed within-capability Fish, Junk/non-book Treasure/direct Finished Book and
+    /// line break may cross the terminal boundary. Survived over-cap Fish stays non-terminal.
     pub async fn commit_sharp_hook_v1(
         mut self,
     ) -> Result<ManualFishingSharpHookTerminalReceiptV1, ManualFishingCastOwnerError> {
@@ -3404,8 +3536,13 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingSharpHookSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::SharpHookTerminalOverCapPending);
             }
-            PendingManualFishingSharpHookSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::SharpHookTerminalDirectBookPending);
+            PendingManualFishingSharpHookSelectedOutcomeV1::DirectBook { staged, durability } => {
+                let durability = self.sharp_hook_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingSharpHookTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability,
+                }
             }
         };
         let receipt = ManualFishingSharpHookTerminalReceiptV1 {
@@ -3440,10 +3577,10 @@ impl PendingManualFishingCastV1<'_> {
 
     /// Atomically commits the fully resolved exact Unbreaking-X-only path.
     ///
-    /// Landed Fish/Junk/non-book Treasure include their successful children, the
-    /// pinned 20% wear preview and the matching operation-keyed durability receipt.
+    /// Landed Fish/Junk/non-book Treasure/direct Finished Book include their successful children,
+    /// the pinned 20% wear preview and the matching operation-keyed durability receipt.
     /// A line break commits Rod destruction without sampling Unbreaking or awarding
-    /// successful XP. Survived over-cap Fish and direct Book remain non-terminal.
+    /// successful XP. Survived over-cap Fish remains non-terminal.
     pub async fn commit_unbreaking_x_v1(
         mut self,
     ) -> Result<ManualFishingUnbreakingXTerminalReceiptV1, ManualFishingCastOwnerError> {
@@ -3481,8 +3618,15 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingUnbreakingXSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::UnbreakingXTerminalOverCapPending);
             }
-            PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::UnbreakingXTerminalDirectBookPending);
+            PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBook { staged, durability } => {
+                let wear = self.preview_unbreaking_x_ordinary_wear_v1()?;
+                let durability = self.unbreaking_x_terminal_durability_receipt_v1(&durability)?;
+                ManualFishingUnbreakingXTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    wear,
+                    durability,
+                }
             }
         };
         let receipt = ManualFishingUnbreakingXTerminalReceiptV1 {
@@ -3560,10 +3704,13 @@ impl PendingManualFishingCastV1<'_> {
             PendingManualFishingUnmodifiedSelectedOutcomeV1::OverCapCatchPending { .. } => {
                 return Err(ManualFishingCastOwnerError::UnmodifiedOrdinaryTerminalOverCapPending);
             }
-            PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending { .. } => {
-                return Err(
-                    ManualFishingCastOwnerError::UnmodifiedOrdinaryTerminalDirectBookPending,
-                );
+            PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBook { staged, durability } => {
+                let durability = self.terminal_durability_receipt_v1(&durability)?;
+                ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                    durability,
+                }
             }
         };
         let receipt = ManualFishingUnmodifiedOrdinaryTerminalReceiptV1 {
@@ -3596,10 +3743,9 @@ impl PendingManualFishingCastV1<'_> {
     }
 
     /// Atomically commits the complete no-modifier Starter Pool + Starter Basic
-    /// path for Fish, Junk, or non-book Treasure.
+    /// path for Fish, Junk, Treasure payloads, or a direct Finished Enchant Book.
     ///
-    /// Direct Enchant Book remains blocked before terminal transition. No other
-    /// area/Rod/modifier path is authorized by this narrow terminal owner.
+    /// No other area/Rod/modifier path is authorized by this narrow terminal owner.
     pub async fn commit_unmodified_starter_base_v1(
         mut self,
     ) -> Result<ManualFishingStarterBaseTerminalReceiptV1, ManualFishingCastOwnerError> {
@@ -3618,8 +3764,11 @@ impl PendingManualFishingCastV1<'_> {
                     progression: staged.progression,
                 }
             }
-            PendingManualFishingStarterBaseOutcomeV1::DirectBookPending { .. } => {
-                return Err(ManualFishingCastOwnerError::StarterTerminalDirectBookPending);
+            PendingManualFishingStarterBaseOutcomeV1::DirectBook { staged } => {
+                ManualFishingStarterBaseTerminalOutcomeV1::Book {
+                    deliveries: staged.deliveries,
+                    progression: staged.progression,
+                }
             }
         };
         let receipt = ManualFishingStarterBaseTerminalReceiptV1 {
