@@ -5,14 +5,18 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    AppliedFishingRodDurabilityState, BAIT_RACK_MAX_LEVEL, FISHING_BAIT_ITEM_DEFINITION_VERSION,
-    FishingArea, FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastSettlementReceipt,
-    FishingFishInstanceDeliveryReceiptV1, FishingNonFishOutcomeDeliveryReceiptV1,
-    FishingRodDurabilityMutationReceiptV1, FishingRodDurabilityResolution,
-    MANUAL_FISHING_RNG_PPM_SCALE, MULTI_TREASURE_MAX_LEVEL, MULTICATCH_MAX_LEVEL,
-    ManualFishingMulticatchCountV1, ManualFishingProgressionSettlementReceiptV1,
-    ManualFishingSchoolBaitQuantityV1, ManualFishingUnbreakingXWearPreviewV1, MulticatchCount,
-    SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL, fishing_bait_item_definition_key,
+    AppliedFishingRodDurabilityState, BAIT_RACK_MAX_LEVEL, FINISHED_ENCHANT_BOOK_DEFINITION_KEY,
+    FINISHED_ENCHANT_BOOK_DEFINITION_VERSION, FISHING_BAIT_ITEM_DEFINITION_VERSION, FishingArea,
+    FishingBait, FishingBaitCastConsumptionAction, FishingBaitCastSettlementReceipt,
+    FishingDirectBookDeliveryReceiptV1, FishingFishInstanceDeliveryReceiptV1,
+    FishingNonFishOutcomeDeliveryReceiptV1, FishingRodDurabilityMutationReceiptV1,
+    FishingRodDurabilityResolution, MANUAL_FISHING_RNG_PPM_SCALE, MULTI_TREASURE_MAX_LEVEL,
+    MULTICATCH_MAX_LEVEL, ManualFishingMulticatchCountV1,
+    ManualFishingProgressionSettlementReceiptV1, ManualFishingSchoolBaitQuantityV1,
+    ManualFishingSuccessfulProgressionOutcomeV1, ManualFishingUnbreakingXWearPreviewV1,
+    MulticatchCount, SHARP_HOOK_MAX_LEVEL, STRENGTHEN_MAX_LEVEL,
+    direct_fishing_book_pool_membership, direct_fishing_finished_book_level_weight,
+    fishing_bait_item_definition_key, manual_fishing_successful_base_aexp_v1,
     multicatch_count_policy, resolve_school_bait_quantity,
 };
 
@@ -29,6 +33,10 @@ pub enum ManualFishingStarterBaseTerminalOutcomeV1 {
     },
     NonFish {
         delivery: FishingNonFishOutcomeDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+    },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
         progression: ManualFishingProgressionSettlementReceiptV1,
     },
 }
@@ -69,6 +77,11 @@ pub enum ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1 {
         progression: ManualFishingProgressionSettlementReceiptV1,
         durability: FishingRodDurabilityMutationReceiptV1,
     },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
     LineBroken {
         durability: FishingRodDurabilityMutationReceiptV1,
     },
@@ -98,6 +111,12 @@ pub enum ManualFishingUnbreakingXTerminalOutcomeV1 {
         wear: ManualFishingUnbreakingXWearPreviewV1,
         durability: FishingRodDurabilityMutationReceiptV1,
     },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        wear: ManualFishingUnbreakingXWearPreviewV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
     LineBroken {
         durability: FishingRodDurabilityMutationReceiptV1,
     },
@@ -122,6 +141,11 @@ pub enum ManualFishingStrengthenTerminalOutcomeV1 {
     },
     NonFish {
         delivery: FishingNonFishOutcomeDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
         progression: ManualFishingProgressionSettlementReceiptV1,
         durability: FishingRodDurabilityMutationReceiptV1,
     },
@@ -169,6 +193,11 @@ pub enum ManualFishingSharpHookTerminalOutcomeV1 {
         progression: ManualFishingProgressionSettlementReceiptV1,
         durability: FishingRodDurabilityMutationReceiptV1,
     },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
     LineBroken {
         durability: FishingRodDurabilityMutationReceiptV1,
     },
@@ -213,6 +242,11 @@ pub enum ManualFishingTreasureXTerminalOutcomeV1 {
         progression: ManualFishingProgressionSettlementReceiptV1,
         durability: FishingRodDurabilityMutationReceiptV1,
     },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
     LineBroken {
         durability: FishingRodDurabilityMutationReceiptV1,
     },
@@ -251,6 +285,11 @@ pub enum ManualFishingModifierTerminalOutcomeV1 {
     },
     NonFish {
         delivery: FishingNonFishOutcomeDeliveryReceiptV1,
+        progression: ManualFishingProgressionSettlementReceiptV1,
+        durability: FishingRodDurabilityMutationReceiptV1,
+    },
+    Book {
+        deliveries: Vec<FishingDirectBookDeliveryReceiptV1>,
         progression: ManualFishingProgressionSettlementReceiptV1,
         durability: FishingRodDurabilityMutationReceiptV1,
     },
@@ -619,6 +658,27 @@ fn validate_strengthen_child_integrity(
                 },
             )?;
         }
+        ManualFishingStrengthenTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+            durability,
+        } => {
+            if !validate_direct_book_children_v1(
+                receipt.operation_id,
+                receipt.player_id,
+                deliveries,
+                progression,
+                Some(1),
+            ) {
+                return Err(ManualFishingStrengthenTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
         ManualFishingStrengthenTerminalOutcomeV1::LineBroken { durability } => {
             validate_durability(durability, FishingRodDurabilityResolution::LineBreak)?;
         }
@@ -740,6 +800,27 @@ fn validate_sharp_hook_child_integrity(
                     .iter()
                     .any(|row| !matches(row.delivery.operation_id, row.delivery.player_id))
             {
+                return Err(ManualFishingSharpHookTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
+        ManualFishingSharpHookTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+            durability,
+        } => {
+            if !validate_direct_book_children_v1(
+                receipt.operation_id,
+                receipt.player_id,
+                deliveries,
+                progression,
+                Some(1),
+            ) {
                 return Err(ManualFishingSharpHookTerminalError::ChildIntegrityMismatch);
             }
             validate_durability(
@@ -876,6 +957,27 @@ fn validate_treasure_x_child_integrity(
                 },
             )?;
         }
+        ManualFishingTreasureXTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+            durability,
+        } => {
+            if !validate_direct_book_children_v1(
+                receipt.operation_id,
+                receipt.player_id,
+                deliveries,
+                progression,
+                Some(1),
+            ) {
+                return Err(ManualFishingTreasureXTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
         ManualFishingTreasureXTerminalOutcomeV1::LineBroken { durability } => {
             validate_durability(durability, FishingRodDurabilityResolution::LineBreak)?;
         }
@@ -895,6 +997,7 @@ pub(crate) async fn finalize_manual_fishing_bait_rack_v1(
         receipt.player_id,
         receipt.area,
         &receipt.outcome,
+        Some(1),
         Some(1),
     )?;
     persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
@@ -916,7 +1019,11 @@ pub(crate) async fn finalize_manual_fishing_multicatch_v1(
             validate_multicatch_count_v1(receipt.multicatch_level, count)?;
             Some(usize::from(count.fish_count))
         }
-        (ManualFishingModifierTerminalOutcomeV1::NonFish { .. }, None) => None,
+        (
+            ManualFishingModifierTerminalOutcomeV1::NonFish { .. }
+            | ManualFishingModifierTerminalOutcomeV1::Book { .. },
+            None,
+        ) => None,
         _ => return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch),
     };
     validate_modifier_outcome_v1(
@@ -925,6 +1032,7 @@ pub(crate) async fn finalize_manual_fishing_multicatch_v1(
         receipt.area,
         &receipt.outcome,
         expected_fish_count,
+        Some(1),
     )?;
     persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
 }
@@ -942,6 +1050,7 @@ pub(crate) async fn finalize_manual_fishing_multi_treasure_v1(
         receipt.area,
         &receipt.outcome,
         Some(1),
+        None,
     )?;
     persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
 }
@@ -961,6 +1070,7 @@ pub(crate) async fn finalize_manual_fishing_sturdy_bait_v1(
         receipt.player_id,
         receipt.area,
         &receipt.outcome,
+        Some(1),
         Some(1),
     )?;
     persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
@@ -985,7 +1095,11 @@ pub(crate) async fn finalize_manual_fishing_school_bait_v1(
             validate_school_quantity_v1(quantity)?;
             Some(usize::from(quantity.quantity.final_fish_count()))
         }
-        (ManualFishingModifierTerminalOutcomeV1::NonFish { .. }, None) => None,
+        (
+            ManualFishingModifierTerminalOutcomeV1::NonFish { .. }
+            | ManualFishingModifierTerminalOutcomeV1::Book { .. },
+            None,
+        ) => None,
         _ => return Err(ManualFishingModifierTerminalError::QuantityIntegrityMismatch),
     };
     validate_modifier_outcome_v1(
@@ -994,6 +1108,7 @@ pub(crate) async fn finalize_manual_fishing_school_bait_v1(
         receipt.area,
         &receipt.outcome,
         expected_fish_count,
+        Some(1),
     )?;
     persist_modifier_terminal_v1(tx, receipt.operation_id, receipt.player_id, receipt).await
 }
@@ -1004,6 +1119,7 @@ fn validate_modifier_outcome_v1(
     area: FishingArea,
     outcome: &ManualFishingModifierTerminalOutcomeV1,
     expected_fish_count: Option<usize>,
+    expected_book_count: Option<usize>,
 ) -> Result<(), ManualFishingModifierTerminalError> {
     let matches = |child_operation_id: Uuid, child_player_id: Uuid| {
         child_operation_id == operation_id && child_player_id == player_id
@@ -1060,6 +1176,27 @@ fn validate_modifier_outcome_v1(
                     .iter()
                     .any(|row| !matches(row.delivery.operation_id, row.delivery.player_id))
             {
+                return Err(ManualFishingModifierTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
+        ManualFishingModifierTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+            durability,
+        } => {
+            if !validate_direct_book_children_v1(
+                operation_id,
+                player_id,
+                deliveries,
+                progression,
+                expected_book_count,
+            ) {
                 return Err(ManualFishingModifierTerminalError::ChildIntegrityMismatch);
             }
             validate_durability(
@@ -1330,6 +1467,64 @@ pub(crate) async fn finalize_manual_fishing_unbreaking_x_v1(
     Ok(())
 }
 
+fn validate_direct_book_children_v1(
+    operation_id: Uuid,
+    player_id: Uuid,
+    deliveries: &[FishingDirectBookDeliveryReceiptV1],
+    progression: &ManualFishingProgressionSettlementReceiptV1,
+    expected_count: Option<usize>,
+) -> bool {
+    if deliveries.is_empty() || deliveries.len() > 3 {
+        return false;
+    }
+    if let Some(expected_count) = expected_count
+        && deliveries.len() != expected_count
+    {
+        return false;
+    }
+    if progression.operation_id != operation_id || progression.player_id != player_id {
+        return false;
+    }
+    let Ok(landed_count) = u8::try_from(deliveries.len()) else {
+        return false;
+    };
+    let Ok(expected_aexp) = manual_fishing_successful_base_aexp_v1(
+        &ManualFishingSuccessfulProgressionOutcomeV1::Treasure { landed_count },
+    ) else {
+        return false;
+    };
+    if progression.base_activity_xp != expected_aexp {
+        return false;
+    }
+
+    for (slot, delivery) in deliveries.iter().enumerate() {
+        let Ok(slot) = u8::try_from(slot) else {
+            return false;
+        };
+        if delivery.operation_id != operation_id
+            || delivery.player_id != player_id
+            || delivery.candidate.treasure_slot != slot
+            || delivery.delivery.operation_id != operation_id
+            || delivery.delivery.player_id != player_id
+            || delivery.delivery.mutation_key != format!("fishing:book:slot:{slot}")
+            || delivery.delivery.definition_key != FINISHED_ENCHANT_BOOK_DEFINITION_KEY
+            || delivery.delivery.definition_version != FINISHED_ENCHANT_BOOK_DEFINITION_VERSION
+            || delivery.delivery.pending != delivery.delivery.pending_delivery_id.is_some()
+            || direct_fishing_book_pool_membership(delivery.candidate.enchant)
+                != Some(delivery.candidate.pool)
+            || delivery.candidate.level == 0
+            || direct_fishing_finished_book_level_weight(
+                delivery.candidate.enchant,
+                delivery.candidate.level,
+            )
+            .map_or(true, |weight| weight == 0)
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn validate_unbreaking_x_child_integrity(
     receipt: &ManualFishingUnbreakingXTerminalReceiptV1,
 ) -> Result<(), ManualFishingUnbreakingXTerminalError> {
@@ -1403,6 +1598,23 @@ fn validate_unbreaking_x_child_integrity(
             }
             validate_durability(durability, Some(*wear))?;
         }
+        ManualFishingUnbreakingXTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+            wear,
+            durability,
+        } => {
+            if !validate_direct_book_children_v1(
+                receipt.operation_id,
+                receipt.player_id,
+                deliveries,
+                progression,
+                Some(1),
+            ) {
+                return Err(ManualFishingUnbreakingXTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(durability, Some(*wear))?;
+        }
         ManualFishingUnbreakingXTerminalOutcomeV1::LineBroken { durability } => {
             validate_durability(durability, None)?;
         }
@@ -1472,6 +1684,27 @@ fn validate_unmodified_ordinary_child_integrity(
                 },
             )?;
         }
+        ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+            durability,
+        } => {
+            if !validate_direct_book_children_v1(
+                receipt.operation_id,
+                receipt.player_id,
+                deliveries,
+                progression,
+                Some(1),
+            ) {
+                return Err(ManualFishingUnmodifiedOrdinaryTerminalError::ChildIntegrityMismatch);
+            }
+            validate_durability(
+                durability,
+                FishingRodDurabilityResolution::CompletedCastAttempt {
+                    ordinary_event_prevented_by_unbreaking: false,
+                },
+            )?;
+        }
         ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::LineBroken { durability } => {
             validate_durability(durability, FishingRodDurabilityResolution::LineBreak)?;
         }
@@ -1506,6 +1739,20 @@ fn validate_child_integrity(
                     .iter()
                     .any(|row| !matches(row.delivery.operation_id, row.delivery.player_id))
             {
+                return Err(ManualFishingStarterBaseTerminalError::ChildIntegrityMismatch);
+            }
+        }
+        ManualFishingStarterBaseTerminalOutcomeV1::Book {
+            deliveries,
+            progression,
+        } => {
+            if !validate_direct_book_children_v1(
+                receipt.operation_id,
+                receipt.player_id,
+                deliveries,
+                progression,
+                Some(1),
+            ) {
                 return Err(ManualFishingStarterBaseTerminalError::ChildIntegrityMismatch);
             }
         }

@@ -33,6 +33,271 @@ use graphite_store::PgStore;
 use uuid::Uuid;
 
 #[tokio::test]
+async fn request_owned_starter_basic_direct_book_commits_and_replays_exact_item() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    seed_starter_basic_rod(&store, player_id, nonce, "starter-terminal-book").await;
+    let key = format!("test:manual-fishing-request:{nonce}:starter-book");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::StarterPool,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_selected_direct_book_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_unmodified_starter_base_v1().await.unwrap();
+    let ManualFishingStarterBaseTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+    } = &committed.outcome
+    else {
+        panic!("forced Starter Basic direct Book must commit as Book");
+    };
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].candidate.treasure_slot, 0);
+    assert_eq!(progression.base_activity_xp, 5);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedStarterBase(replayed) = replay else {
+        panic!("committed Starter Basic Book must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_unmodified_ordinary_direct_book_commits_and_replays_once() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "ordinary-terminal-book",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    let key = format!("test:manual-fishing-request:{nonce}:ordinary-book");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_selected_direct_book_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_unmodified_ordinary_v1().await.unwrap();
+    let ManualFishingUnmodifiedOrdinaryTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced ordinary direct Book must commit as Book");
+    };
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(progression.base_activity_xp, 5);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("ordinary Book terminal must persist Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedUnmodifiedOrdinary(replayed) = replay else {
+        panic!("committed ordinary Book must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        199
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
+async fn request_owned_unbreaking_x_direct_book_commits_exact_wear_and_replays() {
+    let Some(store) = test_store().await else {
+        return;
+    };
+    let nonce = Uuid::now_v7();
+    let actor = positive_snowflake(nonce);
+    let player_id = seed_player(&store, actor).await;
+    set_account_level(&store, player_id, 10).await;
+    let rod_id = seed_ordinary_rod(
+        &store,
+        player_id,
+        nonce,
+        "unbreaking-x-terminal-book",
+        "WOOD",
+        200,
+        600,
+        false,
+        4,
+        3,
+    )
+    .await;
+    seed_enchant(&store, rod_id, "UNBREAKING", 10).await;
+    let key = format!("test:manual-fishing-request:{nonce}:unbreaking-x-book");
+
+    let operation = {
+        let mut tx = store.pool().begin().await.unwrap();
+        let operation = graphite_services::lock_or_create_manual_fishing_operation_v1(
+            &mut tx,
+            u64::try_from(actor).unwrap(),
+            &key,
+            FishingArea::River,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        operation
+    };
+    let root = find_selected_direct_book_root(operation.operation_id);
+    sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
+        .bind(root.as_slice())
+        .bind(operation.operation_id)
+        .execute(store.pool())
+        .await
+        .unwrap();
+
+    let pending = begin_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let committed = pending.commit_unbreaking_x_v1().await.unwrap();
+    let ManualFishingUnbreakingXTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+        wear,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Unbreaking-X direct Book must commit as Book");
+    };
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(progression.base_activity_xp, 5);
+    assert_eq!(wear.chance_ppm, 200_000);
+    assert_eq!(wear.prevented, wear.draw_ppm < wear.chance_ppm);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Unbreaking-X Book terminal must persist ordinary Rod consequence");
+    };
+    assert_eq!(
+        preview.resulting_durability,
+        if wear.prevented { 200 } else { 199 }
+    );
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedUnbreakingX(replayed) = replay else {
+        panic!("committed Unbreaking-X Book must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
+            .bind(rod_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+        if wear.prevented { 200 } else { 199 }
+    );
+    assert_terminal_once(&store, operation.operation_id).await;
+}
+
+#[tokio::test]
 async fn request_owned_unbreaking_x_junk_commits_and_replays_exact_wear() {
     let Some(store) = test_store().await else {
         return;
@@ -381,7 +646,7 @@ async fn request_owned_sharp_hook_i_junk_commits_and_replays_without_second_wear
 }
 
 #[tokio::test]
-async fn request_owned_sharp_hook_direct_book_stays_pending_and_rolls_back() {
+async fn request_owned_sharp_hook_direct_book_commits_and_replays_exact_book() {
     let Some(store) = test_store().await else {
         return;
     };
@@ -426,45 +691,57 @@ async fn request_owned_sharp_hook_direct_book_stays_pending_and_rolls_back() {
         .await
         .unwrap();
 
-    let tx = store.pool().begin().await.unwrap();
     let pending = begin_manual_fishing_cast_request_v1(
-        tx,
+        store.pool().begin().await.unwrap(),
         u64::try_from(actor).unwrap(),
         &key,
         FishingArea::River,
     )
     .await
     .unwrap();
-    assert!(matches!(
-        pending.commit_sharp_hook_v1().await,
-        Err(ManualFishingCastOwnerError::SharpHookTerminalDirectBookPending)
-    ));
+    let committed = pending.commit_sharp_hook_v1().await.unwrap();
+    let ManualFishingSharpHookTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced SharpHook direct Book must commit as Book");
+    };
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(progression.base_activity_xp, 5);
+    assert_eq!(progression.account_xp.granted_xp, 2);
+    assert_eq!(deliveries[0].candidate.treasure_slot, 0);
+    assert_eq!(deliveries[0].delivery.operation_id, operation.operation_id);
+    assert!(!deliveries[0].delivery.pending);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("SharpHook Book terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
 
-    let durability: i64 =
-        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedSharpHook(replayed) = replay else {
+        panic!("committed SharpHook Book must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
             .bind(rod_id)
             .fetch_one(store.pool())
             .await
-            .unwrap();
-    let terminal_events: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
-    )
-    .bind(operation.operation_id)
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    let progression_events: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
-            .bind(operation.operation_id)
-            .fetch_one(store.pool())
-            .await
-            .unwrap();
-    assert_eq!(durability, 200);
-    assert_eq!((terminal_events, progression_events), (0, 0));
-    assert_eq!(
-        operation_state(&store, operation.operation_id).await,
-        "PENDING"
+            .unwrap(),
+        199
     );
+    assert_terminal_once(&store, operation.operation_id).await;
 }
 
 #[tokio::test]
@@ -588,7 +865,7 @@ async fn request_owned_treasure_x_non_book_treasure_commits_and_replays_without_
 }
 
 #[tokio::test]
-async fn request_owned_treasure_x_direct_book_stays_pending_and_rolls_back() {
+async fn request_owned_treasure_x_direct_book_commits_and_replays_exact_book() {
     let Some(store) = test_store().await else {
         return;
     };
@@ -633,45 +910,54 @@ async fn request_owned_treasure_x_direct_book_stays_pending_and_rolls_back() {
         .await
         .unwrap();
 
-    let tx = store.pool().begin().await.unwrap();
     let pending = begin_manual_fishing_cast_request_v1(
-        tx,
+        store.pool().begin().await.unwrap(),
         u64::try_from(actor).unwrap(),
         &key,
         FishingArea::River,
     )
     .await
     .unwrap();
-    assert!(matches!(
-        pending.commit_treasure_x_v1().await,
-        Err(ManualFishingCastOwnerError::TreasureXTerminalDirectBookPending)
-    ));
+    let committed = pending.commit_treasure_x_v1().await.unwrap();
+    let ManualFishingTreasureXTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Treasure-X direct Book must commit as Book");
+    };
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(progression.base_activity_xp, 5);
+    assert_eq!(deliveries[0].candidate.treasure_slot, 0);
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Treasure-X Book terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
 
-    let durability: i64 =
-        sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedTreasureX(replayed) = replay else {
+        panic!("committed Treasure-X Book must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
             .bind(rod_id)
             .fetch_one(store.pool())
             .await
-            .unwrap();
-    let terminal_events: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
-    )
-    .bind(operation.operation_id)
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    let progression_events: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
-            .bind(operation.operation_id)
-            .fetch_one(store.pool())
-            .await
-            .unwrap();
-    assert_eq!(durability, 200);
-    assert_eq!((terminal_events, progression_events), (0, 0));
-    assert_eq!(
-        operation_state(&store, operation.operation_id).await,
-        "PENDING"
+            .unwrap(),
+        199
     );
+    assert_terminal_once(&store, operation.operation_id).await;
 }
 
 #[tokio::test]
@@ -987,7 +1273,7 @@ async fn request_owned_multi_treasure_x_repeated_non_book_commits_and_replays() 
 }
 
 #[tokio::test]
-async fn request_owned_multi_treasure_direct_books_stay_pending_and_roll_back() {
+async fn request_owned_multi_treasure_direct_books_commit_independent_items_and_replay() {
     let Some(store) = test_store().await else {
         return;
     };
@@ -1040,23 +1326,63 @@ async fn request_owned_multi_treasure_direct_books_stay_pending_and_roll_back() 
     )
     .await
     .unwrap();
-    assert!(matches!(
-        pending.commit_multi_treasure_v1().await,
-        Err(ManualFishingCastOwnerError::MultiTreasureTerminalDirectBooksPending)
-    ));
+    let committed = pending.commit_multi_treasure_v1().await.unwrap();
+    let ManualFishingModifierTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Multi Treasure direct Books must commit as Book");
+    };
+    assert!(deliveries.len() > 1);
+    assert_eq!(
+        progression.base_activity_xp,
+        i64::try_from(deliveries.len()).unwrap() * 5
+    );
+    for (slot, delivery) in deliveries.iter().enumerate() {
+        assert_eq!(usize::from(delivery.candidate.treasure_slot), slot);
+        assert_eq!(delivery.delivery.operation_id, operation.operation_id);
+    }
+    let unique_ids = deliveries
+        .iter()
+        .map(|delivery| delivery.delivery.item_instance_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(unique_ids.len(), deliveries.len());
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Multi Treasure Book terminal must persist one ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(
+        finished_book_count(&store, operation.operation_id).await,
+        i64::try_from(deliveries.len()).unwrap()
+    );
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::StarterPool,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedMultiTreasure(replayed) = replay else {
+        panic!("committed Multi Treasure Books must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(
+        finished_book_count(&store, operation.operation_id).await,
+        i64::try_from(deliveries.len()).unwrap()
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
             .bind(rod_id)
             .fetch_one(store.pool())
             .await
             .unwrap(),
-        200
+        199
     );
-    assert_eq!(
-        operation_state(&store, operation.operation_id).await,
-        "PENDING"
-    );
-    assert_no_terminal_mutation(&store, operation.operation_id).await;
+    assert_terminal_once(&store, operation.operation_id).await;
 }
 
 #[tokio::test]
@@ -1169,7 +1495,7 @@ async fn request_owned_sturdy_bait_junk_commits_bait_and_replays_without_second_
 }
 
 #[tokio::test]
-async fn request_owned_sturdy_bait_direct_book_rolls_back_consumption() {
+async fn request_owned_sturdy_bait_direct_book_commits_bait_book_and_replays_once() {
     let Some(store) = test_store().await else {
         return;
     };
@@ -1230,31 +1556,57 @@ async fn request_owned_sturdy_bait_direct_book_rolls_back_consumption() {
     )
     .await
     .unwrap();
-    assert!(matches!(
-        pending.commit_sturdy_bait_v1().await,
-        Err(ManualFishingCastOwnerError::SturdyBaitTerminalDirectBookPending)
-    ));
+    let committed = pending.commit_sturdy_bait_v1().await.unwrap();
+    let ManualFishingModifierTerminalOutcomeV1::Book {
+        deliveries,
+        progression,
+        durability,
+    } = &committed.outcome
+    else {
+        panic!("forced Sturdy direct Book must commit as Book");
+    };
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(progression.base_activity_xp, 5);
     assert_eq!(
         fishing_bait_quantity(&store, player_id, "fishing.bait.sturdy").await,
-        2
+        1
     );
+    let AppliedFishingRodDurabilityState::Ordinary { preview, .. } = &durability.applied else {
+        panic!("Sturdy Book terminal must persist ordinary Rod wear");
+    };
+    assert_eq!(preview.resulting_durability, 199);
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
+    assert_eq!(
+        bait_settlement_event_count(&store, operation.operation_id).await,
+        1
+    );
+
+    let replay = resolve_manual_fishing_cast_request_v1(
+        store.pool().begin().await.unwrap(),
+        u64::try_from(actor).unwrap(),
+        &key,
+        FishingArea::River,
+    )
+    .await
+    .unwrap();
+    let ManualFishingCastRequestResolutionV1::CommittedSturdyBait(replayed) = replay else {
+        panic!("committed Sturdy Book must replay typed receipt");
+    };
+    assert_eq!(*replayed, committed);
+    assert_eq!(
+        fishing_bait_quantity(&store, player_id, "fishing.bait.sturdy").await,
+        1
+    );
+    assert_eq!(finished_book_count(&store, operation.operation_id).await, 1);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
             .bind(rod_id)
             .fetch_one(store.pool())
             .await
             .unwrap(),
-        200
+        199
     );
-    assert_eq!(
-        bait_settlement_event_count(&store, operation.operation_id).await,
-        0
-    );
-    assert_eq!(
-        operation_state(&store, operation.operation_id).await,
-        "PENDING"
-    );
-    assert_no_terminal_mutation(&store, operation.operation_id).await;
+    assert_terminal_once(&store, operation.operation_id).await;
 }
 
 #[tokio::test]
@@ -2140,10 +2492,12 @@ async fn pinned_baseline_starter_outcome_stages_only_the_selected_branch_and_rol
             .stage_unmodified_starter_base_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingStarterBaseOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingStarterBaseOutcomeV1::DirectBook { staged } = &first else {
+            panic!("Starter Basic direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
         assert_eq!(
             first,
             pending
@@ -2215,35 +2569,26 @@ async fn pinned_baseline_starter_outcome_stages_only_the_selected_branch_and_rol
 }
 
 #[tokio::test]
-async fn selected_direct_book_is_reachable_and_replay_stable_in_starter_and_ordinary_casts() {
+async fn selected_direct_book_staging_is_replay_stable_and_rolls_back_all_children() {
     let Some(store) = test_store().await else {
         return;
     };
-    for (area, starter) in [
-        (FishingArea::StarterPool, true),
-        (FishingArea::River, false),
+    for (suffix, starter, area) in [
+        ("starter-direct-book", true, FishingArea::StarterPool),
+        ("ordinary-direct-book", false, FishingArea::River),
     ] {
         let nonce = Uuid::now_v7();
         let player_id = seed_player(&store, positive_snowflake(nonce)).await;
+        set_account_level(&store, player_id, 10).await;
         let rod_id = if starter {
-            seed_starter_basic_rod(&store, player_id, nonce, "book-positive").await
+            seed_starter_basic_rod(&store, player_id, nonce, suffix).await
         } else {
-            set_account_level(&store, player_id, 10).await;
             seed_ordinary_rod(
-                &store,
-                player_id,
-                nonce,
-                "book-positive",
-                "WOOD",
-                200,
-                600,
-                false,
-                4,
-                3,
+                &store, player_id, nonce, suffix, "WOOD", 200, 600, false, 4, 3,
             )
             .await
         };
-        let operation_id = seed_operation(&store, player_id, nonce, "book-positive").await;
+        let operation_id = seed_operation(&store, player_id, nonce, suffix).await;
         let root = find_selected_direct_book_root(operation_id);
         sqlx::query("UPDATE operations SET rng_root = $1 WHERE id = $2")
             .bind(root.as_slice())
@@ -2252,86 +2597,91 @@ async fn selected_direct_book_is_reachable_and_replay_stable_in_starter_and_ordi
             .await
             .unwrap();
 
-        let mut previous = None;
-        for _ in 0..2 {
-            let tx = store.pool().begin().await.unwrap();
-            let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, area)
+        let tx = store.pool().begin().await.unwrap();
+        let mut pending = begin_manual_fishing_cast_v1(tx, operation_id, player_id, area)
+            .await
+            .unwrap();
+        let candidate = pending
+            .preview_unmodified_selected_direct_book_v1()
+            .unwrap();
+
+        if starter {
+            let first = pending
+                .stage_unmodified_starter_base_outcome_v1()
                 .await
                 .unwrap();
+            let PendingManualFishingStarterBaseOutcomeV1::DirectBook { staged } = &first else {
+                panic!("Starter Basic must stage the selected direct Book");
+            };
+            assert_eq!(staged.deliveries.len(), 1);
+            assert_eq!(staged.deliveries[0].candidate, candidate);
+            assert_eq!(staged.progression.base_activity_xp, 5);
             assert_eq!(
-                pending.preview_unmodified_base_branch_v1().unwrap(),
-                FishingCatchBranch::Treasure
-            );
-            assert!(matches!(
-                pending.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure),
-                Err(ManualFishingCastOwnerError::NonFishRoll(
-                    graphite_services::FishingNonFishRollError::EnchantBookRequiresDedicatedResolver
-                ))
-            ));
-            let candidate = pending
-                .preview_unmodified_selected_direct_book_v1()
-                .unwrap();
-            let actual = if starter {
-                let outcome = pending
+                first,
+                pending
                     .stage_unmodified_starter_base_outcome_v1()
                     .await
-                    .unwrap();
-                let PendingManualFishingStarterBaseOutcomeV1::DirectBookPending {
-                    candidate: selected,
-                } = outcome
-                else {
-                    panic!("Starter Basic must keep selected direct Book pending");
-                };
-                selected
-            } else {
-                let outcome = pending
+                    .unwrap()
+            );
+        } else {
+            let first = pending
+                .stage_unmodified_selected_outcome_v1()
+                .await
+                .unwrap();
+            let PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBook { staged, durability } =
+                &first
+            else {
+                panic!("ordinary Rod must stage the selected direct Book");
+            };
+            assert_eq!(staged.deliveries.len(), 1);
+            assert_eq!(staged.deliveries[0].candidate, candidate);
+            assert_eq!(staged.progression.base_activity_xp, 5);
+            assert!(matches!(
+                durability,
+                AppliedFishingRodDurabilityState::Ordinary { .. }
+            ));
+            assert_eq!(
+                first,
+                pending
                     .stage_unmodified_selected_outcome_v1()
                     .await
-                    .unwrap();
-                let PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending {
-                    candidate: selected,
-                } = outcome
-                else {
-                    panic!("ordinary Rod must keep selected direct Book pending");
-                };
-                selected
-            };
-            assert_eq!(actual, candidate);
-            assert_eq!(candidate.treasure_slot, 0);
-            if let Some(previous_candidate) = previous {
-                assert_eq!(candidate, previous_candidate);
-            }
-            previous = Some(candidate);
-            pending.rollback().await.unwrap();
+                    .unwrap()
+            );
         }
-        let new_items: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM item_instances WHERE created_by_operation_id = $1",
-        )
-        .bind(operation_id)
-        .fetch_one(store.pool())
-        .await
-        .unwrap();
-        let asset_events: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
-                .bind(operation_id)
-                .fetch_one(store.pool())
-                .await
-                .unwrap();
-        let xp_events: i64 =
-            sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
-                .bind(operation_id)
-                .fetch_one(store.pool())
-                .await
-                .unwrap();
-        assert_eq!((new_items, asset_events, xp_events), (0, 0, 0));
+
+        pending.rollback().await.unwrap();
+        assert_eq!(finished_book_count(&store, operation_id).await, 0);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM asset_events WHERE operation_id = $1"
+            )
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM progression_events WHERE operation_id = $1"
+            )
+            .bind(operation_id)
+            .fetch_one(store.pool())
+            .await
+            .unwrap(),
+            0
+        );
         if !starter {
-            let durability: i64 =
-                sqlx::query_scalar("SELECT current_durability FROM item_instances WHERE id = $1")
-                    .bind(rod_id)
-                    .fetch_one(store.pool())
-                    .await
-                    .unwrap();
-            assert_eq!(durability, 200);
+            assert_eq!(
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT current_durability FROM item_instances WHERE id = $1"
+                )
+                .bind(rod_id)
+                .fetch_one(store.pool())
+                .await
+                .unwrap(),
+                200
+            );
         }
         assert_eq!(operation_state(&store, operation_id).await, "PENDING");
     }
@@ -2653,10 +3003,18 @@ async fn selected_unmodified_river_attempt_never_issues_unresolved_fish_rewards(
             .stage_unmodified_selected_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingUnmodifiedSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("ordinary direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending
@@ -2977,7 +3335,7 @@ async fn multi_treasure_non_book_repeats_payloads_and_one_rod_event() {
 }
 
 #[tokio::test]
-async fn multi_treasure_direct_books_keep_independent_pending_identities() {
+async fn multi_treasure_direct_book_staging_keeps_independent_typed_items_and_rolls_back() {
     let Some(store) = test_store().await else {
         return;
     };
@@ -3012,45 +3370,37 @@ async fn multi_treasure_direct_books_keep_independent_pending_identities() {
         begin_manual_fishing_cast_v1(tx, operation_id, player_id, FishingArea::StarterPool)
             .await
             .unwrap();
-    assert_eq!(
-        pending.preview_multi_treasure_base_branch_v1().unwrap(),
-        FishingCatchBranch::Treasure
-    );
-    assert!(matches!(
-        pending.preview_non_fish_candidate_v1(FishingCatchBranch::Treasure),
-        Err(ManualFishingCastOwnerError::NonFishRoll(
-            graphite_services::FishingNonFishRollError::EnchantBookRequiresDedicatedResolver
-        ))
-    ));
-
     let (count, candidates) = pending
         .preview_multi_treasure_selected_direct_books_v1()
         .unwrap();
     assert!(count > 1);
     assert_eq!(candidates.len(), usize::from(count));
-    for (slot, candidate) in candidates.iter().enumerate() {
-        assert_eq!(candidate.treasure_slot, u8::try_from(slot).unwrap());
-        assert_eq!(
-            *candidate,
-            resolve_manual_fishing_direct_book_candidate_v1(
-                pending.preflight().rng,
-                u8::try_from(slot).unwrap(),
-            )
-            .unwrap()
-        );
-    }
 
     let first = pending
         .stage_multi_treasure_selected_outcome_v1()
         .await
         .unwrap();
-    assert_eq!(
-        first,
-        PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBooksPending {
-            count,
-            candidates: candidates.clone(),
-        }
-    );
+    let PendingManualFishingMultiTreasureSelectedOutcomeV1::DirectBook { staged, durability } =
+        &first
+    else {
+        panic!("Multi Treasure Book selection must stage typed Book deliveries");
+    };
+    assert_eq!(staged.deliveries.len(), candidates.len());
+    for (slot, (delivery, candidate)) in staged.deliveries.iter().zip(candidates.iter()).enumerate()
+    {
+        assert_eq!(usize::from(delivery.candidate.treasure_slot), slot);
+        assert_eq!(delivery.candidate, *candidate);
+    }
+    let ids = staged
+        .deliveries
+        .iter()
+        .map(|delivery| delivery.delivery.item_instance_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(ids.len(), staged.deliveries.len());
+    assert!(matches!(
+        durability,
+        AppliedFishingRodDurabilityState::Ordinary { .. }
+    ));
     assert_eq!(
         first,
         pending
@@ -3060,6 +3410,7 @@ async fn multi_treasure_direct_books_keep_independent_pending_identities() {
     );
 
     pending.rollback().await.unwrap();
+    assert_eq!(finished_book_count(&store, operation_id).await, 0);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT current_durability FROM item_instances WHERE id = $1")
             .bind(rod_id)
@@ -3068,19 +3419,14 @@ async fn multi_treasure_direct_books_keep_independent_pending_identities() {
             .unwrap(),
         200
     );
-    let assets: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM asset_events WHERE operation_id = $1")
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM asset_events WHERE operation_id = $1")
             .bind(operation_id)
             .fetch_one(store.pool())
             .await
-            .unwrap();
-    let xp: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
-            .bind(operation_id)
-            .fetch_one(store.pool())
-            .await
-            .unwrap();
-    assert_eq!((assets, xp), (0, 0));
+            .unwrap(),
+        0
+    );
     assert_eq!(operation_state(&store, operation_id).await, "PENDING");
 }
 
@@ -3288,10 +3634,18 @@ async fn bait_rack_only_selected_outcome_keeps_baseline_rng_and_rolls_back() {
     {
         let candidate = pending.preview_bait_rack_selected_direct_book_v1().unwrap();
         let first = pending.stage_bait_rack_selected_outcome_v1().await.unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingBaitRackSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingBaitRackSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("Bait Rack direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending.stage_bait_rack_selected_outcome_v1().await.unwrap()
@@ -3498,10 +3852,18 @@ async fn school_bait_only_selected_outcome_uses_pinned_quantity_and_rolls_back()
             .stage_school_bait_selected_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingSchoolBaitSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("School direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending
@@ -3747,10 +4109,18 @@ async fn sturdy_bait_only_selected_outcome_uses_exact_safety_effects_and_rolls_b
             .stage_sturdy_bait_selected_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingSturdyBaitSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("Sturdy direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending
@@ -3967,10 +4337,18 @@ async fn sharp_hook_only_selected_outcome_preserves_exact_pending_catch_chance()
             .stage_sharp_hook_selected_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingSharpHookSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingSharpHookSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("SharpHook direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending
@@ -4164,10 +4542,18 @@ async fn strengthen_only_selected_outcome_uses_exact_level_and_rolls_back() {
             .stage_strengthen_selected_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingStrengthenSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingStrengthenSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("Strengthen direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending
@@ -4430,10 +4816,18 @@ async fn unbreaking_x_selected_outcome_replays_and_rolls_back_all_children() {
             .stage_unbreaking_x_selected_outcome_v1()
             .await
             .unwrap();
-        assert_eq!(
-            first,
-            PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBookPending { candidate }
-        );
+        let PendingManualFishingUnbreakingXSelectedOutcomeV1::DirectBook { staged, durability } =
+            &first
+        else {
+            panic!("Unbreaking X direct Book must stage a typed Book delivery");
+        };
+        assert_eq!(staged.deliveries.len(), 1);
+        assert_eq!(staged.deliveries[0].candidate, candidate);
+        assert_eq!(staged.progression.base_activity_xp, 5);
+        assert!(matches!(
+            durability,
+            AppliedFishingRodDurabilityState::Ordinary { .. }
+        ));
         assert_eq!(
             first,
             pending
@@ -5086,6 +5480,16 @@ async fn set_account_level(store: &PgStore, player_id: Uuid, level: u16) {
     .unwrap();
 }
 
+async fn finished_book_count(store: &PgStore, operation_id: Uuid) -> i64 {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM item_instances WHERE created_by_operation_id = $1 AND definition_key = 'enchant.book.finished'",
+    )
+    .bind(operation_id)
+    .fetch_one(store.pool())
+    .await
+    .unwrap()
+}
+
 async fn fishing_bait_quantity(store: &PgStore, player_id: Uuid, definition_key: &str) -> i64 {
     sqlx::query_scalar(
         "SELECT quantity FROM item_stacks WHERE player_id = $1 AND definition_key = $2 AND definition_version = 1 AND location = 'ITEM_BAG'",
@@ -5124,30 +5528,6 @@ async fn assert_terminal_once(store: &PgStore, operation_id: Uuid) {
     .await
     .unwrap();
     assert_eq!((terminal_events, outbox), (1, 1));
-}
-
-async fn assert_no_terminal_mutation(store: &PgStore, operation_id: Uuid) {
-    let terminal_events: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM asset_events WHERE operation_id = $1 AND mutation_key = 'fishing:cast:terminal'",
-    )
-    .bind(operation_id)
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    let progression_events: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM progression_events WHERE operation_id = $1")
-            .bind(operation_id)
-            .fetch_one(store.pool())
-            .await
-            .unwrap();
-    let outbox: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM outbox_events WHERE operation_id = $1 AND topic = 'fishing.cast.completed'",
-    )
-    .bind(operation_id)
-    .fetch_one(store.pool())
-    .await
-    .unwrap();
-    assert_eq!((terminal_events, progression_events, outbox), (0, 0, 0));
 }
 
 async fn unlock_count(store: &PgStore, player_id: Uuid) -> i64 {

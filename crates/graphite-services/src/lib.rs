@@ -18,6 +18,7 @@ mod fishing_bait;
 mod fishing_bait_cast;
 mod fishing_bait_state;
 mod fishing_baseline_branch;
+mod fishing_book_delivery;
 mod fishing_book_pool;
 mod fishing_capability;
 mod fishing_capability_routing;
@@ -190,6 +191,11 @@ pub use fishing_bait_state::{
     replace_active_fishing_baits, settle_active_fishing_baits_for_cast,
 };
 pub use fishing_baseline_branch::resolve_manual_fishing_unmodified_base_branch_v1;
+pub use fishing_book_delivery::{
+    FINISHED_ENCHANT_BOOK_DEFINITION_KEY, FINISHED_ENCHANT_BOOK_DEFINITION_VERSION,
+    FishingDirectBookDeliveryError, FishingDirectBookDeliveryReceiptV1,
+    deliver_fishing_direct_book_v1,
+};
 pub use fishing_book_pool::{
     DirectFishingBookLevelProfile, DirectFishingBookMemberPolicy, DirectFishingBookPolicyError,
     DirectFishingBookPool, DirectFishingBookPoolPolicy, direct_fishing_book_level_profile,
@@ -217,7 +223,8 @@ pub use fishing_capability_routing::{
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, ManualFishingCastRequestResolutionV1,
     PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingCastV1,
-    PendingManualFishingLureXSelectedOutcomeV1, PendingManualFishingMultiTreasureSelectedOutcomeV1,
+    PendingManualFishingDirectBookReceiptV1, PendingManualFishingLureXSelectedOutcomeV1,
+    PendingManualFishingMultiTreasureSelectedOutcomeV1,
     PendingManualFishingMulticatchSelectedOutcomeV1, PendingManualFishingNonFishReceiptV1,
     PendingManualFishingSchoolBaitSelectedOutcomeV1,
     PendingManualFishingSharpHookSelectedOutcomeV1, PendingManualFishingStarterBaseOutcomeV1,
