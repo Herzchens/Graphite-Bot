@@ -3398,3 +3398,76 @@ Keep Lure X Book staging pre-terminal together with the rest of Lure X until
 cooldown persistence is owned. Keep survived over-cap Fish pre-terminal across all
 owners. Gold Rod, Luck-of-the-Sea cap composition and unsupported combined
 modifier paths remain fail-closed. Discord `/fish` remains unavailable.
+
+
+## Fishing service-owned terminal router
+
+Branch: `feat/fishing-terminal-router`
+
+### 1. Terminal-route selection is Services authority, not adapter authority
+
+**Integration finding — CONFIRMED**
+
+The individual narrow terminal owners are now typed, replay-safe and independently validated, but a
+caller that has to choose `commit_strengthen_v1`, `commit_sharp_hook_v1`, bait-specific commit
+methods, or the baseline owner still has enough authority to route authoritative locked state through
+the wrong lifecycle by application mistake.
+
+**Final decision**
+
+Add a service-owned route classifier on `PendingManualFishingCastV1`. It derives only from the
+already-locked Rod kind/tier, canonical embedded-enchant snapshot, target area and actual bait
+settlement receipt. The supported matrix is exactly the terminal owners already implemented:
+Starter Basic, unmodified ordinary, Unbreaking X, Strengthen I-X, SharpHook I-X, Treasure X,
+Bait Rack I-III, Multicatch I-X, Multi Treasure I-X, Sturdy Bait and School Bait.
+
+The classifier accepts no caller-supplied route or modifier flags. It also cross-checks consumed-bait
+count against the actual consumed entries before routing.
+
+### 2. Unsupported modifier states remain fail-closed at the router
+
+**Safety finding — CONFIRMED**
+
+A unified dispatcher must not turn broad pre-cap policy helpers into gameplay authorization.
+
+**Final decision**
+
+Gold Rod, Quality/Rare/Treasure bait, Lure, Mending, Luck/Luck-of-the-Sea, multiple consumed baits,
+multiple embedded enchants and every other currently unsupported combination return no supported
+terminal route. Existing narrow owners still perform their own exact-loadout validation after routing,
+so the router is not a bypass. Survived over-cap Fish continues to fail inside the selected terminal
+owner and rolls the transaction back.
+
+No shared-cap normalization, cooldown persistence, Mending trigger/order or over-cap catch RNG
+conversion is introduced by this slice.
+
+### 3. Request resolution and terminal commit have one adapter-safe entrypoint
+
+**Ownership finding — CONFIRMED**
+
+The existing request resolver correctly returns either a PENDING transaction owner or one of the
+typed COMMITTED receipts, but making the adapter branch across those receipt kinds and then choose a
+PENDING commit owner duplicates service protocol knowledge.
+
+**Final decision**
+
+Add `commit_supported_manual_fishing_cast_request_v1(tx, actor, request_key, area)`. For PENDING
+work it invokes the service-owned route and corresponding terminal owner. For COMMITTED work it maps
+the already-validated typed replay receipt into the same supported-terminal receipt enum without
+re-entering preflight, RNG, assets, progression, bait consumption or Rod mutation.
+
+A route failure consumes/drops the pending owner without commit, so provisional first-area unlock,
+bait settlement and all child mutations roll back with the transaction.
+
+### 4. This integration boundary still does not activate Discord `/fish`
+
+**Lifecycle finding — CONFIRMED**
+
+The router covers only already-authorized narrow lifecycles. It does not resolve the remaining
+general-cast blockers.
+
+**Final decision**
+
+Keep Discord `/fish` unavailable. The next live-command gate still requires authoritative handling
+for every reachable production state, including the unresolved over-cap catch RNG mapping, Lure
+cooldown persistence, manual Mending lifecycle and shared modifier-cap composition.

@@ -222,6 +222,7 @@ pub use fishing_capability_routing::{
 };
 pub use fishing_cast_owner::{
     ManualFishingCastOwnerError, ManualFishingCastRequestResolutionV1,
+    ManualFishingSupportedTerminalReceiptV1, ManualFishingSupportedTerminalRouteV1,
     PendingManualFishingBaitRackSelectedOutcomeV1, PendingManualFishingCastV1,
     PendingManualFishingDirectBookReceiptV1, PendingManualFishingLureXSelectedOutcomeV1,
     PendingManualFishingMultiTreasureSelectedOutcomeV1,
@@ -233,7 +234,8 @@ pub use fishing_cast_owner::{
     PendingManualFishingTreasureXSelectedOutcomeV1,
     PendingManualFishingUnbreakingXSelectedOutcomeV1,
     PendingManualFishingUnmodifiedSelectedOutcomeV1, begin_manual_fishing_cast_request_v1,
-    begin_manual_fishing_cast_v1, resolve_manual_fishing_cast_request_v1,
+    begin_manual_fishing_cast_v1, commit_supported_manual_fishing_cast_request_v1,
+    resolve_manual_fishing_cast_request_v1,
 };
 pub use fishing_cast_preflight::{
     ManualFishingCastPreflight, ManualFishingCastPreflightError, lock_manual_fishing_cast_preflight,

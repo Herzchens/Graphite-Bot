@@ -238,6 +238,10 @@ pub enum ManualFishingCastOwnerError {
         "Treasure X path requires one ordinary non-Gold Rod with only Treasure X and no consumed bait"
     )]
     TreasureXRequiresExactLoadout,
+    #[error(
+        "locked cast does not match a currently supported terminal Fishing route; unresolved or combined modifiers remain fail-closed"
+    )]
+    SupportedTerminalRouteUnavailable,
 }
 
 /// Provisional Junk or non-book Treasure delivery and reward children in a single
@@ -566,6 +570,67 @@ pub enum ManualFishingCastRequestResolutionV1<'c> {
     CommittedUnbreakingX(Box<ManualFishingUnbreakingXTerminalReceiptV1>),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManualFishingSupportedTerminalRouteV1 {
+    StarterBase,
+    UnmodifiedOrdinary,
+    UnbreakingX,
+    Strengthen { level: u8 },
+    SharpHook { level: u8 },
+    TreasureX,
+    BaitRack { level: u8 },
+    Multicatch { level: u8 },
+    MultiTreasure { level: u8 },
+    SturdyBait,
+    SchoolBait,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ManualFishingSupportedTerminalReceiptV1 {
+    StarterBase(Box<ManualFishingStarterBaseTerminalReceiptV1>),
+    UnmodifiedOrdinary(Box<ManualFishingUnmodifiedOrdinaryTerminalReceiptV1>),
+    UnbreakingX(Box<ManualFishingUnbreakingXTerminalReceiptV1>),
+    Strengthen(Box<ManualFishingStrengthenTerminalReceiptV1>),
+    SharpHook(Box<ManualFishingSharpHookTerminalReceiptV1>),
+    TreasureX(Box<ManualFishingTreasureXTerminalReceiptV1>),
+    BaitRack(Box<ManualFishingBaitRackTerminalReceiptV1>),
+    Multicatch(Box<ManualFishingMulticatchTerminalReceiptV1>),
+    MultiTreasure(Box<ManualFishingMultiTreasureTerminalReceiptV1>),
+    SturdyBait(Box<ManualFishingSturdyBaitTerminalReceiptV1>),
+    SchoolBait(Box<ManualFishingSchoolBaitTerminalReceiptV1>),
+}
+
+impl ManualFishingSupportedTerminalReceiptV1 {
+    #[must_use]
+    pub fn route(&self) -> ManualFishingSupportedTerminalRouteV1 {
+        match self {
+            Self::StarterBase(_) => ManualFishingSupportedTerminalRouteV1::StarterBase,
+            Self::UnmodifiedOrdinary(_) => {
+                ManualFishingSupportedTerminalRouteV1::UnmodifiedOrdinary
+            }
+            Self::UnbreakingX(_) => ManualFishingSupportedTerminalRouteV1::UnbreakingX,
+            Self::Strengthen(receipt) => ManualFishingSupportedTerminalRouteV1::Strengthen {
+                level: receipt.strengthen_level,
+            },
+            Self::SharpHook(receipt) => ManualFishingSupportedTerminalRouteV1::SharpHook {
+                level: receipt.sharp_hook_level,
+            },
+            Self::TreasureX(_) => ManualFishingSupportedTerminalRouteV1::TreasureX,
+            Self::BaitRack(receipt) => ManualFishingSupportedTerminalRouteV1::BaitRack {
+                level: receipt.bait_rack_level,
+            },
+            Self::Multicatch(receipt) => ManualFishingSupportedTerminalRouteV1::Multicatch {
+                level: receipt.multicatch_level,
+            },
+            Self::MultiTreasure(receipt) => ManualFishingSupportedTerminalRouteV1::MultiTreasure {
+                level: receipt.multi_treasure_level,
+            },
+            Self::SturdyBait(_) => ManualFishingSupportedTerminalRouteV1::SturdyBait,
+            Self::SchoolBait(_) => ManualFishingSupportedTerminalRouteV1::SchoolBait,
+        }
+    }
+}
+
 pub struct PendingManualFishingCastV1<'c> {
     tx: Transaction<'c, Postgres>,
     preflight: ManualFishingCastPreflight,
@@ -602,6 +667,175 @@ impl PendingManualFishingCastV1<'_> {
     #[must_use]
     pub fn pre_cap_branch_weights(&self) -> FishingCatchBranchPreCapWeightsV1 {
         self.pre_cap_branch_weights
+    }
+
+    /// Classifies only terminal routes whose complete narrow lifecycle is already authoritative.
+    ///
+    /// The decision is derived exclusively from the locked Rod/enchant snapshot and the bait
+    /// settlement owned by this transaction. It never accepts a caller-selected route. Gold Rod,
+    /// Quality/Rare/Treasure bait, Lure, Mending, Luck/Luck-of-the-Sea, multiple enchants/baits and
+    /// every other unresolved combination return `None` rather than borrowing a nearby policy.
+    #[must_use]
+    pub fn supported_terminal_route_v1(&self) -> Option<ManualFishingSupportedTerminalRouteV1> {
+        let mut consumed = self
+            .bait
+            .plan
+            .entries
+            .iter()
+            .filter(|entry| entry.action == FishingBaitCastConsumptionAction::ConsumeForCast);
+        let first_consumed_bait = consumed.next().map(|entry| entry.bait);
+        if consumed.next().is_some() {
+            return None;
+        }
+        let consumed_bait = match (self.bait.plan.consumed_bait_categories, first_consumed_bait) {
+            (0, None) => None,
+            (1, Some(bait)) => Some(bait),
+            _ => return None,
+        };
+
+        match self.preflight.rod.kind {
+            EquippedFishingRodKind::StarterBasic => {
+                if self.preflight.area_access.area == FishingArea::StarterPool
+                    && consumed_bait.is_none()
+                    && self.preflight.rod.embedded_enchants.is_empty()
+                {
+                    Some(ManualFishingSupportedTerminalRouteV1::StarterBase)
+                } else {
+                    None
+                }
+            }
+            EquippedFishingRodKind::Ordinary {
+                tier: EquipmentTier::Gold,
+            } => None,
+            EquippedFishingRodKind::Ordinary { .. } => {
+                if let Some(bait) = consumed_bait {
+                    if !self.preflight.rod.embedded_enchants.is_empty() {
+                        return None;
+                    }
+                    return match bait {
+                        FishingBait::Sturdy if self.ensure_sturdy_bait_only_cast_v1().is_ok() => {
+                            Some(ManualFishingSupportedTerminalRouteV1::SturdyBait)
+                        }
+                        FishingBait::School if self.ensure_school_bait_only_cast_v1().is_ok() => {
+                            Some(ManualFishingSupportedTerminalRouteV1::SchoolBait)
+                        }
+                        _ => None,
+                    };
+                }
+
+                match self.preflight.rod.embedded_enchants.as_slice() {
+                    [] => Some(ManualFishingSupportedTerminalRouteV1::UnmodifiedOrdinary),
+                    [embedded] => match embedded.enchant {
+                        CanonicalEnchant::Unbreaking
+                            if self.ensure_unbreaking_x_only_cast_v1().is_ok() =>
+                        {
+                            Some(ManualFishingSupportedTerminalRouteV1::UnbreakingX)
+                        }
+                        CanonicalEnchant::Strengthen => {
+                            self.strengthen_only_level_v1().ok().map(|level| {
+                                ManualFishingSupportedTerminalRouteV1::Strengthen { level }
+                            })
+                        }
+                        CanonicalEnchant::SharpHook => {
+                            self.sharp_hook_only_level_v1().ok().map(|level| {
+                                ManualFishingSupportedTerminalRouteV1::SharpHook { level }
+                            })
+                        }
+                        CanonicalEnchant::FishingRodTreasure
+                            if self.ensure_treasure_x_only_cast_v1().is_ok() =>
+                        {
+                            Some(ManualFishingSupportedTerminalRouteV1::TreasureX)
+                        }
+                        CanonicalEnchant::BaitRack => self
+                            .bait_rack_only_level_v1()
+                            .ok()
+                            .map(|level| ManualFishingSupportedTerminalRouteV1::BaitRack { level }),
+                        CanonicalEnchant::Multicatch => {
+                            self.multicatch_only_level_v1().ok().map(|level| {
+                                ManualFishingSupportedTerminalRouteV1::Multicatch { level }
+                            })
+                        }
+                        CanonicalEnchant::MultiTreasure => {
+                            self.multi_treasure_only_level_v1().ok().map(|level| {
+                                ManualFishingSupportedTerminalRouteV1::MultiTreasure { level }
+                            })
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// Commits the one terminal lifecycle selected from authoritative locked cast state.
+    ///
+    /// Unsupported routes fail before any commit. Any later terminal blocker (for example a
+    /// survived over-cap Fish) is still enforced by the selected narrow owner; consuming `self`
+    /// then drops the uncommitted transaction so all provisional mutations roll back.
+    pub async fn commit_supported_terminal_v1(
+        self,
+    ) -> Result<ManualFishingSupportedTerminalReceiptV1, ManualFishingCastOwnerError> {
+        let route = self
+            .supported_terminal_route_v1()
+            .ok_or(ManualFishingCastOwnerError::SupportedTerminalRouteUnavailable)?;
+        match route {
+            ManualFishingSupportedTerminalRouteV1::StarterBase => self
+                .commit_unmodified_starter_base_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::StarterBase),
+            ManualFishingSupportedTerminalRouteV1::UnmodifiedOrdinary => self
+                .commit_unmodified_ordinary_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::UnmodifiedOrdinary),
+            ManualFishingSupportedTerminalRouteV1::UnbreakingX => self
+                .commit_unbreaking_x_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::UnbreakingX),
+            ManualFishingSupportedTerminalRouteV1::Strengthen { .. } => self
+                .commit_strengthen_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::Strengthen),
+            ManualFishingSupportedTerminalRouteV1::SharpHook { .. } => self
+                .commit_sharp_hook_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::SharpHook),
+            ManualFishingSupportedTerminalRouteV1::TreasureX => self
+                .commit_treasure_x_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::TreasureX),
+            ManualFishingSupportedTerminalRouteV1::BaitRack { .. } => self
+                .commit_bait_rack_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::BaitRack),
+            ManualFishingSupportedTerminalRouteV1::Multicatch { .. } => self
+                .commit_multicatch_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::Multicatch),
+            ManualFishingSupportedTerminalRouteV1::MultiTreasure { .. } => self
+                .commit_multi_treasure_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::MultiTreasure),
+            ManualFishingSupportedTerminalRouteV1::SturdyBait => self
+                .commit_sturdy_bait_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::SturdyBait),
+            ManualFishingSupportedTerminalRouteV1::SchoolBait => self
+                .commit_school_bait_v1()
+                .await
+                .map(Box::new)
+                .map(ManualFishingSupportedTerminalReceiptV1::SchoolBait),
+        }
     }
 
     /// Previews deterministic non-Fish payload selection from the locked operation RNG root.
@@ -1979,7 +2213,7 @@ impl PendingManualFishingCastV1<'_> {
         )?)
     }
 
-    /// Stages the single unmodified Starter Pool Fish candidate in the *still uncommittable*
+    /// Stages the single unmodified Starter Pool Fish candidate in the still-uncommitted
     /// cast transaction. Starter Pool Fish always lands at the capability stage, so the
     /// physical line-break stage is bypassed. This call does NOT choose the catch branch;
     /// it is a provisional internal composition step, not a completed Fishing cast.
@@ -2010,7 +2244,7 @@ impl PendingManualFishingCastV1<'_> {
 
     /// Resolves the actual zero-modifier CatchBranch RNG result, then stages its
     /// matching unique Fish or non-book Junk/Treasure and exact successful XP under
-    /// the same still-uncommittable transaction.
+    /// the same still-uncommitted transaction.
     ///
     /// This path is deliberately restricted to the unbreakable Starter Basic Rod
     /// in Starter Pool, where Fish physically lands without line risk, and to casts
@@ -2018,8 +2252,8 @@ impl PendingManualFishingCastV1<'_> {
     /// unique-Book delivery/progression path in the same transaction.
     ///
     /// A same-operation repeated call replays the original item/XP child receipts.
-    /// The pending owner has no commit method: these staged effects roll back unless
-    /// the future final lifecycle also implements operation/audit/outbox settlement.
+    /// These staged effects persist only if the matching terminal owner finalizes the
+    /// operation; otherwise transaction rollback removes them.
     pub async fn stage_unmodified_starter_base_outcome_v1(
         &mut self,
     ) -> Result<PendingManualFishingStarterBaseOutcomeV1, ManualFishingCastOwnerError> {
@@ -2070,8 +2304,8 @@ impl PendingManualFishingCastV1<'_> {
     /// ordinary completed-attempt wear event (Starter Basic stays unbreakable).
     ///
     /// The operation-keyed asset event enforces durable replay, while the transaction-owner
-    /// cache also avoids redundant event queries within one attempt. The still-uncommittable transaction
-    /// rolls this child back with every other provisional cast mutation.
+    /// cache also avoids redundant event queries within one attempt. The still-uncommitted transaction
+    /// rolls this child back with every other provisional cast mutation unless a matching terminal owner commits.
     pub async fn stage_unmodified_rod_durability_v1(
         &mut self,
     ) -> Result<AppliedFishingRodDurabilityState, ManualFishingCastOwnerError> {
@@ -2478,7 +2712,7 @@ impl PendingManualFishingCastV1<'_> {
     ///
     /// Lure changes only the shared action-speed rating, so branch/Fish identity,
     /// capability and durability remain baseline. The returned cooldown is a pure
-    /// exact projection; this still-uncommittable owner does not persist cooldown.
+    /// exact projection; this Lure path remains non-terminal because cooldown persistence is unresolved.
     pub async fn stage_lure_x_selected_outcome_v1(
         &mut self,
     ) -> Result<PendingManualFishingLureXSelectedOutcomeV1, ManualFishingCastOwnerError> {
@@ -3813,20 +4047,19 @@ fn locked_pre_cap_modifiers(
 /// under one transaction owner, deriving the known pre-cap branch modifiers from locked
 /// canonical Rod state and the settled bait receipt, never caller-supplied gameplay flags.
 ///
-/// While result/terminal/outbox integration is not implemented, this function can prepare a
-/// cast but deliberately cannot commit it. Its opaque pending owner prevents accidental live
-/// bait consumption or permanent-area unlocking without a fully settled cast operation.
+/// The returned pending owner may commit only through the explicitly implemented narrow terminal
+/// lifecycles; unsupported states remain rollback-owned and fail closed.
 /// Creates/resumes the canonical request-key operation and immediately enters
 /// authoritative manual-Fishing preflight in the same caller-owned transaction.
 ///
-/// This is the adapter-safe entrypoint for pre-terminal work: adapters provide
-/// actor/request-key/area only and cannot supply an operation id, player id or RNG
-/// root. If operation resolution or preflight fails, the owned transaction drops
-/// and the newly inserted PENDING operation is rolled back with every partial
-/// preflight mutation. The returned pending owner still has no commit path.
-/// Resolves a request-key cast as either new/PENDING work or an exact typed
-/// committed Starter-Basic replay. A COMMITTED replay never re-enters preflight,
-/// bait, item, progression or RNG mutation; the read transaction is closed first.
+/// This is the adapter-safe resolver: adapters provide actor/request-key/area only and cannot supply
+/// an operation id, player id or RNG root. If operation resolution or preflight fails, the owned
+/// transaction drops and the newly inserted PENDING operation is rolled back with every partial
+/// preflight mutation. Callers that want automatic supported-route selection should use
+/// `commit_supported_manual_fishing_cast_request_v1`.
+/// Resolves a request-key cast as either new/PENDING work or an exact typed committed replay.
+/// A COMMITTED replay never re-enters preflight, bait, item, progression or RNG mutation; the read
+/// transaction is closed first.
 pub async fn resolve_manual_fishing_cast_request_v1<'c>(
     mut tx: Transaction<'c, Postgres>,
     discord_user_id: u64,
@@ -3929,6 +4162,60 @@ pub async fn resolve_manual_fishing_cast_request_v1<'c>(
                 receipt,
             ))
         }
+    }
+}
+
+/// Resolves and commits any currently supported narrow manual-Fishing terminal lifecycle.
+///
+/// Adapters provide only the external request identity and area. For new/PENDING work, the service
+/// derives the terminal route from locked Rod/enchant/bait state and delegates to the corresponding
+/// narrow terminal owner. For COMMITTED replay, the existing typed receipt is returned directly.
+/// Unsupported modifiers and unresolved physical outcomes fail closed; no fallback route is guessed.
+pub async fn commit_supported_manual_fishing_cast_request_v1<'c>(
+    tx: Transaction<'c, Postgres>,
+    discord_user_id: u64,
+    external_request_key: &str,
+    area: FishingArea,
+) -> Result<ManualFishingSupportedTerminalReceiptV1, ManualFishingCastOwnerError> {
+    match resolve_manual_fishing_cast_request_v1(tx, discord_user_id, external_request_key, area)
+        .await?
+    {
+        ManualFishingCastRequestResolutionV1::Pending(pending) => {
+            (*pending).commit_supported_terminal_v1().await
+        }
+        ManualFishingCastRequestResolutionV1::CommittedStarterBase(receipt) => Ok(
+            ManualFishingSupportedTerminalReceiptV1::StarterBase(receipt),
+        ),
+        ManualFishingCastRequestResolutionV1::CommittedUnmodifiedOrdinary(receipt) => Ok(
+            ManualFishingSupportedTerminalReceiptV1::UnmodifiedOrdinary(receipt),
+        ),
+        ManualFishingCastRequestResolutionV1::CommittedStrengthen(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::Strengthen(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedSharpHook(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::SharpHook(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedTreasureX(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::TreasureX(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedBaitRack(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::BaitRack(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedMulticatch(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::Multicatch(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedMultiTreasure(receipt) => Ok(
+            ManualFishingSupportedTerminalReceiptV1::MultiTreasure(receipt),
+        ),
+        ManualFishingCastRequestResolutionV1::CommittedSturdyBait(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::SturdyBait(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedSchoolBait(receipt) => {
+            Ok(ManualFishingSupportedTerminalReceiptV1::SchoolBait(receipt))
+        }
+        ManualFishingCastRequestResolutionV1::CommittedUnbreakingX(receipt) => Ok(
+            ManualFishingSupportedTerminalReceiptV1::UnbreakingX(receipt),
+        ),
     }
 }
 
